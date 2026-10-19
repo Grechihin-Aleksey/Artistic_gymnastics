@@ -8,6 +8,9 @@ export interface AppConfig {
   judgeDist?: string;
   /** Папка со сборкой табло; раздаётся по адресу /board. */
   boardDist?: string;
+  /** Адрес облачного ретранслятора для сайта; без него результаты остаются в зале. */
+  relayUrl?: string;
+  relayToken?: string;
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -19,11 +22,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!adminToken || adminToken.length < 16) {
     throw new Error("ADMIN_TOKEN должен быть задан и содержать не меньше 16 символов");
   }
+  if (env.RELAY_URL && !env.RELAY_TOKEN) throw new Error("Для RELAY_URL нужен RELAY_TOKEN");
   return {
     databaseUrl,
     adminToken,
     port: Number(env.PORT ?? 3000),
     judgeDist: env.JUDGE_DIST ?? join(__dirname, "..", "..", "judge", "dist"),
     boardDist: env.BOARD_DIST ?? join(__dirname, "..", "..", "scoreboard", "dist"),
+    relayUrl: env.RELAY_URL || undefined,
+    relayToken: env.RELAY_TOKEN || undefined,
   };
 }

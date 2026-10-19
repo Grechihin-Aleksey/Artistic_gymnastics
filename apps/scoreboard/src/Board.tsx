@@ -31,36 +31,28 @@ const fullName = (g: GymnastView) => `${g.lastName} ${g.firstName}`;
 interface Flash {
   key: string;
   apparatus: string;
-  gymnast: GymnastView | undefined;
+  gymnastId: string;
   total: number;
 }
 
 export function Board({ route }: { route: Route & { competitionId: string } }) {
   const [flash, setFlash] = useState<Flash | null>(null);
-  const [gymnasts, setGymnasts] = useState<Map<string, GymnastView>>(new Map());
 
-  const onApproved = useCallback(
-    (p: PerformanceView) => {
-      if (!p.score) return;
-      setFlash({
-        key: p.id,
-        apparatus: p.apparatus,
-        gymnast: gymnasts.get(p.gymnastId),
-        total: p.score.total,
-      });
-    },
-    [gymnasts],
-  );
+  const onApproved = useCallback((p: PerformanceView) => {
+    if (!p.score) return;
+    setFlash({ key: p.id, apparatus: p.apparatus, gymnastId: p.gymnastId, total: p.score.total });
+  }, []);
   const { data, connected, error } = useBoard(route.competitionId, onApproved);
 
-  useEffect(() => {
-    if (!data) return;
+  // Имя ищем при показе, а не при получении оценки: свежий снимок мог прийти чуть позже неё.
+  const gymnasts = useMemo(() => {
     const people = new Map<string, GymnastView>();
+    if (!data) return people;
     for (const row of data.allAround) people.set(row.gymnast.id, row.gymnast);
-    for (const a of data.live)
-      if (a.current) people.set(a.current.gymnast.id, a.current.gymnast);
-    setGymnasts(people);
+    for (const a of data.live) if (a.current) people.set(a.current.gymnast.id, a.current.gymnast);
+    return people;
   }, [data]);
+  const flashGymnast = flash ? gymnasts.get(flash.gymnastId) : undefined;
 
   useEffect(() => {
     if (!flash) return;
@@ -95,7 +87,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
   if (!data) {
     return (
       <div className="center">
-        {error ? `Нет связи с сервером: ${error}` : "Загрузка…"}
+        {error ?? "Загрузка…"}
       </div>
     );
   }
@@ -122,10 +114,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
           ].map(([view, label]) => (
             <a
               key={view}
-              href={routeHash({
-                competitionId: route.competitionId,
-                view: view!,
-              })}
+              href={routeHash({ ...route, view: view! })}
               className={route.view === view ? "active" : ""}
             >
               {label}
@@ -142,8 +131,8 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
         <div className="flash" key={flash.key}>
           <span className="flash-app">{APPARATUS_NAMES[flash.apparatus]}</span>
           <span className="flash-name">
-            {flash.gymnast
-              ? `№${flash.gymnast.bib} ${fullName(flash.gymnast)}`
+            {flashGymnast
+              ? `№${flashGymnast.bib} ${fullName(flashGymnast)}`
               : "Новая оценка"}
           </span>
           <span className="flash-score">{fmt(flash.total)}</span>
@@ -187,7 +176,7 @@ function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
     );
   }
   const code = slide.kind.apparatus;
-  const rows = data.apparatus[code] ?? [];
+  const rows = data.apparatus[code as LiveApparatus["apparatus"]] ?? [];
   return (
     <ApparatusTable
       code={code}

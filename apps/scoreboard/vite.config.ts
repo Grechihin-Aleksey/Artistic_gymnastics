@@ -3,9 +3,10 @@ import { defineConfig } from "vitest/config";
 
 const server = process.env.SERVER_URL ?? "http://localhost:3000";
 
-// Табло раздаёт сервер в зале по адресу /board, API на том же адресе.
+// Табло раздаёт сервер в зале по адресу /board/, а ретранслятор на сайте — по адресу /widget/.
+// Пути к файлам относительные, поэтому одна сборка работает в обоих местах.
 export default defineConfig({
-  base: "/board/",
+  base: "./",
   plugins: [react()],
   server: {
     proxy: {
