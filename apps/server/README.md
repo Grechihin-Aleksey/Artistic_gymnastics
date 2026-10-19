@@ -26,6 +26,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | POST | `/marks` | судья | Оценка: `{ id, performanceId, kind: D/E/NEUTRAL, value }` |
 | POST | `/performances/:id/approve` | старший судья снаряда, секретариат | Посчитать и утвердить итог |
 | POST | `/performances/:id/reopen` | секретариат | Вернуть на правку с причиной |
+| GET | `/competitions/:id/results/live` | все | Для табло: кто выступает на каждом снаряде и последняя оценка |
 | GET | `/competitions/:id/results/apparatus/:apparatus?vault=average` | все | Места на снаряде |
 | GET | `/competitions/:id/results/all-around` | все | Многоборье |
 | GET | `/competitions/:id/results/teams` | все | Командный зачёт |
@@ -35,7 +36,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 - `id` оценки создаёт планшет, поэтому повторная отправка после обрыва связи не создаёт дубль; новая оценка того же судьи заменяет прежнюю и пишется в журнал;
 - утвердить можно, когда есть D (у всех судей D одинаковая) и пришли оценки всех судей E бригады.
 
-Если задана переменная `JUDGE_DIST` (или рядом лежит сборка `apps/judge/dist`), сервер раздаёт страницы судей по адресу `/judge/`.
+Если заданы переменные `JUDGE_DIST` и `BOARD_DIST` (или рядом лежат сборки `apps/judge/dist` и `apps/scoreboard/dist`), сервер раздаёт страницы судей по адресу `/judge/` и табло по адресу `/board/`.
 
 ## Socket.IO
 
