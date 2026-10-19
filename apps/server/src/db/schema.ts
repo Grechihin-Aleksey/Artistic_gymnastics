@@ -28,8 +28,40 @@ export const competitions = pgTable("competitions", {
   teamPerApparatus: integer("team_per_apparatus").notNull().default(4),
   teamCounting: integer("team_counting").notNull().default(3),
   publishJudgeMarks: boolean("publish_judge_marks").notNull().default(false),
+  /** Номер текущей ротации с нуля: смена s сейчас на снаряде (старт + rotation) по олимпийскому порядку. */
+  rotation: integer("rotation").notNull().default(0),
   createdAt: createdAt(),
 });
+
+/** Разряд или возрастная группа: у каждого свои места, многоборье и команды. */
+export const categories = pgTable(
+  "categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    position: integer("position").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("categories_name_unique").on(t.competitionId, t.name)],
+);
+
+/** Смена переходит со снаряда на снаряд по кругу, начиная со стартового. */
+export const shifts = pgTable(
+  "shifts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    number: integer("number").notNull(),
+    startApparatus: apparatusEnum("start_apparatus").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("shifts_number_unique").on(t.competitionId, t.number)],
+);
 
 export const teams = pgTable("teams", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -37,6 +69,8 @@ export const teams = pgTable("teams", {
     .notNull()
     .references(() => competitions.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  /** Команда выступает в зачёте своего разряда. */
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
 
@@ -52,6 +86,10 @@ export const gymnasts = pgTable(
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
     club: text("club"),
+    categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
+    /** Номер смены и порядок выхода в ней (порядок строк в загруженном списке). */
+    shift: integer("shift"),
+    startOrder: integer("start_order"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("gymnasts_bib_unique").on(t.competitionId, t.bib)],

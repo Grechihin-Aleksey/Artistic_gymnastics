@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   FINAL_5_3_3,
+  defaultStart,
+  rotationOrder,
+  shiftApparatus,
   QUALIFICATION_5_4_3,
   averageVaults,
   executionScore,
@@ -190,5 +193,26 @@ describe("командный зачёт", () => {
       ["a", 1],
       ["b", 2],
     ]);
+  });
+});
+
+describe("rotations", () => {
+  it("moves shifts around the apparatus in Olympic order", () => {
+    expect(shiftApparatus("MAG", "HB", 0)).toBe("HB");
+    expect(shiftApparatus("MAG", "HB", 1)).toBe("FX");
+    expect(shiftApparatus("MAG", "PH", 5)).toBe("FX");
+    expect(shiftApparatus("WAG", "BB", 2)).toBe("VT");
+    expect(() => shiftApparatus("WAG", "HB", 0)).toThrow(RangeError);
+  });
+
+  it("sends the first gymnast to the end after each rotation", () => {
+    expect(rotationOrder(["a", "b", "c"], 0)).toEqual(["a", "b", "c"]);
+    expect(rotationOrder(["a", "b", "c"], 1)).toEqual(["b", "c", "a"]);
+    expect(rotationOrder(["a", "b", "c"], 4)).toEqual(["b", "c", "a"]);
+    expect(rotationOrder([], 2)).toEqual([]);
+  });
+
+  it("gives shifts consecutive start apparatus", () => {
+    expect([1, 2, 3, 4, 5].map((n) => defaultStart("WAG", n))).toEqual(["VT", "UB", "BB", "FX", "VT"]);
   });
 });

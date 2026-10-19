@@ -75,7 +75,7 @@ describe("отправка на сайт", () => {
     expect(sent.path).toBe(`/ingest/${competition.id}`);
     expect(sent.auth).toBe(`Bearer ${RELAY_TOKEN}`);
     expect(sent.body.snapshot.competition).toEqual({ id: competition.id, name: "Кубок", discipline: "WAG" });
-    expect(sent.body.snapshot.apparatus.BB?.[0]?.score.total).toBe(13.8);
+    expect(sent.body.snapshot.categories[0]!.apparatus.BB?.[0]?.score.total).toBe(13.8);
     expect(sent.body.approved.map((p) => p.id)).toContain(perf.id);
     // Сбавки отдельных судей на сайт не уходят, пока соревнование их не публикует.
     expect(sent.body.approved[0]!.marks).toEqual([]);
@@ -86,7 +86,9 @@ describe("отправка на сайт", () => {
     const competition = (await admin.post("/competitions", { name: "Пустое", discipline: "MAG" }).expect(201)).body;
     const snapshot = (await api(app).get(`/competitions/${competition.id}/results/snapshot`).expect(200)).body as BoardSnapshot;
     expect(snapshot.live.map((a) => a.apparatus)).toEqual(["FX", "PH", "SR", "VT", "PB", "HB"]);
-    expect(Object.keys(snapshot.apparatus)).toHaveLength(6);
-    expect(snapshot.teams).toEqual([]);
+    expect(snapshot.categories).toHaveLength(1);
+    expect(snapshot.categories[0]!.id).toBeNull();
+    expect(Object.keys(snapshot.categories[0]!.apparatus)).toHaveLength(6);
+    expect(snapshot.categories[0]!.teams).toEqual([]);
   });
 });

@@ -48,7 +48,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
   const gymnasts = useMemo(() => {
     const people = new Map<string, GymnastView>();
     if (!data) return people;
-    for (const row of data.allAround) people.set(row.gymnast.id, row.gymnast);
+    for (const c of data.categories) for (const row of c.allAround) people.set(row.gymnast.id, row.gymnast);
     for (const a of data.live) if (a.current) people.set(a.current.gymnast.id, a.current.gymnast);
     return people;
   }, [data]);
@@ -63,14 +63,16 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
   const slides = useMemo(
     () =>
       data
-        ? buildSlides({
-            aa: data.allAround.length,
-            teams: data.teams.length,
-            apparatus: data.live.map((a) => ({
-              code: a.apparatus,
-              rows: data.apparatus[a.apparatus]?.length ?? 0,
+        ? buildSlides(
+            data.categories.map((c) => ({
+              aa: c.allAround.length,
+              teams: c.teams.length,
+              apparatus: data.live.map((a) => ({
+                code: a.apparatus,
+                rows: c.apparatus[a.apparatus]?.length ?? 0,
+              })),
             })),
-          })
+          )
         : [],
     [data],
   );
@@ -92,10 +94,12 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
     );
   }
 
+  const selected = Math.min(route.category ?? 0, data.categories.length - 1);
   const slide: Slide =
     route.view === "auto"
-      ? (slides[index % slides.length] ?? { kind: "now", page: 0, pages: 1 })
-      : { kind: kindFromView(route.view), page: 0, pages: 1 };
+      ? (slides[index % slides.length] ?? { kind: "now", category: 0, page: 0, pages: 1 })
+      : { kind: kindFromView(route.view), category: selected, page: 0, pages: 1 };
+  const categories = data.categories.length > 1 ? data.categories : [];
 
   return (
     <div className="board">
@@ -106,7 +110,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
             ["auto", "Авто"],
             ["now", "Сейчас"],
             ["aa", "Многоборье"],
-            ...(data.teams.length > 0 ? [["teams", "Команды"]] : []),
+            ...(data.categories[selected]!.teams.length > 0 ? [["teams", "Команды"]] : []),
             ...data.live.map((a) => [
               a.apparatus,
               SHORT[a.apparatus] ?? a.apparatus,
@@ -126,6 +130,19 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
           title={connected ? "На связи" : "Нет связи"}
         />
       </header>
+      {categories.length > 0 && route.view !== "auto" && route.view !== "now" && (
+        <nav className="categories">
+          {categories.map((c, i) => (
+            <a
+              key={c.id ?? "none"}
+              href={routeHash({ ...route, category: i })}
+              className={i === selected ? "active" : ""}
+            >
+              {c.name}
+            </a>
+          ))}
+        </nav>
+      )}
 
       {flash && (
         <div className="flash" key={flash.key}>
@@ -152,15 +169,17 @@ function kindFromView(view: string): SlideKind {
 }
 
 function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
-  const pageNote = slide.pages > 1 ? ` · ${slide.page + 1}/${slide.pages}` : "";
-  if (slide.kind === "now") return <NowView live={data.live} />;
+  if (slide.kind === "now") return <NowView live={data.live} categories={data.categories} />;
+  const category = data.categories[slide.category] ?? data.categories[0]!;
+  const pageNote =
+    (category.name ? ` · ${category.name}` : "") + (slide.pages > 1 ? ` · ${slide.page + 1}/${slide.pages}` : "");
   if (slide.kind === "aa") {
     return (
       <AllAroundTable
         rows={
           slide.pages > 1
-            ? pageRows(data.allAround, slide.page)
-            : data.allAround
+            ? pageRows(category.allAround, slide.page)
+            : category.allAround
         }
         apparatus={data.live.map((a) => a.apparatus)}
         note={pageNote}
@@ -170,13 +189,13 @@ function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
   if (slide.kind === "teams") {
     return (
       <TeamsTable
-        rows={slide.pages > 1 ? pageRows(data.teams, slide.page) : data.teams}
+        rows={slide.pages > 1 ? pageRows(category.teams, slide.page) : category.teams}
         note={pageNote}
       />
     );
   }
   const code = slide.kind.apparatus;
-  const rows = data.apparatus[code as LiveApparatus["apparatus"]] ?? [];
+  const rows = category.apparatus[code as LiveApparatus["apparatus"]] ?? [];
   return (
     <ApparatusTable
       code={code}
@@ -186,7 +205,9 @@ function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
   );
 }
 
-function NowView({ live }: { live: LiveApparatus[] }) {
+function NowView({ live, categories }: { live: LiveApparatus[]; categories: BoardData["categories"] }) {
+  const categoryName = (g: GymnastView) =>
+    categories.length > 1 ? categories.find((c) => c.id === g.categoryId)?.name : undefined;
   return (
     <section>
       <h1>Сейчас на снарядах</h1>
@@ -202,8 +223,10 @@ function NowView({ live }: { live: LiveApparatus[] }) {
                 {a.apparatus === "VT" && (
                   <span className="muted"> · прыжок {a.current.attempt}</span>
                 )}
-                {a.current.gymnast.club && (
-                  <div className="muted">{a.current.gymnast.club}</div>
+                {(a.current.gymnast.club || categoryName(a.current.gymnast)) && (
+                  <div className="muted">
+                    {[categoryName(a.current.gymnast), a.current.gymnast.club].filter(Boolean).join(" · ")}
+                  </div>
                 )}
               </div>
             ) : (

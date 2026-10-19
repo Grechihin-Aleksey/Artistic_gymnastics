@@ -6,6 +6,7 @@
  *
  * data-view: auto (по очереди), now (сейчас на снарядах), aa (многоборье),
  * teams (команды) или код снаряда (FX, VT, BB…). data-theme: light или dark.
+ * data-category: номер разряда по порядку, начиная с 1 (если разрядов несколько).
  */
 (function () {
   var script = document.currentScript;
@@ -20,6 +21,8 @@
     params.set("c", el.getAttribute("data-ag-results") || "");
     params.set("view", el.getAttribute("data-view") || "auto");
     params.set("theme", el.getAttribute("data-theme") || "light");
+    var category = Number(el.getAttribute("data-category"));
+    if (category > 1) params.set("cat", String(category - 1));
     params.set("embed", "1");
     var frame = document.createElement("iframe");
     frame.src = base + "/widget/#" + params.toString();

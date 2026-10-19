@@ -5,6 +5,16 @@ import { isRelay } from "./route";
 
 export type BoardData = BoardSnapshot;
 
+/** Снимок старого вида (до разрядов) мог остаться у ретранслятора: приводим к новому. */
+export function normalizeSnapshot(raw: BoardSnapshot): BoardData {
+  if (Array.isArray(raw.categories)) return raw;
+  const old = raw as unknown as Pick<BoardSnapshot["categories"][number], "allAround" | "teams" | "apparatus">;
+  return {
+    ...raw,
+    categories: [{ id: null, name: "", allAround: old.allAround ?? [], teams: old.teams ?? [], apparatus: old.apparatus ?? {} }],
+  };
+}
+
 interface BoardState {
   data: BoardData | null;
   connected: boolean;
@@ -34,7 +44,7 @@ function useHallBoard(competitionId: string, onApproved: (p: PerformanceView) =>
     fetch(path)
       .then(async (response) => {
         if (!response.ok) throw new Error(`${path}: ${response.status}`);
-        setData((await response.json()) as BoardData);
+        setData(normalizeSnapshot((await response.json()) as BoardSnapshot));
         setError(null);
       })
       .catch((e: Error) => setError(`Нет связи с сервером: ${e.message}`));
@@ -58,6 +68,7 @@ function useHallBoard(competitionId: string, onApproved: (p: PerformanceView) =>
     socket.on("disconnect", () => setConnected(false));
     socket.on(LIVE_EVENTS.called, schedule);
     socket.on(LIVE_EVENTS.reopened, schedule);
+    socket.on(LIVE_EVENTS.rotation, schedule);
     socket.on(LIVE_EVENTS.approved, (p: PerformanceView) => {
       onApproved(p);
       schedule();
@@ -86,7 +97,7 @@ function useRelayBoard(competitionId: string, onApproved: (p: PerformanceView) =
     };
     // Браузер сам переподключается и получает свежий снимок.
     events.onerror = () => setConnected(false);
-    events.addEventListener(RELAY_EVENTS.snapshot, (e) => setData(JSON.parse(e.data) as BoardData));
+    events.addEventListener(RELAY_EVENTS.snapshot, (e) => setData(normalizeSnapshot(JSON.parse(e.data) as BoardSnapshot)));
     events.addEventListener(RELAY_EVENTS.approved, (e) => onApproved(JSON.parse(e.data) as PerformanceView));
     // Если зал ещё ничего не прислал, через пару секунд говорим об этом.
     const empty = setTimeout(() => setError("Результаты появятся, когда начнутся выступления"), 3000);

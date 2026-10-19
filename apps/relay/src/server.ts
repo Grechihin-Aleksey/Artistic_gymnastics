@@ -17,9 +17,7 @@ const ingestSchema = z.object({
   snapshot: z.looseObject({
     competition: z.looseObject({ id: z.string(), name: z.string(), discipline: z.string() }),
     live: z.array(z.unknown()),
-    allAround: z.array(z.unknown()),
-    teams: z.array(z.unknown()),
-    apparatus: z.record(z.string(), z.array(z.unknown())),
+    categories: z.array(z.unknown()),
     generatedAt: z.string(),
   }),
   approved: z.array(z.looseObject({ id: z.string() })).default([]),

@@ -12,7 +12,13 @@ export function useLive(token: string, onChange: () => void): boolean {
       onChange();
     });
     socket.on("disconnect", () => setConnected(false));
-    for (const event of [LIVE_EVENTS.called, LIVE_EVENTS.approved, LIVE_EVENTS.reopened, LIVE_EVENTS.marksUpdated]) {
+    for (const event of [
+      LIVE_EVENTS.called,
+      LIVE_EVENTS.approved,
+      LIVE_EVENTS.reopened,
+      LIVE_EVENTS.marksUpdated,
+      LIVE_EVENTS.rotation,
+    ]) {
       socket.on(event, onChange);
     }
     return () => {

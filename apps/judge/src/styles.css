@@ -361,7 +361,8 @@ select {
 }
 
 .admin .protocols button,
-.admin .actions button {
+.admin .actions button,
+.admin .rotation .buttons button {
   min-height: 44px;
   padding: 6px 14px;
   font-size: 15px;
@@ -460,4 +461,54 @@ select {
   text-align: left;
   padding: 10px 14px;
   font-size: 17px;
+}
+
+.call-shift {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.call li button.next {
+  border: 2px solid var(--accent);
+}
+
+.admin .rotation table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin .rotation th,
+.admin .rotation td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin .rotation td.ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.admin .rotation .buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin .rotation .buttons .primary {
+  width: auto;
+  font-size: 16px;
+  padding: 6px 20px;
+}
+
+.call .second-vault {
+  margin-top: 12px;
+}
+
+.call .second-vault summary {
+  cursor: pointer;
+  color: var(--muted);
 }

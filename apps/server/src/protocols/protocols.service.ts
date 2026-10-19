@@ -5,8 +5,8 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { inquiries, judges, marks, performances, teams } from "../db/schema";
-import { ResultsService } from "../results/results.service";
+import { categories, inquiries, judges, marks, performances, teams } from "../db/schema";
+import { ResultsService, type CategoryScope } from "../results/results.service";
 import { renderPdf } from "./pdf";
 
 const DISCIPLINE_NAMES = { MAG: "мужчины", WAG: "женщины" } as const;
@@ -45,9 +45,9 @@ export class ProtocolsService {
     private readonly results: ResultsService,
   ) {}
 
-  async apparatus(competitionId: string, apparatus: Apparatus): Promise<Buffer> {
+  async apparatus(competitionId: string, apparatus: Apparatus, scope: CategoryScope = undefined): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
-    const rows = await this.results.apparatus(competitionId, apparatus, "average");
+    const rows = await this.results.apparatus(competitionId, apparatus, "average", scope);
     const eSeats = (
       await this.db
         .select({ seat: judges.seat })
@@ -107,16 +107,16 @@ export class ProtocolsService {
     if (isVault) notes.push("Итог опорного прыжка — среднее двух прыжков.");
     if (changedNote) notes.push("* Оценка D изменена апелляционным жюри по запросу тренера.");
     return renderPdf(
-      this.document(competition, `Протокол: ${APPARATUS_NAMES[apparatus]}`, [
+      this.document(competition, `Протокол: ${APPARATUS_NAMES[apparatus]}${await this.categoryTitle(competitionId, scope)}`, [
         rows.length === 0 ? emptyNote() : table(body),
         ...notes.map((n) => ({ text: n, style: "note" }) as Content),
       ]),
     );
   }
 
-  async allAround(competitionId: string): Promise<Buffer> {
+  async allAround(competitionId: string, scope: CategoryScope = undefined): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
-    const rows = await this.results.allAround(competitionId);
+    const rows = await this.results.allAround(competitionId, scope);
     const program = apparatusFor(competition.discipline);
     const teamNames = await this.teamNames(competitionId);
     const body: TableCell[][] = [
@@ -143,26 +143,26 @@ export class ProtocolsService {
     const notes = ["Опорный прыжок в многоборье — оценка за первый прыжок."];
     if (rows.some((r) => !r.complete)) notes.push("¹ Выступил(а) не на всех снарядах.");
     return renderPdf(
-      this.document(competition, "Протокол: личное многоборье", [
+      this.document(competition, `Протокол: личное многоборье${await this.categoryTitle(competitionId, scope)}`, [
         rows.length === 0 ? emptyNote() : table(body),
         ...notes.map((n) => ({ text: n, style: "note" }) as Content),
       ]),
     );
   }
 
-  async teams(competitionId: string): Promise<Buffer> {
+  async teams(competitionId: string, scope: CategoryScope = undefined): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
     const program = apparatusFor(competition.discipline);
     let ranked;
     try {
-      ranked = await this.results.teams(competitionId);
+      ranked = await this.results.teams(competitionId, scope);
     } catch (e) {
       if (e instanceof UnprocessableEntityException) {
         throw new UnprocessableEntityException(`Командный протокол не собрать: ${e.message}`);
       }
       throw e;
     }
-    const people = await this.results.allAround(competitionId);
+    const people = await this.results.allAround(competitionId, scope);
     const body: TableCell[][] = [
       [th("Место"), th("Команда / участник"), ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")), th("Сумма", "right")],
     ];
@@ -195,7 +195,7 @@ export class ProtocolsService {
     }
     const format = `${competition.teamRoster}-${competition.teamPerApparatus}-${competition.teamCounting}`;
     return renderPdf(
-      this.document(competition, "Протокол: командное первенство", [
+      this.document(competition, `Протокол: командное первенство${await this.categoryTitle(competitionId, scope)}`, [
         ranked.length === 0 ? emptyNote() : table(body, 1),
         { text: `Формат ${format}: в составе до ${competition.teamRoster}, на снаряде выступают до ${competition.teamPerApparatus}, в зачёт идут ${competition.teamCounting} лучших оценки.`, style: "note" },
         { text: "В скобках — оценки, не вошедшие в зачёт команды.", style: "note" },
@@ -251,6 +251,17 @@ export class ProtocolsService {
       byGymnast.set(p.gymnastId, list);
     }
     return byGymnast;
+  }
+
+  /** Приписка к заголовку протокола с названием разряда. */
+  private async categoryTitle(competitionId: string, scope: CategoryScope): Promise<string> {
+    if (scope === undefined) return "";
+    if (scope === null) return " · без разряда";
+    const [row] = await this.db
+      .select({ name: categories.name })
+      .from(categories)
+      .where(and(eq(categories.id, scope), eq(categories.competitionId, competitionId)));
+    return row ? ` · ${row.name}` : "";
   }
 
   private async teamNames(competitionId: string) {

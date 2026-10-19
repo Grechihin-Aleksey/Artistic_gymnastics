@@ -4,6 +4,8 @@ import { AuthGuard, AuthService } from "./auth/auth";
 import { CompetitionsController } from "./competitions/competitions.controller";
 import { CompetitionsService } from "./competitions/competitions.service";
 import { JudgesController } from "./competitions/judges.controller";
+import { RotationsController } from "./competitions/rotations.controller";
+import { RotationsService } from "./competitions/rotations.service";
 import { APP_CONFIG, type AppConfig } from "./config";
 import { DbModule } from "./db/db.module";
 import { InquiriesController } from "./inquiries/inquiries.controller";
@@ -34,6 +36,7 @@ export class AppModule {
       controllers: [
         CompetitionsController,
         JudgesController,
+        RotationsController,
         PerformancesController,
         ResultsController,
         InquiriesController,
@@ -43,6 +46,7 @@ export class AppModule {
         AuthService,
         { provide: APP_GUARD, useClass: AuthGuard },
         CompetitionsService,
+        RotationsService,
         PerformancesService,
         ResultsService,
         InquiriesService,

@@ -13,9 +13,7 @@ function snapshot(name: string, generatedAt: string): BoardSnapshot {
   return {
     competition: { id: ID, name, discipline: "WAG" },
     live: [],
-    allAround: [],
-    teams: [],
-    apparatus: {},
+    categories: [{ id: null, name: "", allAround: [], teams: [], apparatus: {} }],
     generatedAt,
   };
 }

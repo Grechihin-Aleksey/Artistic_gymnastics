@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { apparatusFor } from "@ag/scoring";
+import { apparatusFor, defaultStart } from "@ag/scoring";
 import type {
   CreateCompetitionInput,
   CreateGymnastInput,
@@ -7,10 +7,10 @@ import type {
   CreateTeamInput,
   ImportGymnastsInput,
 } from "@ag/shared";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, max } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
-import { competitions, gymnasts, judges, teams } from "../db/schema";
+import { categories, competitions, gymnasts, judges, shifts, teams } from "../db/schema";
 
 export type CompetitionRow = typeof competitions.$inferSelect;
 
@@ -74,11 +74,13 @@ export class CompetitionsService {
   }
 
   /**
-   * Добавляет участников списком. Команды находит по названию или создаёт.
+   * Добавляет участников списком. Разряды, команды и смены находит по названию
+   * (номеру) или создаёт. Команда принадлежит разряду: одноимённые команды
+   * разных разрядов считаются отдельно. Порядок выхода в смене — порядок строк.
    * Всё или ничего: при ошибке в любой строке список не меняется.
    */
   async importGymnasts(competitionId: string, input: ImportGymnastsInput) {
-    await this.get(competitionId);
+    const competition = await this.get(competitionId);
     const bibs = input.rows.map((r) => r.bib);
     const repeated = bibs.filter((b, i) => bibs.indexOf(b) !== i);
     if (repeated.length > 0) {
@@ -92,28 +94,88 @@ export class CompetitionsService {
       if (taken.length > 0) {
         throw new BadRequestException(`Номера уже заняты: ${taken.map((t) => t.bib).join(", ")}`);
       }
-      const teamIds = new Map(
-        (await tx.select().from(teams).where(eq(teams.competitionId, competitionId))).map((t) => [t.name, t.id]),
-      );
-      for (const name of new Set(input.rows.map((r) => r.team).filter((t): t is string => Boolean(t)))) {
-        if (teamIds.has(name)) continue;
-        const [team] = await tx.insert(teams).values({ competitionId, name }).returning();
-        teamIds.set(name, team!.id);
+
+      const existingCategories = await tx.select().from(categories).where(eq(categories.competitionId, competitionId));
+      const categoryIds = new Map(existingCategories.map((c) => [c.name, c.id]));
+      let position = Math.max(-1, ...existingCategories.map((c) => c.position));
+      for (const name of new Set(input.rows.map((r) => r.category).filter((c): c is string => Boolean(c)))) {
+        if (categoryIds.has(name)) continue;
+        const [row] = await tx.insert(categories).values({ competitionId, name, position: ++position }).returning();
+        categoryIds.set(name, row!.id);
       }
+      const categoryOf = (name: string | undefined) => (name ? categoryIds.get(name)! : null);
+
+      const teamKey = (name: string, categoryId: string | null) => `${categoryId ?? ""}\u0000${name}`;
+      const teamIds = new Map(
+        (await tx.select().from(teams).where(eq(teams.competitionId, competitionId))).map((t) => [
+          teamKey(t.name, t.categoryId),
+          t.id,
+        ]),
+      );
+      for (const r of input.rows) {
+        if (!r.team) continue;
+        const categoryId = categoryOf(r.category);
+        const key = teamKey(r.team, categoryId);
+        if (teamIds.has(key)) continue;
+        const [team] = await tx.insert(teams).values({ competitionId, name: r.team, categoryId }).returning();
+        teamIds.set(key, team!.id);
+      }
+
+      const shiftNumbers = [...new Set(input.rows.map((r) => r.shift).filter((n): n is number => n !== undefined))];
+      const nextOrder = new Map<number, number>();
+      if (shiftNumbers.length > 0) {
+        const known = new Set(
+          (await tx.select({ number: shifts.number }).from(shifts).where(eq(shifts.competitionId, competitionId))).map(
+            (s) => s.number,
+          ),
+        );
+        for (const number of shiftNumbers) {
+          if (!known.has(number)) {
+            await tx
+              .insert(shifts)
+              .values({ competitionId, number, startApparatus: defaultStart(competition.discipline, number) });
+          }
+          const [last] = await tx
+            .select({ value: max(gymnasts.startOrder) })
+            .from(gymnasts)
+            .where(and(eq(gymnasts.competitionId, competitionId), eq(gymnasts.shift, number)));
+          nextOrder.set(number, (last?.value ?? 0) + 1);
+        }
+      }
+
       return tx
         .insert(gymnasts)
         .values(
-          input.rows.map((r) => ({
-            competitionId,
-            bib: r.bib,
-            lastName: r.lastName,
-            firstName: r.firstName,
-            club: r.club ?? null,
-            teamId: r.team ? teamIds.get(r.team)! : null,
-          })),
+          input.rows.map((r) => {
+            const categoryId = categoryOf(r.category);
+            let startOrder: number | null = null;
+            if (r.shift !== undefined) {
+              startOrder = nextOrder.get(r.shift)!;
+              nextOrder.set(r.shift, startOrder + 1);
+            }
+            return {
+              competitionId,
+              bib: r.bib,
+              lastName: r.lastName,
+              firstName: r.firstName,
+              club: r.club ?? null,
+              teamId: r.team ? teamIds.get(teamKey(r.team, categoryId))! : null,
+              categoryId,
+              shift: r.shift ?? null,
+              startOrder,
+            };
+          }),
         )
         .returning();
     });
+  }
+
+  listCategories(competitionId: string) {
+    return this.db
+      .select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .where(eq(categories.competitionId, competitionId))
+      .orderBy(asc(categories.position));
   }
 
   async listGymnasts(competitionId: string) {

@@ -82,11 +82,19 @@ export const importGymnastsSchema = z.object({
         firstName: z.string().min(1).max(100),
         club: z.string().max(200).optional(),
         team: z.string().max(200).optional(),
+        /** Разряд или возрастная группа; команды считаются внутри разряда. */
+        category: z.string().max(100).optional(),
+        /** Номер смены; порядок выхода в смене — порядок строк. */
+        shift: z.number().int().min(1).max(50).optional(),
       }),
     )
     .min(1)
     .max(1000),
 });
+
+export const setShiftStartSchema = z.object({ startApparatus: apparatusSchema });
+
+export const setRotationSchema = z.object({ rotation: z.number().int().min(0).max(20) });
 
 /** Запрос тренера на пересмотр оценки D (FIG, Технический регламент, ст. 8.5). */
 export const createInquirySchema = z.object({
@@ -110,6 +118,8 @@ export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
+export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
+export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
@@ -153,6 +163,8 @@ export const LIVE_EVENTS = {
   reopened: "performance.reopened",
   /** Сервер → все: вызван следующий участник. */
   called: "performance.called",
+  /** Сервер → все: смены перешли на следующий снаряд или поменялся стартовый снаряд. */
+  rotation: "competition.rotation",
 } as const;
 
 export function competitionRoom(competitionId: string): string {
@@ -182,6 +194,7 @@ export interface GymnastView {
   lastName: string;
   club: string | null;
   teamId: string | null;
+  categoryId: string | null;
 }
 
 export interface ApparatusResultRow {
@@ -227,12 +240,37 @@ export interface LiveApparatus {
 export interface BoardSnapshot {
   competition: { id: string; name: string; discipline: (typeof DISCIPLINES)[number] };
   live: LiveApparatus[];
+  /** Таблицы по разрядам. Если разрядов нет — одна запись с id null и пустым именем. */
+  categories: CategoryResults[];
+  /** Когда снимок собран на сервере в зале (ISO). */
+  generatedAt: string;
+}
+
+export interface CategoryResults {
+  id: string | null;
+  name: string;
   allAround: AllAroundRow[];
   /** Пусто, если командного зачёта нет или состав команд не подходит под формат. */
   teams: TeamResultRow[];
   apparatus: Partial<Record<(typeof APPARATUS)[number], ApparatusResultRow[]>>;
-  /** Когда снимок собран на сервере в зале (ISO). */
-  generatedAt: string;
+}
+
+/** Смены на снарядах в текущей ротации. */
+export interface RotationView {
+  /** Номер ротации с нуля. */
+  rotation: number;
+  /** Сколько ротаций в соревновании: по числу снарядов. */
+  rotations: number;
+  shifts: ShiftView[];
+}
+
+export interface ShiftView {
+  number: number;
+  startApparatus: (typeof APPARATUS)[number];
+  /** Снаряд смены в текущей ротации. */
+  apparatus: (typeof APPARATUS)[number];
+  /** Участники в порядке выхода в этой ротации. */
+  gymnastIds: string[];
 }
 
 /** Тело запроса POST /ingest/:competitionId на ретранслятор. */

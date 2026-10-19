@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { fromPoints, scorePerformance, toPoints } from "@ag/scoring";
-import type { JudgeRole, MarkKind, PerformanceView, SubmitMarkInput } from "@ag/shared";
+import type { JudgeRole, MarkKind, PerformanceView, RotationView, SubmitMarkInput } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { Keypad } from "./Keypad";
 import { APPARATUS_NAMES, KIND_NAMES, KINDS_BY_ROLE, ROLE_NAMES, judgeLabel, parseScore } from "./labels";
@@ -25,6 +25,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   const { judge, competition } = me;
   const [performances, setPerformances] = useState<PerformanceView[]>([]);
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
+  const [rotation, setRotation] = useState<RotationView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const queue = useMemo(
@@ -49,14 +50,16 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
 
   const refresh = useCallback(async () => {
     try {
-      const [list, people] = await Promise.all([
+      const [list, people, rotationView] = await Promise.all([
         apiRequest<PerformanceView[]>(`/competitions/${competition.id}/performances?apparatus=${judge.apparatus}`, {
           token,
         }),
         apiRequest<Gymnast[]>(`/competitions/${competition.id}/gymnasts`),
+        apiRequest<RotationView>(`/competitions/${competition.id}/rotation`),
       ]);
       setPerformances(list);
       setGymnasts(new Map(people.map((g) => [g.id, g])));
+      setRotation(rotationView);
     } catch {
       // покажем старые данные; индикатор связи скажет, что сервер недоступен
     }
@@ -144,6 +147,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               apparatus={judge.apparatus}
               performances={performances}
               gymnasts={gymnasts}
+              rotation={rotation}
               onDone={refresh}
             />
           )}
@@ -287,6 +291,7 @@ function CallPanel({
   apparatus,
   performances,
   gymnasts,
+  rotation,
   onDone,
 }: {
   token: string;
@@ -294,11 +299,17 @@ function CallPanel({
   apparatus: string;
   performances: PerformanceView[];
   gymnasts: Map<string, Gymnast>;
+  rotation: RotationView | null;
   onDone: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Смены, которые в этой ротации стоят на снаряде, в порядке выхода.
+  const shiftsHere = rotation?.shifts.filter((s) => s.apparatus === apparatus) ?? [];
+  const byShift = rotation !== null && rotation.shifts.length > 0 && !showAll;
 
   const firstDone = new Set(performances.filter((p) => p.attempt === 1).map((p) => p.gymnastId));
   const secondDone = new Set(performances.filter((p) => p.attempt === 2).map((p) => p.gymnastId));
@@ -307,15 +318,18 @@ function CallPanel({
   );
   const matches = (g: Gymnast) =>
     !filter || String(g.bib).startsWith(filter) || g.lastName.toLowerCase().startsWith(filter.toLowerCase());
-  const everyone = [...gymnasts.values()].sort((a, b) => a.bib - b.bib);
-  const candidates: { gymnast: Gymnast; attempt: number }[] = [
-    ...everyone.filter((g) => !firstDone.has(g.id) && matches(g)).map((gymnast) => ({ gymnast, attempt: 1 })),
-    ...(apparatus === "VT"
-      ? everyone
-          .filter((g) => approvedFirst.has(g.id) && !secondDone.has(g.id) && matches(g))
-          .map((gymnast) => ({ gymnast, attempt: 2 }))
-      : []),
-  ];
+  const everyone = byShift
+    ? shiftsHere.flatMap((s) => s.gymnastIds.map((id) => gymnasts.get(id)).filter((g): g is Gymnast => Boolean(g)))
+    : [...gymnasts.values()].sort((a, b) => a.bib - b.bib);
+  const first = everyone.filter((g) => !firstDone.has(g.id) && matches(g));
+  // Второй прыжок — по желанию (на финал в опорном прыжке), он не держит смену.
+  const second =
+    apparatus === "VT" ? everyone.filter((g) => approvedFirst.has(g.id) && !secondDone.has(g.id) && matches(g)) : [];
+
+  let empty = "Все участники выступили на этом снаряде";
+  if (filter) empty = "Никого не найдено";
+  else if (byShift && shiftsHere.length === 0) empty = "В этой ротации на снаряде нет смены";
+  else if (byShift) empty = "Смена выступила на этом снаряде. Ждём перехода на следующую ротацию.";
 
   const call = async (gymnast: Gymnast, attempt: number) => {
     setBusy(true);
@@ -337,6 +351,19 @@ function CallPanel({
 
   return (
     <section className="call">
+      {rotation && rotation.shifts.length > 0 && (
+        <div className="call-shift">
+          <span>
+            {shiftsHere.length > 0
+              ? `Смена ${shiftsHere.map((s) => s.number).join(", ")}`
+              : "Смены нет"}{" "}
+            · ротация {rotation.rotation + 1} из {rotation.rotations}
+          </span>
+          <button type="button" className="link" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Только смена" : "Все участники"}
+          </button>
+        </div>
+      )}
       <input
         className="call-filter"
         inputMode="numeric"
@@ -345,19 +372,37 @@ function CallPanel({
         onChange={(e) => setFilter(e.target.value.trim())}
       />
       {message && <div className="alert">{message}</div>}
-      {candidates.length === 0 ? (
-        <p className="muted">{filter ? "Никого не найдено" : "Все участники выступили на этом снаряде"}</p>
-      ) : (
+      {first.length === 0 && <p className="muted">{empty}</p>}
+      {first.length > 0 && (
         <ul>
-          {candidates.slice(0, 30).map(({ gymnast, attempt }) => (
-            <li key={`${gymnast.id}:${attempt}`}>
-              <button type="button" disabled={busy} onClick={() => void call(gymnast, attempt)}>
+          {first.slice(0, 30).map((gymnast, i) => (
+            <li key={gymnast.id}>
+              <button
+                type="button"
+                className={byShift && i === 0 && !filter ? "next" : undefined}
+                disabled={busy}
+                onClick={() => void call(gymnast, 1)}
+              >
                 <strong>№{gymnast.bib}</strong> {gymnast.lastName} {gymnast.firstName}
-                {attempt === 2 && <span className="muted"> · второй прыжок</span>}
               </button>
             </li>
           ))}
         </ul>
+      )}
+      {second.length > 0 && (
+        <details className="second-vault" open={first.length === 0 && !byShift}>
+          <summary>Второй прыжок: {second.length}</summary>
+          <ul>
+            {second.slice(0, 30).map((gymnast) => (
+              <li key={gymnast.id}>
+                <button type="button" disabled={busy} onClick={() => void call(gymnast, 2)}>
+                  <strong>№{gymnast.bib}</strong> {gymnast.lastName} {gymnast.firstName}
+                  <span className="muted"> · второй прыжок</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </section>
   );

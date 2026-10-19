@@ -111,21 +111,24 @@ a {
   white-space: nowrap;
 }
 
-.top nav {
+.top nav,
+nav.categories {
   display: flex;
   flex-wrap: wrap;
   gap: 0.2rem;
   font-size: 0.8rem;
 }
 
-.top nav a {
+.top nav a,
+nav.categories a {
   text-decoration: none;
   color: var(--muted);
   padding: 0.2rem 0.5rem;
   border-radius: 0.3rem;
 }
 
-.top nav a.active {
+.top nav a.active,
+nav.categories a.active {
   color: var(--bg);
   background: var(--accent);
 }
@@ -311,4 +314,9 @@ td {
   .total {
     font-size: 1.1rem;
   }
+}
+
+nav.categories {
+  padding: 0.4rem 1.2rem;
+  border-bottom: 1px solid var(--line);
 }
