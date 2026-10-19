@@ -12,7 +12,11 @@ export class JudgesController {
   async me(@CurrentPrincipal() principal: Principal) {
     if (principal.kind !== "judge") throw new Error("unreachable");
     const { tokenHash: _, ...judge } = principal.judge;
-    return { judge, competition: await this.competitions.get(judge.competitionId) };
+    return {
+      judge,
+      competition: await this.competitions.get(judge.competitionId),
+      panel: await this.competitions.panel(judge.competitionId, judge.apparatus),
+    };
   }
 
   @Post("judges/:id/token")

@@ -51,6 +51,8 @@ export const createJudgeSchema = z.object({
   role: judgeRoleSchema,
   /** Номер места в бригаде: D1, D2, E1…E7. */
   seat: z.number().int().min(1).max(10),
+  /** Только для старшего судьи: один планшет на снаряд, он вводит оценки всей бригады. */
+  enterAllMarks: z.boolean().default(false),
 });
 
 export const createPerformanceSchema = z.object({
@@ -66,6 +68,16 @@ export const submitMarkSchema = z.object({
   performanceId: z.uuid(),
   kind: markKindSchema,
   value: score,
+});
+
+/**
+ * Оценки всей бригады, введённые на единственном планшете снаряда.
+ * Сбавки E — по местам судей E1, E2, …
+ */
+export const tabletScoreSchema = z.object({
+  d: score,
+  e: z.array(score.max(10)).min(1).max(10),
+  neutral: score.optional(),
 });
 
 export const reopenPerformanceSchema = z.object({
@@ -116,6 +128,7 @@ export type CreateGymnastInput = z.infer<typeof createGymnastSchema>;
 export type CreateJudgeInput = z.infer<typeof createJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
+export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;

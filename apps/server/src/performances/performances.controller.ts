@@ -4,9 +4,11 @@ import {
   createPerformanceSchema,
   reopenPerformanceSchema,
   submitMarkSchema,
+  tabletScoreSchema,
   type CreatePerformanceInput,
   type ReopenPerformanceInput,
   type SubmitMarkInput,
+  type TabletScoreInput,
 } from "@ag/shared";
 import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
@@ -53,6 +55,17 @@ export class PerformancesController {
   @RequireAccess("admin-or-judge")
   approve(@CurrentPrincipal() principal: Principal, @Param("id", ParseUUIDPipe) id: string) {
     return this.performances.approve(principal, id);
+  }
+
+  /** Один планшет на снаряд: старший судья вводит оценки всей бригады и сразу утверждает. */
+  @Post("performances/:id/tablet-score")
+  @RequireAccess("judge")
+  scoreFromTablet(
+    @CurrentPrincipal() principal: Principal,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(tabletScoreSchema)) body: TabletScoreInput,
+  ) {
+    return this.performances.scoreFromTablet(principal, id, body);
   }
 
   @Post("performances/:id/reopen")

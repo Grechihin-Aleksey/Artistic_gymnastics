@@ -192,6 +192,9 @@ export class CompetitionsService {
     if (!apparatusFor(competition.discipline).includes(input.apparatus)) {
       throw new BadRequestException(`Снаряда ${input.apparatus} нет в программе ${competition.discipline}`);
     }
+    if (input.enterAllMarks && input.role !== "SUPERVISOR") {
+      throw new BadRequestException("Один планшет на снаряд выдаётся старшему судье");
+    }
     const token = newToken();
     const [row] = await this.db
       .insert(judges)
@@ -212,6 +215,16 @@ export class CompetitionsService {
     if (!row) throw new NotFoundException("Судья не найден");
     const { tokenHash: _, ...judge } = row;
     return { ...judge, token };
+  }
+
+  /** Бригада снаряда без токенов: планшету снаряда нужны места и фамилии судей. */
+  async panel(competitionId: string, apparatus: string) {
+    const rows = await this.db
+      .select({ id: judges.id, name: judges.name, role: judges.role, seat: judges.seat })
+      .from(judges)
+      .where(and(eq(judges.competitionId, competitionId), eq(judges.apparatus, apparatus as never)))
+      .orderBy(asc(judges.role), asc(judges.seat));
+    return rows;
   }
 
   async listJudges(competitionId: string) {

@@ -1,0 +1,1 @@
+ALTER TABLE "judges" ADD COLUMN "enter_all_marks" boolean DEFAULT false NOT NULL;
