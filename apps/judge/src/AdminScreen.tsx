@@ -21,6 +21,8 @@ interface Judge {
   apparatus: string;
   role: JudgeRole;
   seat: number;
+  /** Планшет снаряда: старший судья вводит оценки всей бригады. */
+  enterAllMarks: boolean;
 }
 
 interface IssuedJudge extends Judge {
@@ -88,9 +90,16 @@ export function AdminScreen() {
           apparatus: String(form.get("apparatus")),
           role: String(form.get("role")),
           seat: Number(form.get("seat")),
+          enterAllMarks: form.get("enterAllMarks") === "on",
         },
       });
-      setIssued((list) => [...list, judge]);
+      // Если на снаряде один планшет, судьям D и E QR-коды не нужны: оценки за них вводит старший.
+      const tabletApparatus = new Set(
+        [...judges, judge].filter((j) => j.enterAllMarks).map((j) => j.apparatus),
+      );
+      setIssued((list) =>
+        [...list, judge].filter((j) => j.role === "SUPERVISOR" || !tabletApparatus.has(j.apparatus)),
+      );
       await loadJudges();
     } catch (e) {
       setError((e as Error).message);
@@ -207,6 +216,10 @@ export function AdminScreen() {
             Место в бригаде
             <input name="seat" type="number" min={1} max={10} defaultValue={1} required />
           </label>
+          <label className="check wide">
+            <input name="enterAllMarks" type="checkbox" />
+            Один планшет на снаряд: старший судья вводит оценки всей бригады (судьям D и E QR-коды не нужны)
+          </label>
           <button type="submit" className="primary">
             Добавить судью
           </button>
@@ -219,7 +232,10 @@ export function AdminScreen() {
             {judges.map((j) => (
               <tr key={j.id}>
                 <td>{APPARATUS_NAMES[j.apparatus]}</td>
-                <td>{judgeLabel(j.role, j.seat)}</td>
+                <td>
+                  {judgeLabel(j.role, j.seat)}
+                  {j.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
+                </td>
                 <td>{j.name}</td>
                 <td>
                   <button type="button" className="link" onClick={() => void reissue(j)}>

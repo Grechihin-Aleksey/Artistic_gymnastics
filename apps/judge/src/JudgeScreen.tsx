@@ -8,9 +8,26 @@ import { MarkQueue, type Rejected, type SendOutcome } from "./markQueue";
 import { useLive } from "./useLive";
 import { uuid } from "./uuid";
 
+interface PanelJudge {
+  id: string;
+  name: string;
+  role: JudgeRole;
+  seat: number;
+}
+
 interface Me {
-  judge: { id: string; name: string; apparatus: string; role: JudgeRole; seat: number; competitionId: string };
+  judge: {
+    id: string;
+    name: string;
+    apparatus: string;
+    role: JudgeRole;
+    seat: number;
+    competitionId: string;
+    /** Один планшет на снаряд: старший судья вводит оценки всей бригады. */
+    enterAllMarks?: boolean;
+  };
   competition: { id: string; name: string; discipline: string };
+  panel?: PanelJudge[];
 }
 
 interface Gymnast {
@@ -118,18 +135,30 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       {current ? (
         <main className="work">
           <GymnastCard gymnast={gymnasts.get(current.gymnastId)} performance={current} />
-          <div className="inputs">
-            {KINDS_BY_ROLE[judge.role].map((kind) => (
-              <MarkInput
-                key={`${current.id}:${kind}`}
-                kind={kind}
-                sent={current.marks.find((m) => m.judgeId === judge.id && m.kind === kind)?.value}
-                pending={queued.find((m) => m.performanceId === current.id && m.kind === kind)?.value}
-                onSubmit={(value) => submit(kind, value)}
-              />
-            ))}
-          </div>
-          {judge.role === "SUPERVISOR" && <SupervisorPanel token={token} performance={current} onDone={refresh} />}
+          {judge.enterAllMarks ? (
+            <TabletScoring
+              key={current.id}
+              token={token}
+              performance={current}
+              panel={me.panel ?? []}
+              onDone={refresh}
+            />
+          ) : (
+            <>
+              <div className="inputs">
+                {KINDS_BY_ROLE[judge.role].map((kind) => (
+                  <MarkInput
+                    key={`${current.id}:${kind}`}
+                    kind={kind}
+                    sent={current.marks.find((m) => m.judgeId === judge.id && m.kind === kind)?.value}
+                    pending={queued.find((m) => m.performanceId === current.id && m.kind === kind)?.value}
+                    onSubmit={(value) => submit(kind, value)}
+                  />
+                ))}
+              </div>
+              {judge.role === "SUPERVISOR" && <SupervisorPanel token={token} performance={current} onDone={refresh} />}
+            </>
+          )}
         </main>
       ) : (
         <main className="waiting">
@@ -275,6 +304,125 @@ function SupervisorPanel({
       {preview && <div className="preview">Предварительно: {preview}</div>}
       {message && <div className="alert">{message}</div>}
       <button type="button" className="primary approve" disabled={busy || dValues.size !== 1} onClick={approve}>
+        Утвердить
+      </button>
+    </section>
+  );
+}
+
+/**
+ * Один планшет на снаряд: оценки всей бригады вводятся здесь по карточкам судей.
+ * Оценки записываются за судьями бригады, итог утверждается одной кнопкой.
+ */
+function TabletScoring({
+  token,
+  performance,
+  panel,
+  onDone,
+}: {
+  token: string;
+  performance: PerformanceView;
+  panel: PanelJudge[];
+  onDone: () => Promise<void>;
+}) {
+  const eJudges = panel.filter((j) => j.role === "E").sort((a, b) => a.seat - b.seat);
+  const dJudge = panel.find((j) => j.role === "D");
+  const [d, setD] = useState("");
+  const [e, setE] = useState<string[]>(() => eJudges.map(() => ""));
+  const [neutral, setNeutral] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // На планшете с русской раскладкой вместо точки часто ставят запятую.
+  const read = (text: string, kind: MarkKind) => parseScore(text.trim().replace(",", "."), kind);
+  const dValue = read(d, "D");
+  const eValues = e.map((x) => read(x, "E"));
+  const neutralValue = neutral.trim() ? read(neutral, "NEUTRAL") : 0;
+  const complete =
+    dValue !== null && eValues.every((v): v is number => v !== null) && neutralValue !== null && eJudges.length > 0;
+
+  let preview: string | null = null;
+  if (complete) {
+    const score = scorePerformance({
+      d: toPoints(dValue),
+      eDeductions: eValues.map((v) => toPoints(v!)),
+      neutral: toPoints(neutralValue),
+    });
+    preview = `D ${fromPoints(score.d).toFixed(3)} + E ${fromPoints(score.e).toFixed(3)}${
+      score.neutral > 0 ? ` − ${fromPoints(score.neutral).toFixed(3)}` : ""
+    } = ${fromPoints(score.total).toFixed(3)}`;
+  }
+
+  const approve = async () => {
+    if (!complete) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await apiRequest(`/performances/${performance.id}/tablet-score`, {
+        token,
+        method: "POST",
+        body: { d: dValue, e: eValues, ...(neutralValue ? { neutral: neutralValue } : {}) },
+      });
+      await onDone();
+    } catch (err) {
+      setMessage(err instanceof ApiError && err.status === 0 ? "Нет связи с сервером, оценки сохранены на экране" : (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Enter переводит к следующему полю, на последнем — утверждает.
+  const next = (ev: React.KeyboardEvent<HTMLInputElement>) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const fields = [...document.querySelectorAll<HTMLInputElement>(".tablet input")];
+    const i = fields.indexOf(ev.currentTarget);
+    if (i + 1 < fields.length) fields[i + 1]!.focus();
+    else void approve();
+  };
+
+  if (!dJudge || eJudges.length === 0) {
+    return (
+      <section className="tablet">
+        <div className="alert">
+          Секретариат ещё не завёл судей D и E этого снаряда. Их фамилии и оценки идут в протокол.
+        </div>
+      </section>
+    );
+  }
+
+  const field = (label: string, value: string, onChange: (v: string) => void, valid: boolean, autoFocus = false) => (
+    <label className={value && !valid ? "invalid" : undefined}>
+      <span>{label}</span>
+      <input
+        inputMode="decimal"
+        autoComplete="off"
+        value={value}
+        autoFocus={autoFocus}
+        onKeyDown={next}
+        onChange={(ev) => onChange(ev.target.value)}
+      />
+    </label>
+  );
+
+  return (
+    <section className="tablet">
+      <h2>Оценки бригады</h2>
+      <div className="tablet-grid">
+        {field(`D · ${dJudge.name}`, d, setD, dValue !== null, true)}
+        {eJudges.map((j, i) =>
+          field(
+            `E${j.seat} · ${j.name}`,
+            e[i]!,
+            (v) => setE((list) => list.map((x, k) => (k === i ? v : x))),
+            eValues[i] !== null,
+          ),
+        )}
+        {field("Нейтральная сбавка", neutral, setNeutral, neutralValue !== null)}
+      </div>
+      {preview && <div className="preview">Итог: {preview}</div>}
+      {message && <div className="alert">{message}</div>}
+      <button type="button" className="primary approve" disabled={busy || !complete} onClick={() => void approve()}>
         Утвердить
       </button>
     </section>

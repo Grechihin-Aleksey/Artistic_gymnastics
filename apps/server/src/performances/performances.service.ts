@@ -13,7 +13,9 @@ import {
   type MarkKind,
   type PerformanceView,
   type SubmitMarkInput,
+  type TabletScoreInput,
 } from "@ag/shared";
+import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import type { JudgeRow, Principal } from "../auth/auth";
 import { CompetitionsService } from "../competitions/competitions.service";
@@ -192,6 +194,57 @@ export class PerformancesService {
     const view = await this.view(perf.id);
     this.live.toPanel(perf.competitionId, perf.apparatus, LIVE_EVENTS.marksUpdated, view);
     return view;
+  }
+
+  /**
+   * Один планшет на снаряд. Старший судья вводит D, сбавки E по местам и
+   * нейтральную сбавку; оценки записываются за судьями бригады (так они попадут
+   * в протокол), в журнал — что их ввели с планшета снаряда. Затем оценка
+   * утверждается обычным порядком.
+   */
+  async scoreFromTablet(principal: Principal, id: string, input: TabletScoreInput): Promise<PerformanceView> {
+    if (principal.kind !== "judge" || principal.judge.role !== "SUPERVISOR" || !principal.judge.enterAllMarks) {
+      throw new ForbiddenException("Вводить оценки всей бригады может только планшет снаряда");
+    }
+    const tablet = principal.judge;
+    await this.db.transaction(async (tx) => {
+      const [perf] = await tx.select().from(performances).where(eq(performances.id, id)).for("update");
+      if (!perf) throw new NotFoundException("Выступление не найдено");
+      if (perf.competitionId !== tablet.competitionId || perf.apparatus !== tablet.apparatus) {
+        throw new ForbiddenException("Выступление проходит не на вашем снаряде");
+      }
+      if (perf.status !== "SCORING") throw new ConflictException("Оценка уже утверждена");
+
+      const panel = await tx
+        .select()
+        .from(judges)
+        .where(and(eq(judges.competitionId, perf.competitionId), eq(judges.apparatus, perf.apparatus)))
+        .orderBy(asc(judges.seat));
+      const dJudges = panel.filter((j) => j.role === "D");
+      const eJudges = panel.filter((j) => j.role === "E");
+      if (dJudges.length === 0 || eJudges.length === 0) {
+        throw new ConflictException("Заведите судей D и E этого снаряда: их фамилии и оценки идут в протокол");
+      }
+      if (input.e.length !== eJudges.length) {
+        throw new BadRequestException(`Сбавок E ${input.e.length}, а судей E в бригаде ${eJudges.length}`);
+      }
+
+      await tx.delete(marks).where(eq(marks.performanceId, perf.id));
+      const d = toPoints(input.d);
+      const rows = [
+        ...dJudges.map((j) => ({ judgeId: j.id, kind: "D" as const, value: d })),
+        ...eJudges.map((j, i) => ({ judgeId: j.id, kind: "E" as const, value: toPoints(input.e[i]!) })),
+        ...(input.neutral ? [{ judgeId: tablet.id, kind: "NEUTRAL" as const, value: toPoints(input.neutral) }] : []),
+      ];
+      await tx.insert(marks).values(rows.map((r) => ({ id: randomUUID(), performanceId: perf.id, ...r })));
+      await tx.insert(auditLog).values({
+        competitionId: perf.competitionId,
+        actor: `judge:${tablet.id}`,
+        action: "marks.entered_from_tablet",
+        details: { performanceId: perf.id, marks: rows },
+      });
+    });
+    return this.approve(principal, id);
   }
 
   /** Утверждение оценки: сервер считает итог по правилам FIG и публикует его. */

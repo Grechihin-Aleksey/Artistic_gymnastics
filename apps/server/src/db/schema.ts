@@ -106,6 +106,11 @@ export const judges = pgTable(
     apparatus: apparatusEnum("apparatus").notNull(),
     role: judgeRoleEnum("role").notNull(),
     seat: integer("seat").notNull(),
+    /**
+     * Один планшет на снаряд: старший судья вводит оценки всей бригады сам.
+     * Судьи D и E всё равно заводятся — их фамилии и оценки идут в протокол.
+     */
+    enterAllMarks: boolean("enter_all_marks").notNull().default(false),
     /** SHA-256 токена входа; сам токен показывается один раз при создании. */
     tokenHash: text("token_hash").notNull().unique(),
     createdAt: createdAt(),
