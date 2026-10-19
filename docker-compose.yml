@@ -1,0 +1,34 @@
+# Сервер в зале: docker compose up -d
+# Перед запуском задайте ADMIN_TOKEN (не короче 16 символов) в файле .env рядом с этим файлом.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gymnastics
+      POSTGRES_PASSWORD: gymnastics
+      POSTGRES_DB: gymnastics
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gymnastics"]
+      interval: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://gymnastics:gymnastics@db:5432/gymnastics
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Задайте ADMIN_TOKEN в .env}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+
+volumes:
+  db-data:

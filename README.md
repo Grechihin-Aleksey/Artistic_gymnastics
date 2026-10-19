@@ -7,8 +7,23 @@
 | Пакет | Назначение |
 | --- | --- |
 | `packages/scoring` | Подсчёт по правилам FIG: оценка за выступление, опорный прыжок, многоборье, команды, места |
+| `packages/shared` | Схемы запросов и событий, общие для сервера и страниц |
+| `apps/server` | Сервер в зале: участники, судьи, приём оценок, утверждение, результаты, Socket.IO |
+| `apps/judge` | Страницы судей на планшетах и выдача QR-кодов в секретариате |
 
-Дальше появятся `packages/shared`, `apps/server`, `apps/judge`, `apps/admin`, `apps/relay`, `apps/scoreboard`.
+Дальше появятся `apps/admin`, `apps/relay`, `apps/scoreboard`.
+
+## Запуск сервера в зале
+
+```sh
+cp .env.example .env   # и впишите свой ADMIN_TOKEN
+docker compose up -d
+```
+
+Сервер слушает порт 3000 и при старте сам применяет миграции базы.
+
+- Секретариат: `http://<адрес сервера>:3000/judge/#/admin` — заводит судей и печатает им QR-коды.
+- Судья сканирует свой QR-код планшетом и попадает на страницу своего снаряда. API описано в [apps/server/README.md](apps/server/README.md).
 
 ## Разработка
 
@@ -17,6 +32,6 @@
 ```sh
 pnpm install
 pnpm build
-pnpm test
 pnpm typecheck
+pnpm test   # тестам сервера нужен PostgreSQL, адрес берётся из DATABASE_URL
 ```
