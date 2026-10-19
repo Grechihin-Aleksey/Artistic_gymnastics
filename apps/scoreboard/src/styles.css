@@ -12,6 +12,29 @@
   font-size: clamp(14px, 1.15vw, 28px);
 }
 
+/* Светлая тема для встраивания на сайт. */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #f4f6fa;
+  --line: #dde2ec;
+  --text: #121826;
+  --muted: #5d6b85;
+  --accent: #b7791f;
+  --ok: #2f9e44;
+  --bad: #d64545;
+  color-scheme: light;
+}
+
+/* На сайте виджет подстраивается под ширину колонки страницы и не растягивается на экран. */
+:root[data-embed] {
+  font-size: 15px;
+}
+
+:root[data-embed] .board,
+:root[data-embed] .center {
+  min-height: 0;
+}
+
 * {
   box-sizing: border-box;
 }

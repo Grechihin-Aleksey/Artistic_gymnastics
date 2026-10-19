@@ -1,74 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import {
-  LIVE_EVENTS,
-  type AllAroundRow,
-  type ApparatusResultRow,
-  type LiveApparatus,
-  type PerformanceView,
-  type TeamResultRow,
-} from "@ag/shared";
+import { LIVE_EVENTS, RELAY_EVENTS, type BoardSnapshot, type PerformanceView } from "@ag/shared";
+import { isRelay } from "./route";
 
-export interface Competition {
-  id: string;
-  name: string;
-  discipline: "MAG" | "WAG";
-}
+export type BoardData = BoardSnapshot;
 
-export interface BoardData {
-  competition: Competition;
-  live: LiveApparatus[];
-  allAround: AllAroundRow[];
-  teams: TeamResultRow[];
-  apparatus: Record<string, ApparatusResultRow[]>;
-}
-
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${path}: ${response.status}`);
-  return (await response.json()) as T;
-}
-
-async function load(competitionId: string): Promise<BoardData> {
-  const base = `/competitions/${competitionId}`;
-  const competition = await getJson<Competition>(base);
-  const [live, allAround, teams] = await Promise.all([
-    getJson<LiveApparatus[]>(`${base}/results/live`),
-    getJson<AllAroundRow[]>(`${base}/results/all-around`),
-    // Командный зачёт может быть недоступен (например, в команде больше участников, чем допускает формат).
-    getJson<TeamResultRow[]>(`${base}/results/teams`).catch(() => []),
-  ]);
-  const apparatusRows = await Promise.all(
-    live.map((a) => getJson<ApparatusResultRow[]>(`${base}/results/apparatus/${a.apparatus}`)),
-  );
-  return {
-    competition,
-    live,
-    allAround,
-    teams,
-    apparatus: Object.fromEntries(live.map((a, i) => [a.apparatus, apparatusRows[i]!])),
-  };
+interface BoardState {
+  data: BoardData | null;
+  connected: boolean;
+  error: string | null;
 }
 
 /**
- * Данные табло. Обновляются по событиям сервера и на всякий случай раз в 30 секунд.
+ * Данные табло. В зале — с сервера соревнований по событиям Socket.IO
+ * (и на всякий случай раз в 30 секунд), на сайте — потоком от ретранслятора.
  * onApproved получает каждую новую утверждённую оценку для всплывающей строки.
  */
-export function useBoard(competitionId: string, onApproved: (p: PerformanceView) => void) {
+export function useBoard(competitionId: string, onApproved: (p: PerformanceView) => void): BoardState {
+  const approvedRef = useRef(onApproved);
+  approvedRef.current = onApproved;
+  const approved = useCallback((p: PerformanceView) => approvedRef.current(p), []);
+  return isRelay(location.pathname) ? useRelayBoard(competitionId, approved) : useHallBoard(competitionId, approved);
+}
+
+function useHallBoard(competitionId: string, onApproved: (p: PerformanceView) => void): BoardState {
   const [data, setData] = useState<BoardData | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const approvedRef = useRef(onApproved);
-  approvedRef.current = onApproved;
 
   const refresh = useCallback(() => {
-    load(competitionId)
-      .then((d) => {
-        setData(d);
+    const path = `/competitions/${competitionId}/results/snapshot`;
+    fetch(path)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`${path}: ${response.status}`);
+        setData((await response.json()) as BoardData);
         setError(null);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => setError(`Нет связи с сервером: ${e.message}`));
   }, [competitionId]);
 
   // Несколько событий подряд (вызов, оценка) — одно обновление.
@@ -90,7 +59,7 @@ export function useBoard(competitionId: string, onApproved: (p: PerformanceView)
     socket.on(LIVE_EVENTS.called, schedule);
     socket.on(LIVE_EVENTS.reopened, schedule);
     socket.on(LIVE_EVENTS.approved, (p: PerformanceView) => {
-      approvedRef.current(p);
+      onApproved(p);
       schedule();
     });
     return () => {
@@ -98,7 +67,34 @@ export function useBoard(competitionId: string, onApproved: (p: PerformanceView)
       if (timer.current) clearTimeout(timer.current);
       socket.close();
     };
-  }, [competitionId, refresh, schedule]);
+  }, [competitionId, refresh, schedule, onApproved]);
+
+  return { data, connected, error };
+}
+
+function useRelayBoard(competitionId: string, onApproved: (p: PerformanceView) => void): BoardState {
+  const [data, setData] = useState<BoardData | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Адрес относительный: ретранслятор может стоять не в корне сайта.
+    const events = new EventSource(`../api/competitions/${encodeURIComponent(competitionId)}/events`);
+    events.onopen = () => {
+      setConnected(true);
+      setError(null);
+    };
+    // Браузер сам переподключается и получает свежий снимок.
+    events.onerror = () => setConnected(false);
+    events.addEventListener(RELAY_EVENTS.snapshot, (e) => setData(JSON.parse(e.data) as BoardData));
+    events.addEventListener(RELAY_EVENTS.approved, (e) => onApproved(JSON.parse(e.data) as PerformanceView));
+    // Если зал ещё ничего не прислал, через пару секунд говорим об этом.
+    const empty = setTimeout(() => setError("Результаты появятся, когда начнутся выступления"), 3000);
+    return () => {
+      clearTimeout(empty);
+      events.close();
+    };
+  }, [competitionId, onApproved]);
 
   return { data, connected, error };
 }

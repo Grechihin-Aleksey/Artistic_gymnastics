@@ -6,10 +6,11 @@ import {
   WebSocketServer,
   type OnGatewayConnection,
 } from "@nestjs/websockets";
-import { LIVE_EVENTS, competitionRoom, panelRoom } from "@ag/shared";
+import { LIVE_EVENTS, competitionRoom, panelRoom, type PerformanceView } from "@ag/shared";
 import type { Server, Socket } from "socket.io";
 import { z } from "zod";
 import { AuthService } from "../auth/auth";
+import { RelayPublisher } from "../relay/relay.publisher";
 
 const joinSchema = z.object({ competitionId: z.uuid() });
 
@@ -22,7 +23,10 @@ const joinSchema = z.object({ competitionId: z.uuid() });
 export class LiveGateway implements OnGatewayConnection {
   @WebSocketServer() private server!: Server;
 
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly relay: RelayPublisher,
+  ) {}
 
   async handleConnection(client: Socket): Promise<void> {
     const token: unknown = client.handshake.auth?.token;
@@ -41,8 +45,10 @@ export class LiveGateway implements OnGatewayConnection {
     return { ok: true };
   }
 
+  /** Всё, что видит зал, уходит и на сайт через ретранслятор. */
   toCompetition(competitionId: string, event: string, payload: unknown): void {
     this.server?.to(competitionRoom(competitionId)).emit(event, payload);
+    this.relay.notify(competitionId, event === LIVE_EVENTS.approved ? (payload as PerformanceView) : undefined);
   }
 
   toPanel(competitionId: string, apparatus: string, event: string, payload: unknown): void {

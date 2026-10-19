@@ -9,7 +9,7 @@ import {
   type Apparatus,
   type ScoreBreakdown,
 } from "@ag/scoring";
-import type { LiveApparatus } from "@ag/shared";
+import type { BoardSnapshot, LiveApparatus } from "@ag/shared";
 import { and, asc, eq } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
@@ -213,5 +213,27 @@ export class ResultsService {
         counted: a.counted,
       })),
     }));
+  }
+
+  /** Снимок для табло и сайта: все таблицы одним ответом. */
+  async snapshot(competitionId: string): Promise<BoardSnapshot> {
+    const competition = await this.competitions.get(competitionId);
+    const [live, allAround, teams] = await Promise.all([
+      this.live(competitionId),
+      this.allAround(competitionId),
+      this.teams(competitionId).catch((e: unknown) => {
+        if (e instanceof UnprocessableEntityException) return [];
+        throw e;
+      }),
+    ]);
+    const apparatus = await Promise.all(live.map((a) => this.apparatus(competitionId, a.apparatus)));
+    return {
+      competition: { id: competition.id, name: competition.name, discipline: competition.discipline },
+      live,
+      allAround,
+      teams,
+      apparatus: Object.fromEntries(live.map((a, i) => [a.apparatus, apparatus[i]!])),
+      generatedAt: new Date().toISOString(),
+    };
   }
 }

@@ -10,6 +10,11 @@ import { ResultsService, type VaultMode } from "./results.service";
 export class ResultsController {
   constructor(private readonly results: ResultsService) {}
 
+  @Get("snapshot")
+  snapshot(@Param("id", ParseUUIDPipe) id: string) {
+    return this.results.snapshot(id);
+  }
+
   @Get("live")
   live(@Param("id", ParseUUIDPipe) id: string) {
     return this.results.live(id);

@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { Board } from "./Board";
-import { parseRoute, routeHash, type Route } from "./route";
+import { isRelay, parseRoute, routeHash, type Route } from "./route";
 
 interface Competition {
   id: string;
   name: string;
   discipline: string;
-  createdAt: string;
 }
 
 export function App() {
@@ -17,6 +16,28 @@ export function App() {
     return () => removeEventListener("hashchange", update);
   }, []);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = route.theme ?? "dark";
+    if (route.embed) root.dataset.embed = "1";
+    else delete root.dataset.embed;
+  }, [route.theme, route.embed]);
+
+  useEffect(() => {
+    if (!route.embed || window.parent === window) return;
+    // Странице сайта нужна высота виджета, чтобы подогнать под неё рамку.
+    const report = () =>
+      window.parent.postMessage(
+        // Высота содержимого, а не окна: иначе рамка могла бы только расти.
+        { type: "ag-results:height", height: document.body.getBoundingClientRect().height },
+        "*",
+      );
+    const observer = new ResizeObserver(report);
+    observer.observe(document.body);
+    report();
+    return () => observer.disconnect();
+  }, [route.embed]);
+
   if (!route.competitionId) return <Picker />;
   return <Board key={route.competitionId} route={{ ...route, competitionId: route.competitionId }} />;
 }
@@ -25,9 +46,11 @@ export function App() {
 function Picker() {
   const [list, setList] = useState<Competition[] | null>(null);
   useEffect(() => {
-    fetch("/competitions")
+    // В зале список отдаёт сервер соревнований, на сайте — ретранслятор (уже свежие сверху).
+    const relay = isRelay(location.pathname);
+    fetch(relay ? "../api/competitions" : "/competitions")
       .then((r) => r.json() as Promise<Competition[]>)
-      .then((items) => setList([...items].reverse()))
+      .then((items) => setList(relay ? items : [...items].reverse()))
       .catch(() => setList([]));
   }, []);
   return (

@@ -184,3 +184,31 @@ export interface LiveApparatus {
     eMarks: number[] | null;
   } | null;
 }
+
+/**
+ * Всё, что показывает табло, одним ответом. Его же сервер в зале отправляет
+ * в облачный ретранслятор, а тот раздаёт сайту.
+ */
+export interface BoardSnapshot {
+  competition: { id: string; name: string; discipline: (typeof DISCIPLINES)[number] };
+  live: LiveApparatus[];
+  allAround: AllAroundRow[];
+  /** Пусто, если командного зачёта нет или состав команд не подходит под формат. */
+  teams: TeamResultRow[];
+  apparatus: Partial<Record<(typeof APPARATUS)[number], ApparatusResultRow[]>>;
+  /** Когда снимок собран на сервере в зале (ISO). */
+  generatedAt: string;
+}
+
+/** Тело запроса POST /ingest/:competitionId на ретранслятор. */
+export interface RelayIngest {
+  snapshot: BoardSnapshot;
+  /** Оценки, утверждённые с прошлой отправки, для всплывающей строки на сайте. */
+  approved: PerformanceView[];
+}
+
+/** События потока ретранслятора (Server-Sent Events). */
+export const RELAY_EVENTS = {
+  snapshot: "snapshot",
+  approved: "approved",
+} as const;

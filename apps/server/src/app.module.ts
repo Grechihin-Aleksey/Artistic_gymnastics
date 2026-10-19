@@ -9,6 +9,7 @@ import { DbModule } from "./db/db.module";
 import { LiveGateway } from "./live/live.gateway";
 import { PerformancesController } from "./performances/performances.controller";
 import { PerformancesService } from "./performances/performances.service";
+import { RelayPublisher } from "./relay/relay.publisher";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
 
@@ -34,6 +35,7 @@ export class AppModule {
         PerformancesService,
         ResultsService,
         LiveGateway,
+        RelayPublisher,
       ],
     };
   }

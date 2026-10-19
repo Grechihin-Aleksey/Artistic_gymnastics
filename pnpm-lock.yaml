@@ -54,6 +54,25 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.5)(jsdom@27.4.0(@noble/hashes@1.8.0))(tsx@4.23.15)
 
+  apps/relay:
+    dependencies:
+      '@ag/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      zod:
+        specifier: ^4.1.12
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: ^22.18.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.5)(jsdom@27.4.0(@noble/hashes@1.8.0))(tsx@4.23.15)
+
   apps/scoreboard:
     dependencies:
       '@ag/shared':

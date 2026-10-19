@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRoute, routeHash } from "./route";
+import { isRelay, parseRoute, routeHash } from "./route";
 import { buildSlides, pageCount, pageRows } from "./slides";
 
 describe("адрес табло", () => {
@@ -10,6 +10,19 @@ describe("адрес табло", () => {
       competitionId: "abc",
       view: "auto",
     });
+  });
+
+  it("сохраняет режим встраивания и тему при переключении вида", () => {
+    const route = parseRoute("#c=abc&embed=1&theme=light");
+    expect(route).toEqual({ competitionId: "abc", view: "auto", embed: true, theme: "light" });
+    expect(parseRoute(routeHash({ ...route, view: "aa" }))).toEqual({ ...route, view: "aa" });
+    expect(parseRoute("#c=abc&theme=pink").theme).toBeUndefined();
+  });
+
+  it("на сайте берёт данные у ретранслятора, в зале — у сервера", () => {
+    expect(isRelay("/widget/")).toBe(true);
+    expect(isRelay("/live/widget/index.html")).toBe(true);
+    expect(isRelay("/board/")).toBe(false);
   });
 });
 
