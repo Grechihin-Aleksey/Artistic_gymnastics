@@ -74,6 +74,21 @@ describe("доступ", () => {
   });
 });
 
+describe("судья", () => {
+  it("по токену узнаёт свой снаряд, а новый токен отменяет старый", async () => {
+    const { competition, panel } = await setupCompetition(1);
+    const me = (await api(app, panel.e[0]).get("/me").expect(200)).body;
+    expect(me.judge).toMatchObject({ apparatus: "BB", role: "E", seat: 1 });
+    expect(me.judge).not.toHaveProperty("tokenHash");
+    expect(me.competition.id).toBe(competition.id);
+    await admin.get("/me").expect(403);
+
+    const reissued = (await admin.post(`/judges/${me.judge.id}/token`).expect(201)).body;
+    await api(app, panel.e[0]).get("/me").expect(401);
+    await api(app, reissued.token).get("/me").expect(200);
+  });
+});
+
 describe("выступление на бревне", () => {
   it("собирает оценки, считает итог по FIG и рассылает его", async () => {
     const { competition, gymnast, panel } = await setupCompetition();

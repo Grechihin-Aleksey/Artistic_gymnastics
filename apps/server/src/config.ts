@@ -1,7 +1,11 @@
+import { join } from "node:path";
+
 export interface AppConfig {
   databaseUrl: string;
   adminToken: string;
   port: number;
+  /** Папка со сборкой страниц судей; раздаётся по адресу /judge. */
+  judgeDist?: string;
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -13,5 +17,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!adminToken || adminToken.length < 16) {
     throw new Error("ADMIN_TOKEN должен быть задан и содержать не меньше 16 символов");
   }
-  return { databaseUrl, adminToken, port: Number(env.PORT ?? 3000) };
+  return {
+    databaseUrl,
+    adminToken,
+    port: Number(env.PORT ?? 3000),
+    judgeDist: env.JUDGE_DIST ?? join(__dirname, "..", "..", "judge", "dist"),
+  };
 }

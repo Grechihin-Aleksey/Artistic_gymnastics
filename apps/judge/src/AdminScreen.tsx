@@ -1,0 +1,222 @@
+import { useCallback, useEffect, useState } from "react";
+import QRCode from "qrcode";
+import { apparatusFor, type Discipline } from "@ag/scoring";
+import type { JudgeRole } from "@ag/shared";
+import { apiRequest } from "./api";
+import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
+
+interface Competition {
+  id: string;
+  name: string;
+  discipline: Discipline;
+}
+
+interface Judge {
+  id: string;
+  name: string;
+  apparatus: string;
+  role: JudgeRole;
+  seat: number;
+}
+
+interface IssuedJudge extends Judge {
+  token: string;
+}
+
+const ADMIN_KEY = "admin-token";
+
+function loginUrl(token: string): string {
+  return `${location.origin}/judge/#token=${encodeURIComponent(token)}`;
+}
+
+/** Секретариат: заводит судей и печатает им QR-коды для входа. */
+export function AdminScreen() {
+  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(ADMIN_KEY) ?? "");
+  const [competitions, setCompetitions] = useState<Competition[]>([]);
+  const [competitionId, setCompetitionId] = useState("");
+  const [judges, setJudges] = useState<Judge[]>([]);
+  const [issued, setIssued] = useState<IssuedJudge[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const competition = competitions.find((c) => c.id === competitionId);
+
+  useEffect(() => {
+    apiRequest<Competition[]>("/competitions")
+      .then((list) => {
+        setCompetitions(list);
+        if (list.length > 0) setCompetitionId((id) => id || list.at(-1)!.id);
+      })
+      .catch((e: Error) => setError(e.message));
+  }, []);
+
+  const loadJudges = useCallback(async () => {
+    if (!competitionId || !adminToken) return;
+    try {
+      setJudges(await apiRequest<Judge[]>(`/competitions/${competitionId}/judges`, { token: adminToken }));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [competitionId, adminToken]);
+
+  useEffect(() => {
+    void loadJudges();
+  }, [loadJudges]);
+
+  const remember = (token: string) => {
+    setAdminToken(token);
+    sessionStorage.setItem(ADMIN_KEY, token);
+  };
+
+  const addJudge = async (form: FormData) => {
+    try {
+      const judge = await apiRequest<IssuedJudge>(`/competitions/${competitionId}/judges`, {
+        token: adminToken,
+        method: "POST",
+        body: {
+          name: String(form.get("name")),
+          apparatus: String(form.get("apparatus")),
+          role: String(form.get("role")),
+          seat: Number(form.get("seat")),
+        },
+      });
+      setIssued((list) => [...list, judge]);
+      await loadJudges();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const reissue = async (judge: Judge) => {
+    if (!confirm(`Выдать ${judge.name} новый QR-код? Старый перестанет работать.`)) return;
+    try {
+      const fresh = await apiRequest<IssuedJudge>(`/judges/${judge.id}/token`, { token: adminToken, method: "POST" });
+      setIssued((list) => [...list.filter((j) => j.id !== judge.id), fresh]);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="screen admin">
+      <header className="bar no-print">
+        <div className="apparatus">Секретариат: судьи и QR-коды</div>
+      </header>
+      <section className="panel no-print">
+        <label>
+          Токен секретариата
+          <input type="password" value={adminToken} onChange={(e) => remember(e.target.value)} />
+        </label>
+        <label>
+          Соревнование
+          <select value={competitionId} onChange={(e) => setCompetitionId(e.target.value)}>
+            {competitions.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.discipline})
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      {error && <div className="alert no-print">{error}</div>}
+
+      {competition && adminToken && (
+        <form
+          className="panel no-print"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void addJudge(new FormData(e.currentTarget));
+            e.currentTarget.reset();
+          }}
+        >
+          <label>
+            ФИО судьи
+            <input name="name" required />
+          </label>
+          <label>
+            Снаряд
+            <select name="apparatus">
+              {apparatusFor(competition.discipline).map((a) => (
+                <option key={a} value={a}>
+                  {APPARATUS_NAMES[a]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Роль
+            <select name="role">
+              {(Object.keys(ROLE_NAMES) as JudgeRole[]).map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_NAMES[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Место в бригаде
+            <input name="seat" type="number" min={1} max={10} defaultValue={1} required />
+          </label>
+          <button type="submit" className="primary">
+            Добавить судью
+          </button>
+        </form>
+      )}
+
+      {judges.length > 0 && (
+        <table className="panel no-print">
+          <tbody>
+            {judges.map((j) => (
+              <tr key={j.id}>
+                <td>{APPARATUS_NAMES[j.apparatus]}</td>
+                <td>{judgeLabel(j.role, j.seat)}</td>
+                <td>{j.name}</td>
+                <td>
+                  <button type="button" className="link" onClick={() => void reissue(j)}>
+                    Новый QR-код
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {issued.length > 0 && (
+        <>
+          <div className="no-print">
+            <button type="button" className="primary" onClick={() => print()}>
+              Печать QR-кодов
+            </button>
+            <p className="muted">Код показывается один раз. Если планшет потерян, выдайте новый код.</p>
+          </div>
+          <div className="qr-grid">
+            {issued.map((j) => (
+              <QrCard key={j.id + j.token} judge={j} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function QrCard({ judge }: { judge: IssuedJudge }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    void QRCode.toDataURL(loginUrl(judge.token), { width: 240, margin: 1 }).then(setSrc);
+  }, [judge.token]);
+  return (
+    <figure className="qr">
+      {src && <img src={src} alt={`QR-код для ${judge.name}`} />}
+      <figcaption>
+        <strong>
+          {APPARATUS_NAMES[judge.apparatus]} · {judgeLabel(judge.role, judge.seat)}
+        </strong>
+        <br />
+        {judge.name}
+      </figcaption>
+    </figure>
+  );
+}

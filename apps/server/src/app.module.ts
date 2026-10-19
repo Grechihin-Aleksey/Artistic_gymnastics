@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { AuthGuard, AuthService } from "./auth/auth";
 import { CompetitionsController } from "./competitions/competitions.controller";
 import { CompetitionsService } from "./competitions/competitions.service";
+import { JudgesController } from "./competitions/judges.controller";
 import { APP_CONFIG, type AppConfig } from "./config";
 import { DbModule } from "./db/db.module";
 import { LiveGateway } from "./live/live.gateway";
@@ -25,7 +26,7 @@ export class AppModule {
         },
         DbModule,
       ],
-      controllers: [CompetitionsController, PerformancesController, ResultsController],
+      controllers: [CompetitionsController, JudgesController, PerformancesController, ResultsController],
       providers: [
         AuthService,
         { provide: APP_GUARD, useClass: AuthGuard },

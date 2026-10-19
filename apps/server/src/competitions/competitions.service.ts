@@ -95,6 +95,19 @@ export class CompetitionsService {
     return { ...judge, token };
   }
 
+  /** Новый токен судьи взамен потерянного; старый перестаёт работать. */
+  async reissueJudgeToken(judgeId: string) {
+    const token = newToken();
+    const [row] = await this.db
+      .update(judges)
+      .set({ tokenHash: hashToken(token) })
+      .where(eq(judges.id, judgeId))
+      .returning();
+    if (!row) throw new NotFoundException("Судья не найден");
+    const { tokenHash: _, ...judge } = row;
+    return { ...judge, token };
+  }
+
   async listJudges(competitionId: string) {
     const rows = await this.db
       .select()
