@@ -6,9 +6,13 @@ import { CompetitionsService } from "./competitions/competitions.service";
 import { JudgesController } from "./competitions/judges.controller";
 import { APP_CONFIG, type AppConfig } from "./config";
 import { DbModule } from "./db/db.module";
+import { InquiriesController } from "./inquiries/inquiries.controller";
+import { InquiriesService } from "./inquiries/inquiries.service";
 import { LiveGateway } from "./live/live.gateway";
 import { PerformancesController } from "./performances/performances.controller";
 import { PerformancesService } from "./performances/performances.service";
+import { ProtocolsController } from "./protocols/protocols.controller";
+import { ProtocolsService } from "./protocols/protocols.service";
 import { RelayPublisher } from "./relay/relay.publisher";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
@@ -27,13 +31,22 @@ export class AppModule {
         },
         DbModule,
       ],
-      controllers: [CompetitionsController, JudgesController, PerformancesController, ResultsController],
+      controllers: [
+        CompetitionsController,
+        JudgesController,
+        PerformancesController,
+        ResultsController,
+        InquiriesController,
+        ProtocolsController,
+      ],
       providers: [
         AuthService,
         { provide: APP_GUARD, useClass: AuthGuard },
         CompetitionsService,
         PerformancesService,
         ResultsService,
+        InquiriesService,
+        ProtocolsService,
         LiveGateway,
         RelayPublisher,
       ],

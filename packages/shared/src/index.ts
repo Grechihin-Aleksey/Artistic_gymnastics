@@ -5,6 +5,7 @@ export const APPARATUS = ["FX", "PH", "SR", "VT", "PB", "HB", "UB", "BB"] as con
 export const JUDGE_ROLES = ["D", "E", "SUPERVISOR"] as const;
 export const MARK_KINDS = ["D", "E", "NEUTRAL"] as const;
 export const PERFORMANCE_STATUSES = ["SCORING", "APPROVED"] as const;
+export const INQUIRY_STATUSES = ["PENDING", "ACCEPTED", "REJECTED"] as const;
 
 export const disciplineSchema = z.enum(DISCIPLINES);
 export const apparatusSchema = z.enum(APPARATUS);
@@ -71,6 +72,20 @@ export const reopenPerformanceSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+/** Запрос тренера на пересмотр оценки D (FIG, Технический регламент, ст. 8.5). */
+export const createInquirySchema = z.object({
+  /** Кто подал: тренер, команда. */
+  coach: z.string().min(1).max(200),
+  /** Какую оценку D тренер считает верной, если указал. */
+  claimedD: score.optional(),
+});
+
+/** Решение апелляционного жюри: оставить оценку или поставить новую D. */
+export const resolveInquirySchema = z.discriminatedUnion("decision", [
+  z.object({ decision: z.literal("accept"), d: score, note: z.string().max(500).optional() }),
+  z.object({ decision: z.literal("reject"), note: z.string().max(500).optional() }),
+]);
+
 export type CreateCompetitionInput = z.infer<typeof createCompetitionSchema>;
 export type CreateTeamInput = z.infer<typeof createTeamSchema>;
 export type CreateGymnastInput = z.infer<typeof createGymnastSchema>;
@@ -78,6 +93,9 @@ export type CreateJudgeInput = z.infer<typeof createJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
+export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
+export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
+export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
 
 /** Оценка за выступление в баллах (не в тысячных). */
 export interface ScoreView {
@@ -212,3 +230,27 @@ export const RELAY_EVENTS = {
   snapshot: "snapshot",
   approved: "approved",
 } as const;
+
+export interface InquiryView {
+  id: string;
+  competitionId: string;
+  performanceId: string;
+  apparatus: (typeof APPARATUS)[number];
+  attempt: number;
+  gymnast: GymnastView;
+  coach: string;
+  claimedD: number | null;
+  /** Оценка D на момент подачи запроса. */
+  previousD: number;
+  /** Новая оценка D, если запрос удовлетворён. */
+  newD: number | null;
+  status: InquiryStatus;
+  /**
+   * Подан позже срока: после того как показали оценку следующего участника
+   * на этом снаряде или больше чем через 4 минуты. Решение всё равно за жюри.
+   */
+  late: boolean;
+  note: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}

@@ -30,7 +30,7 @@ const ALLOWED_KINDS: Record<JudgeRow["role"], readonly MarkKind[]> = {
   SUPERVISOR: ["D", "NEUTRAL"],
 };
 
-function actorName(principal: Principal): string {
+export function actorName(principal: Principal): string {
   return principal.kind === "admin" ? "admin" : `judge:${principal.judge.id}`;
 }
 
@@ -228,6 +228,11 @@ export class PerformancesService {
       return perf.competitionId;
     });
 
+    return this.announceApproved(competitionId, id);
+  }
+
+  /** Сообщает залу и сайту об утверждённой (или изменённой по запросу) оценке. */
+  async announceApproved(competitionId: string, id: string): Promise<PerformanceView> {
     const competition = await this.competitions.get(competitionId);
     const view = await this.view(id);
     this.live.toCompetition(competitionId, LIVE_EVENTS.approved, this.publicView(view, competition.publishJudgeMarks));

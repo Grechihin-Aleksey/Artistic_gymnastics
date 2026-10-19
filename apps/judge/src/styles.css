@@ -337,3 +337,41 @@ select {
     background: #fff;
   }
 }
+
+.admin h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 18px;
+}
+
+.admin .protocols .buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin .protocols button,
+.admin .actions button {
+  min-height: 44px;
+  padding: 6px 14px;
+  font-size: 15px;
+}
+
+.admin .actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.admin tr.pending td {
+  background: color-mix(in srgb, var(--warn, #f5b942) 12%, transparent);
+}
+
+.admin .late {
+  color: var(--bad, #d64545);
+}
+
+.admin .inquiries .muted {
+  font-size: 13px;
+}
