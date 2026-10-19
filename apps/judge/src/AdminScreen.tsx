@@ -4,6 +4,7 @@ import { apparatusFor, type Discipline } from "@ag/scoring";
 import type { JudgeRole } from "@ag/shared";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
+import { InquiriesPanel, ProtocolsPanel } from "./Secretariat";
 
 interface Competition {
   id: string;
@@ -29,7 +30,7 @@ function loginUrl(token: string): string {
   return `${location.origin}/judge/#token=${encodeURIComponent(token)}`;
 }
 
-/** Секретариат: заводит судей и печатает им QR-коды для входа. */
+/** Секретариат: судьи и их QR-коды, протоколы, запросы тренеров на пересмотр D. */
 export function AdminScreen() {
   const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(ADMIN_KEY) ?? "");
   const [competitions, setCompetitions] = useState<Competition[]>([]);
@@ -100,7 +101,7 @@ export function AdminScreen() {
   return (
     <div className="screen admin">
       <header className="bar no-print">
-        <div className="apparatus">Секретариат: судьи и QR-коды</div>
+        <div className="apparatus">Секретариат</div>
       </header>
       <section className="panel no-print">
         <label>
@@ -122,6 +123,24 @@ export function AdminScreen() {
       {error && <div className="alert no-print">{error}</div>}
 
       {competition && adminToken && (
+        <>
+          <ProtocolsPanel
+            competitionId={competition.id}
+            discipline={competition.discipline}
+            adminToken={adminToken}
+            onError={setError}
+          />
+          <InquiriesPanel
+            key={competition.id}
+            competitionId={competition.id}
+            discipline={competition.discipline}
+            adminToken={adminToken}
+            onError={setError}
+          />
+        </>
+      )}
+
+      {competition && adminToken && (
         <form
           className="panel no-print"
           onSubmit={(e) => {
@@ -130,6 +149,7 @@ export function AdminScreen() {
             e.currentTarget.reset();
           }}
         >
+          <h2>Судьи и QR-коды</h2>
           <label>
             ФИО судьи
             <input name="name" required />

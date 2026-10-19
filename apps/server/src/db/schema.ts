@@ -9,13 +9,14 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { APPARATUS, DISCIPLINES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES } from "@ag/shared";
+import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
 export const apparatusEnum = pgEnum("apparatus", APPARATUS);
 export const judgeRoleEnum = pgEnum("judge_role", JUDGE_ROLES);
 export const markKindEnum = pgEnum("mark_kind", MARK_KINDS);
 export const performanceStatusEnum = pgEnum("performance_status", PERFORMANCE_STATUSES);
+export const inquiryStatusEnum = pgEnum("inquiry_status", INQUIRY_STATUSES);
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -115,6 +116,26 @@ export const marks = pgTable(
   },
   (t) => [uniqueIndex("marks_judge_unique").on(t.performanceId, t.judgeId, t.kind)],
 );
+
+/** Запросы тренеров на пересмотр оценки D. Баллы в тысячных. */
+export const inquiries = pgTable("inquiries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  competitionId: uuid("competition_id")
+    .notNull()
+    .references(() => competitions.id, { onDelete: "cascade" }),
+  performanceId: uuid("performance_id")
+    .notNull()
+    .references(() => performances.id, { onDelete: "cascade" }),
+  coach: text("coach").notNull(),
+  claimedD: integer("claimed_d"),
+  previousD: integer("previous_d").notNull(),
+  newD: integer("new_d"),
+  status: inquiryStatusEnum("status").notNull().default("PENDING"),
+  late: boolean("late").notNull(),
+  note: text("note"),
+  createdAt: createdAt(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
 
 export const auditLog = pgTable("audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),

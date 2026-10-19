@@ -8,6 +8,13 @@
       "when": 1792428294200,
       "tag": "0000_third_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792432081228,
+      "tag": "0001_inquiries",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,12 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | POST | `/performances/:id/approve` | старший судья снаряда, секретариат | Посчитать и утвердить итог |
 | POST | `/performances/:id/reopen` | секретариат | Вернуть на правку с причиной |
 | GET | `/competitions/:id/results/live` | все | Для табло: кто выступает на каждом снаряде и последняя оценка |
+| POST | `/performances/:id/inquiries` | секретариат | Запрос тренера на пересмотр D: `{ coach, claimedD? }`. Только на утверждённую оценку, один нерассмотренный на выступление. Подан после показа следующей оценки на снаряде или позже 4 минут — помечается `late` |
+| GET | `/competitions/:id/inquiries` | секретариат | Все запросы соревнования |
+| POST | `/inquiries/:id/resolve` | секретариат | Решение жюри: `{ decision: "accept", d, note? }` меняет D и итог, оценка заново уходит на табло и сайт; `{ decision: "reject", note? }` оставляет как есть |
+| GET | `/competitions/:id/protocols/apparatus/:apparatus` | секретариат | Протокол снаряда в PDF: D, сбавки каждого судьи E (крайние в скобках), E, нейтральные сбавки, итог; у прыжка обе попытки |
+| GET | `/competitions/:id/protocols/all-around` | секретариат | Протокол многоборья в PDF |
+| GET | `/competitions/:id/protocols/teams` | секретариат | Командный протокол в PDF с оценками участников, не вошедшие в зачёт — в скобках |
 | GET | `/competitions/:id/results/snapshot` | все | Всё для табло одним ответом: «сейчас», многоборье, команды, снаряды. Этот же снимок уходит на сайт |
 | GET | `/competitions/:id/results/apparatus/:apparatus?vault=average` | все | Места на снаряде |
 | GET | `/competitions/:id/results/all-around` | все | Многоборье |
