@@ -16,6 +16,7 @@
 
 ```sh
 pnpm install
+pnpm build
 pnpm test
 pnpm typecheck
 ```

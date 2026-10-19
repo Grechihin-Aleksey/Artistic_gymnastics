@@ -1,5 +1,5 @@
-import { executionScore, type ExecutionOptions } from "./execution.ts";
-import type { PanelMarks, ScoreBreakdown } from "./types.ts";
+import { executionScore, type ExecutionOptions } from "./execution.js";
+import type { PanelMarks, ScoreBreakdown } from "./types.js";
 
 /** Оценка за выступление: D + E − нейтральные сбавки, не ниже нуля. */
 export function scorePerformance(marks: PanelMarks, options: ExecutionOptions = {}): ScoreBreakdown {

@@ -13,7 +13,7 @@ import {
   teamTotal,
   toPoints,
   type ScoreBreakdown,
-} from "../src/index.ts";
+} from "../src/index.js";
 
 const p = toPoints;
 const score = (total: number, e = 8, d = total - e): ScoreBreakdown => ({

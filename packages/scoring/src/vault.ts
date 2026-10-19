@@ -1,5 +1,5 @@
-import { divideTruncated } from "./points.ts";
-import type { ScoreBreakdown } from "./types.ts";
+import { divideTruncated } from "./points.js";
+import type { ScoreBreakdown } from "./types.js";
 
 /**
  * Итог опорного прыжка в финале на снаряде (и в квалификации к нему):

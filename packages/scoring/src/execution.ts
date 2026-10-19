@@ -1,4 +1,4 @@
-import { divideTruncated, type Points } from "./points.ts";
+import { divideTruncated, type Points } from "./points.js";
 
 export const MAX_E: Points = 10_000;
 

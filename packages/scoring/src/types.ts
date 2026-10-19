@@ -1,4 +1,4 @@
-import type { Points } from "./points.ts";
+import type { Points } from "./points.js";
 
 export type Discipline = "MAG" | "WAG";
 

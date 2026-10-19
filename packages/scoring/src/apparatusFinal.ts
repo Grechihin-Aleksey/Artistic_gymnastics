@@ -1,5 +1,5 @@
-import { rank, type Ranked } from "./ranking.ts";
-import type { ScoreBreakdown } from "./types.ts";
+import { rank, type Ranked } from "./ranking.js";
+import type { ScoreBreakdown } from "./types.js";
 
 export interface ApparatusEntry<Id = string> {
   id: Id;

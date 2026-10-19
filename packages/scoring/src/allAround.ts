@@ -1,6 +1,6 @@
-import { rank, type Ranked } from "./ranking.ts";
-import { apparatusFor, type Apparatus, type Discipline, type ScoreBreakdown } from "./types.ts";
-import type { Points } from "./points.ts";
+import { rank, type Ranked } from "./ranking.js";
+import { apparatusFor, type Apparatus, type Discipline, type ScoreBreakdown } from "./types.js";
+import type { Points } from "./points.js";
 
 export interface AllAroundEntry<Id = string> {
   id: Id;
