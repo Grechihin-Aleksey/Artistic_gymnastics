@@ -72,6 +72,22 @@ export const reopenPerformanceSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+/** Список участников, вставленный секретариатом из таблицы. Команды создаются по названию. */
+export const importGymnastsSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        bib: z.number().int().min(1),
+        lastName: z.string().min(1).max(100),
+        firstName: z.string().min(1).max(100),
+        club: z.string().max(200).optional(),
+        team: z.string().max(200).optional(),
+      }),
+    )
+    .min(1)
+    .max(1000),
+});
+
 /** Запрос тренера на пересмотр оценки D (FIG, Технический регламент, ст. 8.5). */
 export const createInquirySchema = z.object({
   /** Кто подал: тренер, команда. */
@@ -93,6 +109,7 @@ export type CreateJudgeInput = z.infer<typeof createJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
+export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];

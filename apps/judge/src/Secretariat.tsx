@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import type { InquiryView, PerformanceView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
+import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
 
 interface Gymnast {
   id: string;
@@ -234,6 +235,188 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
             ))}
           </tbody>
         </table>
+      )}
+    </section>
+  );
+}
+
+interface CompetitionCreated {
+  id: string;
+}
+
+/** Новое соревнование: название, программа, формат командного зачёта. */
+export function NewCompetitionForm({
+  adminToken,
+  onCreated,
+  onError,
+}: {
+  adminToken: string;
+  onCreated: (id: string) => void;
+  onError: (message: string | null) => void;
+}) {
+  const create = async (form: FormData) => {
+    try {
+      const created = await apiRequest<CompetitionCreated>("/competitions", {
+        token: adminToken,
+        method: "POST",
+        body: {
+          name: String(form.get("name")).trim(),
+          discipline: String(form.get("discipline")),
+          teamFormat: {
+            roster: Number(form.get("roster")),
+            perApparatus: Number(form.get("perApparatus")),
+            counting: Number(form.get("counting")),
+          },
+          publishJudgeMarks: form.get("publishJudgeMarks") === "on",
+        },
+      });
+      onError(null);
+      onCreated(created.id);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  return (
+    <form
+      className="panel no-print"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void create(new FormData(e.currentTarget));
+      }}
+    >
+      <h2>Новое соревнование</h2>
+      <label className="wide">
+        Название
+        <input name="name" required maxLength={200} />
+      </label>
+      <label>
+        Программа
+        <select name="discipline" defaultValue="WAG">
+          <option value="WAG">Женщины (4 снаряда)</option>
+          <option value="MAG">Мужчины (6 снарядов)</option>
+        </select>
+      </label>
+      <label>
+        В составе команды
+        <input name="roster" type="number" min={1} max={10} defaultValue={5} required />
+      </label>
+      <label>
+        Выступают на снаряде
+        <input name="perApparatus" type="number" min={1} max={10} defaultValue={4} required />
+      </label>
+      <label>
+        Идут в зачёт
+        <input name="counting" type="number" min={1} max={10} defaultValue={3} required />
+      </label>
+      <label className="check">
+        <input name="publishJudgeMarks" type="checkbox" />
+        Показывать на табло и сайте сбавки каждого судьи E
+      </label>
+      <button type="submit" className="primary">
+        Создать
+      </button>
+    </form>
+  );
+}
+
+/** Участники: вставка списка из таблицы и проверка перед загрузкой. */
+export function RosterPanel({
+  competitionId,
+  teamFormat,
+  adminToken,
+  onError,
+}: Omit<Props, "discipline"> & { teamFormat: TeamFormat }) {
+  const [text, setText] = useState("");
+  const [people, setPeople] = useState<(Gymnast & { club: string | null; teamId: string | null })[]>([]);
+  const [teams, setTeams] = useState<Map<string, string>>(new Map());
+  const parsed = useMemo(() => parseRoster(text), [text]);
+  const warnings = useMemo(() => {
+    const sizes = new Map<string, number>();
+    for (const g of people) {
+      const name = g.teamId ? teams.get(g.teamId) : undefined;
+      if (name) sizes.set(name, (sizes.get(name) ?? 0) + 1);
+    }
+    for (const r of parsed.rows) if (r.team) sizes.set(r.team, (sizes.get(r.team) ?? 0) + 1);
+    return teamFormatWarnings(sizes, teamFormat);
+  }, [people, teams, parsed.rows, teamFormat]);
+
+  const load = useCallback(async () => {
+    try {
+      const [list, teamList] = await Promise.all([
+        apiRequest<(Gymnast & { club: string | null; teamId: string | null })[]>(`/competitions/${competitionId}/gymnasts`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/teams`),
+      ]);
+      setPeople(list);
+      setTeams(new Map(teamList.map((t) => [t.id, t.name])));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const upload = async () => {
+    try {
+      await apiRequest(`/competitions/${competitionId}/gymnasts/import`, {
+        token: adminToken,
+        method: "POST",
+        body: { rows: parsed.rows },
+      });
+      setText("");
+      onError(null);
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="panel roster no-print">
+      <h2>Участники: {people.length}</h2>
+      <label className="wide">
+        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда
+        <textarea
+          rows={6}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={"12\tИванова\tАнна\tг. Тверь\tСШОР №1\n13\tПетрова\tМария\tг. Тверь\tСШОР №1"}
+        />
+      </label>
+      {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
+      {warnings.map((w) => (
+        <div key={w} className="warning wide">
+          {w}
+        </div>
+      ))}
+      <button
+        type="button"
+        className="primary"
+        disabled={parsed.rows.length === 0 || parsed.errors.length > 0}
+        onClick={() => void upload()}
+      >
+        Добавить {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
+      </button>
+      {people.length > 0 && (
+        <details className="wide">
+          <summary>Список участников</summary>
+          <table>
+            <tbody>
+              {people.map((g) => (
+                <tr key={g.id}>
+                  <td>№{g.bib}</td>
+                  <td>
+                    {g.lastName} {g.firstName}
+                  </td>
+                  <td className="muted">{g.club ?? ""}</td>
+                  <td className="muted">{g.teamId ? teams.get(g.teamId) : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
       )}
     </section>
   );

@@ -5,8 +5,9 @@ import type {
   CreateGymnastInput,
   CreateJudgeInput,
   CreateTeamInput,
+  ImportGymnastsInput,
 } from "@ag/shared";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
 import { competitions, gymnasts, judges, teams } from "../db/schema";
@@ -70,6 +71,49 @@ export class CompetitionsService {
       .values({ competitionId, ...input })
       .returning();
     return row!;
+  }
+
+  /**
+   * Добавляет участников списком. Команды находит по названию или создаёт.
+   * Всё или ничего: при ошибке в любой строке список не меняется.
+   */
+  async importGymnasts(competitionId: string, input: ImportGymnastsInput) {
+    await this.get(competitionId);
+    const bibs = input.rows.map((r) => r.bib);
+    const repeated = bibs.filter((b, i) => bibs.indexOf(b) !== i);
+    if (repeated.length > 0) {
+      throw new BadRequestException(`Номера повторяются в списке: ${[...new Set(repeated)].join(", ")}`);
+    }
+    return this.db.transaction(async (tx) => {
+      const taken = await tx
+        .select({ bib: gymnasts.bib })
+        .from(gymnasts)
+        .where(and(eq(gymnasts.competitionId, competitionId), inArray(gymnasts.bib, bibs)));
+      if (taken.length > 0) {
+        throw new BadRequestException(`Номера уже заняты: ${taken.map((t) => t.bib).join(", ")}`);
+      }
+      const teamIds = new Map(
+        (await tx.select().from(teams).where(eq(teams.competitionId, competitionId))).map((t) => [t.name, t.id]),
+      );
+      for (const name of new Set(input.rows.map((r) => r.team).filter((t): t is string => Boolean(t)))) {
+        if (teamIds.has(name)) continue;
+        const [team] = await tx.insert(teams).values({ competitionId, name }).returning();
+        teamIds.set(name, team!.id);
+      }
+      return tx
+        .insert(gymnasts)
+        .values(
+          input.rows.map((r) => ({
+            competitionId,
+            bib: r.bib,
+            lastName: r.lastName,
+            firstName: r.firstName,
+            club: r.club ?? null,
+            teamId: r.team ? teamIds.get(r.team)! : null,
+          })),
+        )
+        .returning();
+    });
   }
 
   async listGymnasts(competitionId: string) {

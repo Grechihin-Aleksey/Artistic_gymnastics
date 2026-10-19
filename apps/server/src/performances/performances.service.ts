@@ -43,7 +43,13 @@ export class PerformancesService {
   ) {}
 
   /** Вызов участника на снаряд: открывает выступление для оценок. */
-  async create(competitionId: string, input: CreatePerformanceInput): Promise<PerformanceView> {
+  async create(principal: Principal, competitionId: string, input: CreatePerformanceInput): Promise<PerformanceView> {
+    if (principal.kind === "judge") {
+      const { judge } = principal;
+      if (judge.role !== "SUPERVISOR" || judge.competitionId !== competitionId || judge.apparatus !== input.apparatus) {
+        throw new ForbiddenException("Вызывает старший судья этого снаряда или секретариат");
+      }
+    }
     const competition = await this.competitions.get(competitionId);
     if (!apparatusFor(competition.discipline).includes(input.apparatus)) {
       throw new BadRequestException(`Снаряда ${input.apparatus} нет в программе ${competition.discipline}`);
@@ -56,6 +62,19 @@ export class PerformancesService {
       .from(gymnasts)
       .where(and(eq(gymnasts.id, input.gymnastId), eq(gymnasts.competitionId, competitionId)));
     if (!gymnast) throw new BadRequestException("Участник не найден в этом соревновании");
+    // Судьи видят одно текущее выступление: следующего вызывают после утверждения.
+    const [open] = await this.db
+      .select({ gymnastId: performances.gymnastId })
+      .from(performances)
+      .where(
+        and(
+          eq(performances.competitionId, competitionId),
+          eq(performances.apparatus, input.apparatus),
+          eq(performances.status, "SCORING"),
+        ),
+      )
+      .limit(1);
+    if (open) throw new ConflictException("На снаряде ещё не утверждена оценка предыдущего участника");
 
     const [row] = await this.db
       .insert(performances)
