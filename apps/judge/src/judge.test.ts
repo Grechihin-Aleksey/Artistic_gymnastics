@@ -2,6 +2,7 @@ import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
 import { parseScore } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
+import { parseRoster, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
 import { uuid } from "./uuid";
 
@@ -94,5 +95,41 @@ describe("uuid", () => {
     for (let i = 0; i < 50; i++) {
       expect(submitMarkSchema.safeParse(mark("E", 1, uuid())).success).toBe(true);
     }
+  });
+});
+
+describe("список участников из таблицы", () => {
+  it("понимает строки из Excel, пропускает заголовок и пустые строки", () => {
+    const text = "№\tФамилия\tИмя\tКлуб\tКоманда\n12\tИванова\tАнна\tг. Тверь\tСШОР №1\n\n13\tПетрова\tМария\n";
+    expect(parseRoster(text)).toEqual({
+      rows: [
+        { bib: 12, lastName: "Иванова", firstName: "Анна", club: "г. Тверь", team: "СШОР №1" },
+        { bib: 13, lastName: "Петрова", firstName: "Мария" },
+      ],
+      errors: [],
+    });
+  });
+
+  it("принимает разделитель «;» и сообщает о строках с ошибками", () => {
+    const { rows, errors } = parseRoster("1; Сидорова; Вера; ; Олимп\nВолкова Ксения\n3; Попова");
+    expect(rows).toEqual([{ bib: 1, lastName: "Сидорова", firstName: "Вера", team: "Олимп" }]);
+    expect(errors).toEqual(["Строка 2: нет номера участника", "Строка 3: нужны фамилия и имя"]);
+  });
+});
+
+describe("teamFormatWarnings", () => {
+  it("warns when a team is bigger than the per-apparatus count or the roster", () => {
+    const format = { roster: 5, perApparatus: 4, counting: 3 };
+    const out = teamFormatWarnings(
+      new Map([
+        ["СШОР №1", 4],
+        ["Школа 5", 5],
+        ["Лицей", 6],
+      ]),
+      format,
+    );
+    expect(out).toHaveLength(2);
+    expect(out[0]).toContain("5-5-3");
+    expect(out[1]).toContain("допускается 5");
   });
 });

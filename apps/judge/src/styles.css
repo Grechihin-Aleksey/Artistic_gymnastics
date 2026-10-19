@@ -7,6 +7,7 @@
   --accent: #1f6feb;
   --ok: #1a7f37;
   --bad: #cf222e;
+  --warn: #9a6700;
   --key: #eef1f6;
   color-scheme: light;
 }
@@ -21,6 +22,7 @@
     --accent: #4c8dff;
     --ok: #3fb950;
     --bad: #ff6b6b;
+    --warn: #d29922;
     --key: #252e41;
     color-scheme: dark;
   }
@@ -115,6 +117,13 @@ select {
   border-radius: 8px;
   border: 1px solid var(--bad);
   color: var(--bad);
+}
+
+.warning {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
 }
 
 .waiting {
@@ -374,4 +383,81 @@ select {
 
 .admin .inquiries .muted {
   font-size: 13px;
+}
+
+.admin .wide {
+  grid-column: 1 / -1;
+}
+
+.admin textarea {
+  font: 14px/1.4 ui-monospace, monospace;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.admin label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin label.check input {
+  min-height: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.admin .new-competition {
+  margin: 16px;
+}
+
+.admin .new-competition > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.admin .new-competition .panel {
+  margin: 12px 0 0;
+}
+
+.admin .roster table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.call {
+  width: min(560px, 100%);
+  margin: 16px auto 0;
+  text-align: left;
+}
+
+.call-filter {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  font-size: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.call ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.call li button {
+  width: 100%;
+  min-height: 52px;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 17px;
 }

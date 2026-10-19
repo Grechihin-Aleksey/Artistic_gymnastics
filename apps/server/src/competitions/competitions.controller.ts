@@ -4,10 +4,12 @@ import {
   createGymnastSchema,
   createJudgeSchema,
   createTeamSchema,
+  importGymnastsSchema,
   type CreateCompetitionInput,
   type CreateGymnastInput,
   type CreateJudgeInput,
   type CreateTeamInput,
+  type ImportGymnastsInput,
 } from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
@@ -51,6 +53,15 @@ export class CompetitionsController {
     @Body(new ZodPipe(createGymnastSchema)) body: CreateGymnastInput,
   ) {
     return this.competitions.addGymnast(id, body);
+  }
+
+  @Post(":id/gymnasts/import")
+  @RequireAccess("admin")
+  importGymnasts(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(importGymnastsSchema)) body: ImportGymnastsInput,
+  ) {
+    return this.competitions.importGymnasts(id, body);
   }
 
   @Get(":id/gymnasts")

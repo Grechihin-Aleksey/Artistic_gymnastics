@@ -4,12 +4,15 @@ import { apparatusFor, type Discipline } from "@ag/scoring";
 import type { JudgeRole } from "@ag/shared";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
-import { InquiriesPanel, ProtocolsPanel } from "./Secretariat";
+import { InquiriesPanel, NewCompetitionForm, ProtocolsPanel, RosterPanel } from "./Secretariat";
 
 interface Competition {
   id: string;
   name: string;
   discipline: Discipline;
+  teamRoster: number;
+  teamPerApparatus: number;
+  teamCounting: number;
 }
 
 interface Judge {
@@ -41,14 +44,20 @@ export function AdminScreen() {
 
   const competition = competitions.find((c) => c.id === competitionId);
 
-  useEffect(() => {
-    apiRequest<Competition[]>("/competitions")
-      .then((list) => {
-        setCompetitions(list);
-        if (list.length > 0) setCompetitionId((id) => id || list.at(-1)!.id);
-      })
-      .catch((e: Error) => setError(e.message));
+  const loadCompetitions = useCallback(async (select?: string) => {
+    try {
+      const list = await apiRequest<Competition[]>("/competitions");
+      setCompetitions(list);
+      if (select) setCompetitionId(select);
+      else if (list.length > 0) setCompetitionId((id) => id || list.at(-1)!.id);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadCompetitions();
+  }, [loadCompetitions]);
 
   const loadJudges = useCallback(async () => {
     if (!competitionId || !adminToken) return;
@@ -122,23 +131,32 @@ export function AdminScreen() {
 
       {error && <div className="alert no-print">{error}</div>}
 
-      {competition && adminToken && (
-        <>
-          <ProtocolsPanel
-            competitionId={competition.id}
-            discipline={competition.discipline}
+      {adminToken && (
+        <details className="no-print new-competition" open={competitions.length === 0}>
+          <summary>Новое соревнование</summary>
+          <NewCompetitionForm
             adminToken={adminToken}
             onError={setError}
+            onCreated={(id) => {
+              setIssued([]);
+              void loadCompetitions(id);
+            }}
           />
-          <InquiriesPanel
-            key={competition.id}
-            competitionId={competition.id}
-            discipline={competition.discipline}
-            adminToken={adminToken}
-            onError={setError}
-          />
-        </>
+        </details>
       )}
+
+      {competition && adminToken && (
+        <RosterPanel
+          key={competition.id}
+          competitionId={competition.id}
+          teamFormat={{
+            roster: competition.teamRoster,
+            perApparatus: competition.teamPerApparatus,
+            counting: competition.teamCounting,
+          }}
+          adminToken={adminToken} onError={setError} />
+      )}
+
 
       {competition && adminToken && (
         <form
@@ -201,6 +219,24 @@ export function AdminScreen() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {competition && adminToken && (
+        <>
+          <ProtocolsPanel
+            competitionId={competition.id}
+            discipline={competition.discipline}
+            adminToken={adminToken}
+            onError={setError}
+          />
+          <InquiriesPanel
+            key={competition.id}
+            competitionId={competition.id}
+            discipline={competition.discipline}
+            adminToken={adminToken}
+            onError={setError}
+          />
+        </>
       )}
 
       {issued.length > 0 && (

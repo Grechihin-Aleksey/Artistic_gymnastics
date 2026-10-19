@@ -130,12 +130,22 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
         </main>
       ) : (
         <main className="waiting">
-          <p>Ожидаем вызова участника</p>
+          <p>{judge.role === "SUPERVISOR" ? "Вызовите следующего участника" : "Ожидаем вызова участника"}</p>
           {lastApproved?.score && (
             <p className="muted">
               Последний итог: {gymnasts.get(lastApproved.gymnastId)?.lastName ?? ""} —{" "}
               <strong>{lastApproved.score.total.toFixed(3)}</strong>
             </p>
+          )}
+          {judge.role === "SUPERVISOR" && (
+            <CallPanel
+              token={token}
+              competitionId={competition.id}
+              apparatus={judge.apparatus}
+              performances={performances}
+              gymnasts={gymnasts}
+              onDone={refresh}
+            />
           )}
         </main>
       )}
@@ -263,6 +273,92 @@ function SupervisorPanel({
       <button type="button" className="primary approve" disabled={busy || dValues.size !== 1} onClick={approve}>
         Утвердить
       </button>
+    </section>
+  );
+}
+
+/**
+ * Старший судья вызывает следующего участника. В списке те, кто ещё не выступал
+ * на этом снаряде, по номерам; на опорном прыжке — ещё и вторая попытка.
+ */
+function CallPanel({
+  token,
+  competitionId,
+  apparatus,
+  performances,
+  gymnasts,
+  onDone,
+}: {
+  token: string;
+  competitionId: string;
+  apparatus: string;
+  performances: PerformanceView[];
+  gymnasts: Map<string, Gymnast>;
+  onDone: () => Promise<void>;
+}) {
+  const [filter, setFilter] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const firstDone = new Set(performances.filter((p) => p.attempt === 1).map((p) => p.gymnastId));
+  const secondDone = new Set(performances.filter((p) => p.attempt === 2).map((p) => p.gymnastId));
+  const approvedFirst = new Set(
+    performances.filter((p) => p.attempt === 1 && p.status === "APPROVED").map((p) => p.gymnastId),
+  );
+  const matches = (g: Gymnast) =>
+    !filter || String(g.bib).startsWith(filter) || g.lastName.toLowerCase().startsWith(filter.toLowerCase());
+  const everyone = [...gymnasts.values()].sort((a, b) => a.bib - b.bib);
+  const candidates: { gymnast: Gymnast; attempt: number }[] = [
+    ...everyone.filter((g) => !firstDone.has(g.id) && matches(g)).map((gymnast) => ({ gymnast, attempt: 1 })),
+    ...(apparatus === "VT"
+      ? everyone
+          .filter((g) => approvedFirst.has(g.id) && !secondDone.has(g.id) && matches(g))
+          .map((gymnast) => ({ gymnast, attempt: 2 }))
+      : []),
+  ];
+
+  const call = async (gymnast: Gymnast, attempt: number) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await apiRequest(`/competitions/${competitionId}/performances`, {
+        token,
+        method: "POST",
+        body: { gymnastId: gymnast.id, apparatus, attempt },
+      });
+      setFilter("");
+      await onDone();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Не удалось вызвать участника");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="call">
+      <input
+        className="call-filter"
+        inputMode="numeric"
+        placeholder="№ или фамилия"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value.trim())}
+      />
+      {message && <div className="alert">{message}</div>}
+      {candidates.length === 0 ? (
+        <p className="muted">{filter ? "Никого не найдено" : "Все участники выступили на этом снаряде"}</p>
+      ) : (
+        <ul>
+          {candidates.slice(0, 30).map(({ gymnast, attempt }) => (
+            <li key={`${gymnast.id}:${attempt}`}>
+              <button type="button" disabled={busy} onClick={() => void call(gymnast, attempt)}>
+                <strong>№{gymnast.bib}</strong> {gymnast.lastName} {gymnast.firstName}
+                {attempt === 2 && <span className="muted"> · второй прыжок</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

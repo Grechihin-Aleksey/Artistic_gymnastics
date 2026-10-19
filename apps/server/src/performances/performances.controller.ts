@@ -16,13 +16,15 @@ import { PerformancesService } from "./performances.service";
 export class PerformancesController {
   constructor(private readonly performances: PerformancesService) {}
 
+  /** Вызывает участника секретариат или старший судья своего снаряда. */
   @Post("competitions/:id/performances")
-  @RequireAccess("admin")
+  @RequireAccess("admin-or-judge")
   create(
+    @CurrentPrincipal() principal: Principal,
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodPipe(createPerformanceSchema)) body: CreatePerformanceInput,
   ) {
-    return this.performances.create(id, body);
+    return this.performances.create(principal, id, body);
   }
 
   @Get("competitions/:id/performances")
