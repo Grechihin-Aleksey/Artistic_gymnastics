@@ -9,10 +9,11 @@ import {
   type Apparatus,
   type ScoreBreakdown,
 } from "@ag/scoring";
-import { and, eq } from "drizzle-orm";
+import type { LiveApparatus } from "@ag/shared";
+import { and, asc, eq } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { gymnasts, performances, teams } from "../db/schema";
+import { gymnasts, judges, marks, performances, teams } from "../db/schema";
 
 type GymnastRow = typeof gymnasts.$inferSelect;
 
@@ -73,6 +74,55 @@ export class ResultsService {
     const second = attempts.get(2);
     if (mode === "average" && first && second) return averageVaults(first, second);
     return first;
+  }
+
+  /** Для табло: на каждом снаряде кто выступает сейчас и последняя утверждённая оценка. */
+  async live(competitionId: string): Promise<LiveApparatus[]> {
+    const competition = await this.competitions.get(competitionId);
+    const [rows, people] = await Promise.all([
+      this.db
+        .select()
+        .from(performances)
+        .where(eq(performances.competitionId, competitionId))
+        .orderBy(asc(performances.createdAt)),
+      this.gymnastsById(competitionId),
+    ]);
+    const result: LiveApparatus[] = [];
+    for (const apparatus of apparatusFor(competition.discipline)) {
+      const onApparatus = rows.filter((r) => r.apparatus === apparatus);
+      const current = [...onApparatus].reverse().find((r) => r.status === "SCORING");
+      const last = onApparatus
+        .filter((r) => r.status === "APPROVED" && r.approvedAt && r.total !== null)
+        .sort((a, b) => a.approvedAt!.getTime() - b.approvedAt!.getTime())
+        .at(-1);
+      let eMarks: number[] | null = null;
+      if (last && competition.publishJudgeMarks) {
+        const markRows = await this.db
+          .select({ value: marks.value })
+          .from(marks)
+          .innerJoin(judges, eq(judges.id, marks.judgeId))
+          .where(and(eq(marks.performanceId, last.id), eq(marks.kind, "E")))
+          .orderBy(asc(judges.seat));
+        eMarks = markRows.map((m) => fromPoints(m.value));
+      }
+      result.push({
+        apparatus,
+        current: current
+          ? { performanceId: current.id, attempt: current.attempt, gymnast: gymnastView(people.get(current.gymnastId)!) }
+          : null,
+        last: last
+          ? {
+              performanceId: last.id,
+              attempt: last.attempt,
+              gymnast: gymnastView(people.get(last.gymnastId)!),
+              score: toView({ d: last.d ?? 0, e: last.e ?? 0, neutral: last.neutral ?? 0, total: last.total! }),
+              approvedAt: last.approvedAt!.toISOString(),
+              eMarks,
+            }
+          : null,
+      });
+    }
+    return result;
   }
 
   async apparatus(competitionId: string, apparatus: Apparatus, vaultMode: VaultMode = "average") {

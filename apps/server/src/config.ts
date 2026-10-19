@@ -6,6 +6,8 @@ export interface AppConfig {
   port: number;
   /** Папка со сборкой страниц судей; раздаётся по адресу /judge. */
   judgeDist?: string;
+  /** Папка со сборкой табло; раздаётся по адресу /board. */
+  boardDist?: string;
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -22,5 +24,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     adminToken,
     port: Number(env.PORT ?? 3000),
     judgeDist: env.JUDGE_DIST ?? join(__dirname, "..", "..", "judge", "dist"),
+    boardDist: env.BOARD_DIST ?? join(__dirname, "..", "..", "scoreboard", "dist"),
   };
 }

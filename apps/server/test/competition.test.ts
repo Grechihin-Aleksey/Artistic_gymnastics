@@ -195,6 +195,29 @@ describe("выступление на бревне", () => {
   });
 });
 
+describe("табло", () => {
+  it("показывает, кто выступает сейчас, и последнюю утверждённую оценку на снаряде", async () => {
+    const { competition, gymnast, panel } = await setupCompetition(1);
+    const live = async () =>
+      ((await api(app).get(`/competitions/${competition.id}/results/live`).expect(200)).body as any[]).find(
+        (a) => a.apparatus === "BB",
+      );
+    expect(await live()).toEqual({ apparatus: "BB", current: null, last: null });
+
+    const perf = (
+      await admin.post(`/competitions/${competition.id}/performances`, { gymnastId: gymnast.id, apparatus: "BB" })
+    ).body;
+    expect((await live()).current).toMatchObject({ performanceId: perf.id, gymnast: { bib: 7 } });
+
+    await mark(panel.d, perf.id, "D", 5).expect(201);
+    await mark(panel.e[0]!, perf.id, "E", 1.2).expect(201);
+    await api(app, panel.supervisor).post(`/performances/${perf.id}/approve`).expect(201);
+    const after = await live();
+    expect(after.current).toBeNull();
+    expect(after.last).toMatchObject({ performanceId: perf.id, score: { total: 13.8 }, eMarks: null });
+  });
+});
+
 describe("таблицы результатов", () => {
   async function score(
     competitionId: string,

@@ -127,3 +127,60 @@ export function competitionRoom(competitionId: string): string {
 export function panelRoom(competitionId: string, apparatus: string): string {
   return `panel:${competitionId}:${apparatus}`;
 }
+
+export const APPARATUS_NAMES: Readonly<Record<string, string>> = {
+  FX: "Вольные упражнения",
+  PH: "Конь",
+  SR: "Кольца",
+  VT: "Опорный прыжок",
+  PB: "Брусья",
+  HB: "Перекладина",
+  UB: "Брусья разной высоты",
+  BB: "Бревно",
+} satisfies Record<(typeof APPARATUS)[number], string>;
+
+/** Ответы открытых эндпоинтов результатов: их читают табло и сайт. */
+export interface GymnastView {
+  id: string;
+  bib: number;
+  firstName: string;
+  lastName: string;
+  club: string | null;
+  teamId: string | null;
+}
+
+export interface ApparatusResultRow {
+  rank: number;
+  gymnast: GymnastView;
+  score: ScoreView;
+}
+
+export interface AllAroundRow {
+  rank: number;
+  gymnast: GymnastView;
+  total: number;
+  complete: boolean;
+  apparatus: Partial<Record<(typeof APPARATUS)[number], ScoreView>>;
+}
+
+export interface TeamResultRow {
+  rank: number;
+  team: { id: string; name: string | undefined };
+  total: number;
+  apparatus: { apparatus: (typeof APPARATUS)[number]; total: number; counted: string[] }[];
+}
+
+/** Что происходит на снаряде: кто выступает сейчас и последняя утверждённая оценка. */
+export interface LiveApparatus {
+  apparatus: (typeof APPARATUS)[number];
+  current: { performanceId: string; attempt: number; gymnast: GymnastView } | null;
+  last: {
+    performanceId: string;
+    attempt: number;
+    gymnast: GymnastView;
+    score: ScoreView;
+    approvedAt: string;
+    /** Сбавки судей E, если соревнование их публикует. */
+    eMarks: number[] | null;
+  } | null;
+}

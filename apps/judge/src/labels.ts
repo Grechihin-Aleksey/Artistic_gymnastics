@@ -1,15 +1,6 @@
 import type { JudgeRole, MarkKind } from "@ag/shared";
 
-export const APPARATUS_NAMES: Record<string, string> = {
-  FX: "Вольные упражнения",
-  PH: "Конь",
-  SR: "Кольца",
-  VT: "Опорный прыжок",
-  PB: "Брусья",
-  HB: "Перекладина",
-  UB: "Брусья разной высоты",
-  BB: "Бревно",
-};
+export { APPARATUS_NAMES } from "@ag/shared";
 
 export const ROLE_NAMES: Record<JudgeRole, string> = {
   D: "Судья D",
