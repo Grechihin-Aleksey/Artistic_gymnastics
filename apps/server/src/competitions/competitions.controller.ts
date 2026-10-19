@@ -64,6 +64,11 @@ export class CompetitionsController {
     return this.competitions.importGymnasts(id, body);
   }
 
+  @Get(":id/categories")
+  listCategories(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.listCategories(id);
+  }
+
   @Get(":id/gymnasts")
   listGymnasts(@Param("id", ParseUUIDPipe) id: string) {
     return this.competitions.listGymnasts(id);

@@ -9,11 +9,11 @@ import {
   type Apparatus,
   type ScoreBreakdown,
 } from "@ag/scoring";
-import type { BoardSnapshot, LiveApparatus } from "@ag/shared";
-import { and, asc, eq } from "drizzle-orm";
+import type { BoardSnapshot, CategoryResults, LiveApparatus } from "@ag/shared";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { gymnasts, judges, marks, performances, teams } from "../db/schema";
+import { categories, gymnasts, judges, marks, performances, teams } from "../db/schema";
 
 type GymnastRow = typeof gymnasts.$inferSelect;
 
@@ -33,7 +33,16 @@ const gymnastView = (g: GymnastRow) => ({
   lastName: g.lastName,
   club: g.club,
   teamId: g.teamId,
+  categoryId: g.categoryId,
 });
+
+/**
+ * Какие участники попадают в таблицу: undefined — все, строка — один разряд,
+ * null — участники без разряда.
+ */
+export type CategoryScope = string | null | undefined;
+
+const inScope = (scope: CategoryScope, categoryId: string | null) => scope === undefined || categoryId === scope;
 
 @Injectable()
 export class ResultsService {
@@ -125,7 +134,12 @@ export class ResultsService {
     return result;
   }
 
-  async apparatus(competitionId: string, apparatus: Apparatus, vaultMode: VaultMode = "average") {
+  async apparatus(
+    competitionId: string,
+    apparatus: Apparatus,
+    vaultMode: VaultMode = "average",
+    scope: CategoryScope = undefined,
+  ) {
     const competition = await this.competitions.get(competitionId);
     if (!apparatusFor(competition.discipline).includes(apparatus)) {
       throw new UnprocessableEntityException(`Снаряда ${apparatus} нет в программе ${competition.discipline}`);
@@ -135,6 +149,7 @@ export class ResultsService {
       this.gymnastsById(competitionId),
     ]);
     const entries = [...scores].flatMap(([gymnastId, byApparatus]) => {
+      if (!inScope(scope, people.get(gymnastId)!.categoryId)) return [];
       const attempts = byApparatus.get(apparatus);
       const score = attempts && ResultsService.pick(attempts, apparatus === "VT" ? vaultMode : "first");
       return score ? [{ id: gymnastId, score }] : [];
@@ -146,13 +161,15 @@ export class ResultsService {
     }));
   }
 
-  async allAround(competitionId: string) {
+  async allAround(competitionId: string, scope: CategoryScope = undefined) {
     const competition = await this.competitions.get(competitionId);
     const [scores, people] = await Promise.all([
       this.approvedScores(competitionId),
       this.gymnastsById(competitionId),
     ]);
-    const entries = [...scores].map(([gymnastId, byApparatus]) => ({
+    const entries = [...scores]
+      .filter(([gymnastId]) => inScope(scope, people.get(gymnastId)!.categoryId))
+      .map(([gymnastId, byApparatus]) => ({
       id: gymnastId,
       scores: Object.fromEntries(
         [...byApparatus].map(([a, attempts]) => [a, ResultsService.pick(attempts, "first")]),
@@ -170,7 +187,7 @@ export class ResultsService {
     }));
   }
 
-  async teams(competitionId: string) {
+  async teams(competitionId: string, scope: CategoryScope = undefined) {
     const competition = await this.competitions.get(competitionId);
     const [scores, people, teamRows] = await Promise.all([
       this.approvedScores(competitionId),
@@ -182,7 +199,7 @@ export class ResultsService {
       perApparatus: competition.teamPerApparatus,
       counting: competition.teamCounting,
     };
-    const entries = teamRows.map((team) => ({
+    const entries = teamRows.filter((team) => inScope(scope, team.categoryId)).map((team) => ({
       id: team.id,
       members: [...people.values()]
         .filter((g) => g.teamId === team.id)
@@ -215,24 +232,60 @@ export class ResultsService {
     }));
   }
 
-  /** Снимок для табло и сайта: все таблицы одним ответом. */
-  async snapshot(competitionId: string): Promise<BoardSnapshot> {
-    const competition = await this.competitions.get(competitionId);
-    const [live, allAround, teams] = await Promise.all([
-      this.live(competitionId),
-      this.allAround(competitionId),
-      this.teams(competitionId).catch((e: unknown) => {
+  /**
+   * Разряды соревнования для таблиц. Без разрядов — одна общая запись (id null).
+   * Участники без разряда при заданных разрядах идут отдельной записью.
+   */
+  async categoryList(competitionId: string): Promise<{ id: string | null; name: string }[]> {
+    const [rows, unassigned] = await Promise.all([
+      this.db
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .where(eq(categories.competitionId, competitionId))
+        .orderBy(asc(categories.position)),
+      this.db
+        .select({ id: gymnasts.id })
+        .from(gymnasts)
+        .where(and(eq(gymnasts.competitionId, competitionId), isNull(gymnasts.categoryId)))
+        .limit(1),
+    ]);
+    if (rows.length === 0) return [{ id: null, name: "" }];
+    return unassigned.length > 0 ? [...rows, { id: null, name: "Без разряда" }] : rows;
+  }
+
+  private async categoryResults(
+    competitionId: string,
+    category: { id: string | null; name: string },
+    apparatusList: Apparatus[],
+  ): Promise<CategoryResults> {
+    const [allAround, teams, apparatus] = await Promise.all([
+      this.allAround(competitionId, category.id),
+      this.teams(competitionId, category.id).catch((e: unknown) => {
         if (e instanceof UnprocessableEntityException) return [];
         throw e;
       }),
+      Promise.all(apparatusList.map((a) => this.apparatus(competitionId, a, "average", category.id))),
     ]);
-    const apparatus = await Promise.all(live.map((a) => this.apparatus(competitionId, a.apparatus)));
+    return {
+      ...category,
+      allAround,
+      teams,
+      apparatus: Object.fromEntries(apparatusList.map((a, i) => [a, apparatus[i]!])),
+    };
+  }
+
+  /** Снимок для табло и сайта: все таблицы одним ответом. */
+  async snapshot(competitionId: string): Promise<BoardSnapshot> {
+    const competition = await this.competitions.get(competitionId);
+    const [live, categoryList] = await Promise.all([this.live(competitionId), this.categoryList(competitionId)]);
+    const apparatusList = live.map((a) => a.apparatus);
+    const results = await Promise.all(
+      categoryList.map((c) => this.categoryResults(competitionId, c, apparatusList)),
+    );
     return {
       competition: { id: competition.id, name: competition.name, discipline: competition.discipline },
       live,
-      allAround,
-      teams,
-      apparatus: Object.fromEntries(live.map((a, i) => [a.apparatus, apparatus[i]!])),
+      categories: results,
       generatedAt: new Date().toISOString(),
     };
   }

@@ -4,7 +4,7 @@ import { apparatusFor, type Discipline } from "@ag/scoring";
 import type { JudgeRole } from "@ag/shared";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
-import { InquiriesPanel, NewCompetitionForm, ProtocolsPanel, RosterPanel } from "./Secretariat";
+import { InquiriesPanel, NewCompetitionForm, ProtocolsPanel, RosterPanel, RotationPanel } from "./Secretariat";
 
 interface Competition {
   id: string;
@@ -154,9 +154,20 @@ export function AdminScreen() {
             perApparatus: competition.teamPerApparatus,
             counting: competition.teamCounting,
           }}
-          adminToken={adminToken} onError={setError} />
+          adminToken={adminToken}
+          onError={setError}
+        />
       )}
 
+      {competition && adminToken && (
+        <RotationPanel
+          key={`rotation-${competition.id}`}
+          competitionId={competition.id}
+          discipline={competition.discipline}
+          adminToken={adminToken}
+          onError={setError}
+        />
+      )}
 
       {competition && adminToken && (
         <form

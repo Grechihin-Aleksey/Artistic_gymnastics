@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
-import type { InquiryView, PerformanceView } from "@ag/shared";
+import type { InquiryView, PerformanceView, RotationView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -12,6 +12,13 @@ interface Gymnast {
   lastName: string;
 }
 
+interface RosterGymnast extends Gymnast {
+  club: string | null;
+  teamId: string | null;
+  categoryId: string | null;
+  shift: number | null;
+}
+
 interface Props {
   competitionId: string;
   discipline: Discipline;
@@ -21,13 +28,159 @@ interface Props {
 
 const fmt = (n: number) => n.toFixed(3);
 
+interface Category {
+  id: string | null;
+  name: string;
+}
+
+/** Значение параметра ?category=: id разряда или none для участников без разряда. */
+const categoryParam = (c: Category | undefined) => (c ? (c.id ?? "none") : "");
+
+/**
+ * Смены и ротации. Смены переходят со снаряда на снаряд по олимпийскому порядку;
+ * секретариат задаёт стартовые снаряды и переводит всех на следующую ротацию.
+ */
+export function RotationPanel({ competitionId, discipline, adminToken, onError }: Props) {
+  const [view, setView] = useState<RotationView | null>(null);
+  const [done, setDone] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    try {
+      const [rotation, perfs] = await Promise.all([
+        apiRequest<RotationView>(`/competitions/${competitionId}/rotation`),
+        apiRequest<PerformanceView[]>(`/competitions/${competitionId}/performances`, { token: adminToken }),
+      ]);
+      setView(rotation);
+      setDone(
+        new Set(perfs.filter((p) => p.status === "APPROVED" && p.attempt === 1).map((p) => `${p.gymnastId}:${p.apparatus}`)),
+      );
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, onError]);
+
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  if (!view || view.shifts.length === 0) return null;
+
+  const progress = view.shifts.map((s) => ({
+    ...s,
+    performed: s.gymnastIds.filter((id) => done.has(`${id}:${s.apparatus}`)).length,
+  }));
+  const unfinished = progress.filter((s) => s.performed < s.gymnastIds.length);
+
+  const setRotation = async (rotation: number) => {
+    if (rotation > view.rotation && unfinished.length > 0) {
+      const list = unfinished.map((s) => `смена ${s.number}: ${s.performed} из ${s.gymnastIds.length}`).join(", ");
+      if (!confirm(`Выступили не все (${list}). Всё равно перейти?`)) return;
+    }
+    try {
+      setView(await apiRequest<RotationView>(`/competitions/${competitionId}/rotation`, {
+        token: adminToken,
+        method: "POST",
+        body: { rotation },
+      }));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  const setStart = async (number: number, startApparatus: string) => {
+    try {
+      setView(await apiRequest<RotationView>(`/competitions/${competitionId}/shifts/${number}`, {
+        token: adminToken,
+        method: "PUT",
+        body: { startApparatus },
+      }));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="panel rotation no-print">
+      <h2>
+        Ротация {view.rotation + 1} из {view.rotations}
+      </h2>
+      <table className="wide">
+        <thead>
+          <tr>
+            <th>Смена</th>
+            <th>Начинает на</th>
+            <th>Сейчас на снаряде</th>
+            <th>Выступили</th>
+          </tr>
+        </thead>
+        <tbody>
+          {progress.map((s) => (
+            <tr key={s.number}>
+              <td>{s.number}</td>
+              <td>
+                <select
+                  value={s.startApparatus}
+                  disabled={view.rotation > 0}
+                  title={view.rotation > 0 ? "Стартовый снаряд меняют до начала соревнования" : undefined}
+                  onChange={(e) => void setStart(s.number, e.target.value)}
+                >
+                  {apparatusFor(discipline).map((a) => (
+                    <option key={a} value={a}>
+                      {APPARATUS_NAMES[a]}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td>
+                <strong>{APPARATUS_NAMES[s.apparatus]}</strong>
+              </td>
+              <td className={s.performed === s.gymnastIds.length ? "ok" : ""}>
+                {s.performed} из {s.gymnastIds.length}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="buttons wide">
+        <button type="button" disabled={view.rotation === 0} onClick={() => void setRotation(view.rotation - 1)}>
+          ← Предыдущая
+        </button>
+        <button
+          type="button"
+          className="primary"
+          disabled={view.rotation + 1 >= view.rotations}
+          onClick={() => void setRotation(view.rotation + 1)}
+        >
+          Следующая ротация →
+        </button>
+      </div>
+    </section>
+  );
+}
+
 /** Протоколы в PDF: открываются в новой вкладке, оттуда их печатают или сохраняют. */
 export function ProtocolsPanel({ competitionId, discipline, adminToken, onError }: Props) {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [category, setCategory] = useState("");
+  useEffect(() => {
+    apiRequest<Category[]>(`/competitions/${competitionId}/results/categories`)
+      .then((list) => {
+        setCategories(list);
+        setCategory((current) => current || categoryParam(list[0]));
+      })
+      .catch(() => setCategories([]));
+  }, [competitionId]);
+
   const open = async (path: string, filename: string) => {
     // Окно открываем сразу по нажатию, иначе браузер сочтёт его всплывающей рекламой.
     const tab = window.open("", "_blank");
+    const query = categories.length > 1 || categories[0]?.id ? `?category=${category}` : "";
     try {
-      const response = await fetch(`/competitions/${competitionId}/protocols/${path}`, {
+      const response = await fetch(`/competitions/${competitionId}/protocols/${path}${query}`, {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
       if (!response.ok) {
@@ -52,6 +205,18 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
   return (
     <section className="panel protocols no-print">
       <h2>Протоколы</h2>
+      {categories.length > 0 && categories[0]!.id !== null && (
+        <label>
+          Разряд
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            {categories.map((c) => (
+              <option key={categoryParam(c)} value={categoryParam(c)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="buttons">
         {apparatusFor(discipline).map((a) => (
           <button key={a} type="button" onClick={() => void open(`apparatus/${a}`, `protocol-${a}.pdf`)}>
@@ -328,27 +493,33 @@ export function RosterPanel({
   onError,
 }: Omit<Props, "discipline"> & { teamFormat: TeamFormat }) {
   const [text, setText] = useState("");
-  const [people, setPeople] = useState<(Gymnast & { club: string | null; teamId: string | null })[]>([]);
+  const [people, setPeople] = useState<RosterGymnast[]>([]);
   const [teams, setTeams] = useState<Map<string, string>>(new Map());
+  const [categories, setCategories] = useState<Map<string, string>>(new Map());
   const parsed = useMemo(() => parseRoster(text), [text]);
   const warnings = useMemo(() => {
+    // Команда считается внутри своего разряда.
+    const label = (team: string, category: string | undefined) => (category ? `${team}, ${category}` : team);
     const sizes = new Map<string, number>();
+    const add = (key: string) => sizes.set(key, (sizes.get(key) ?? 0) + 1);
     for (const g of people) {
       const name = g.teamId ? teams.get(g.teamId) : undefined;
-      if (name) sizes.set(name, (sizes.get(name) ?? 0) + 1);
+      if (name) add(label(name, g.categoryId ? categories.get(g.categoryId) : undefined));
     }
-    for (const r of parsed.rows) if (r.team) sizes.set(r.team, (sizes.get(r.team) ?? 0) + 1);
+    for (const r of parsed.rows) if (r.team) add(label(r.team, r.category));
     return teamFormatWarnings(sizes, teamFormat);
-  }, [people, teams, parsed.rows, teamFormat]);
+  }, [people, teams, categories, parsed.rows, teamFormat]);
 
   const load = useCallback(async () => {
     try {
-      const [list, teamList] = await Promise.all([
-        apiRequest<(Gymnast & { club: string | null; teamId: string | null })[]>(`/competitions/${competitionId}/gymnasts`),
+      const [list, teamList, categoryList] = await Promise.all([
+        apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
         apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/teams`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/categories`),
       ]);
       setPeople(list);
       setTeams(new Map(teamList.map((t) => [t.id, t.name])));
+      setCategories(new Map(categoryList.map((c) => [c.id, c.name])));
     } catch (e) {
       onError((e as Error).message);
     }
@@ -377,12 +548,13 @@ export function RosterPanel({
     <section className="panel roster no-print">
       <h2>Участники: {people.length}</h2>
       <label className="wide">
-        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда
+        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена. Порядок строк в
+        смене — порядок выхода.
         <textarea
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"12\tИванова\tАнна\tг. Тверь\tСШОР №1\n13\tПетрова\tМария\tг. Тверь\tСШОР №1"}
+          placeholder={"12\tИванова\tАнна\tг. Тверь\tСШОР №1\t1 юношеский\t1\n13\tПетрова\tМария\tг. Тверь\tСШОР №1\t1 юношеский\t1"}
         />
       </label>
       {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
@@ -412,6 +584,8 @@ export function RosterPanel({
                   </td>
                   <td className="muted">{g.club ?? ""}</td>
                   <td className="muted">{g.teamId ? teams.get(g.teamId) : ""}</td>
+                  <td className="muted">{g.categoryId ? categories.get(g.categoryId) : ""}</td>
+                  <td className="muted">{g.shift ? `смена ${g.shift}` : ""}</td>
                 </tr>
               ))}
             </tbody>

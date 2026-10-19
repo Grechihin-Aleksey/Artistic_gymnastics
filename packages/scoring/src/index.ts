@@ -7,3 +7,4 @@ export * from "./ranking.js";
 export * from "./apparatusFinal.js";
 export * from "./allAround.js";
 export * from "./team.js";
+export * from "./rotation.js";

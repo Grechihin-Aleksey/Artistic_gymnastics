@@ -148,6 +148,7 @@ export class InquiriesService {
         firstName: gymnast.firstName,
         lastName: gymnast.lastName,
         club: gymnast.club,
+        categoryId: gymnast.categoryId,
         teamId: gymnast.teamId,
       },
       coach: inquiry.coach,

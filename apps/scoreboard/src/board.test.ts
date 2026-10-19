@@ -17,6 +17,8 @@ describe("адрес табло", () => {
     expect(route).toEqual({ competitionId: "abc", view: "auto", embed: true, theme: "light" });
     expect(parseRoute(routeHash({ ...route, view: "aa" }))).toEqual({ ...route, view: "aa" });
     expect(parseRoute("#c=abc&theme=pink").theme).toBeUndefined();
+    expect(parseRoute(routeHash({ ...route, view: "BB", category: 2 }))).toEqual({ ...route, view: "BB", category: 2 });
+    expect(parseRoute("#c=abc&cat=x").category).toBeUndefined();
   });
 
   it("на сайте берёт данные у ретранслятора, в зале — у сервера", () => {
@@ -28,20 +30,27 @@ describe("адрес табло", () => {
 
 describe("слайды большого экрана", () => {
   it("показывает сначала снаряды, затем непустые таблицы по страницам", () => {
-    const slides = buildSlides({
-      aa: 23,
-      teams: 0,
-      apparatus: [
-        { code: "VT", rows: 4 },
-        { code: "UB", rows: 0 },
-      ],
-    });
-    expect(slides.map((s) => [typeof s.kind === "string" ? s.kind : s.kind.apparatus, s.page, s.pages])).toEqual([
-      ["now", 0, 1],
-      ["aa", 0, 3],
-      ["aa", 1, 3],
-      ["aa", 2, 3],
-      ["VT", 0, 1],
+    const slides = buildSlides([
+      {
+        aa: 23,
+        teams: 0,
+        apparatus: [
+          { code: "VT", rows: 4 },
+          { code: "UB", rows: 0 },
+        ],
+      },
+      { aa: 2, teams: 1, apparatus: [] },
+    ]);
+    expect(
+      slides.map((s) => [typeof s.kind === "string" ? s.kind : s.kind.apparatus, s.category, s.page, s.pages]),
+    ).toEqual([
+      ["now", 0, 0, 1],
+      ["aa", 0, 0, 3],
+      ["aa", 0, 1, 3],
+      ["aa", 0, 2, 3],
+      ["VT", 0, 0, 1],
+      ["aa", 1, 0, 1],
+      ["teams", 1, 0, 1],
     ]);
   });
 

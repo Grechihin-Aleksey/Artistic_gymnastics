@@ -4,7 +4,8 @@ type Row = ImportGymnastsInput["rows"][number];
 
 /**
  * Список участников, вставленный из таблицы (Excel, Google Таблицы) или набранный вручную:
- * № · Фамилия · Имя · Клуб · Команда. Столбцы разделяются табуляцией, «;» или «,».
+ * № · Фамилия · Имя · Клуб · Команда · Разряд · Смена. Столбцы разделяются табуляцией, «;» или «,».
+ * Порядок строк внутри смены — порядок выхода.
  * Строка заголовка (без номера в первом столбце) пропускается.
  */
 export function parseRoster(text: string): { rows: Row[]; errors: string[] } {
@@ -21,9 +22,14 @@ export function parseRoster(text: string): { rows: Row[]; errors: string[] } {
       errors.push(`Строка ${index + 1}: нет номера участника`);
       return;
     }
-    const [, lastName, firstName, club, team] = cells;
+    const [, lastName, firstName, club, team, category, shiftText] = cells;
     if (!lastName || !firstName) {
       errors.push(`Строка ${index + 1}: нужны фамилия и имя`);
+      return;
+    }
+    const shift = shiftText ? Number(shiftText.replace(/^смена\s*/i, "")) : undefined;
+    if (shift !== undefined && !(Number.isInteger(shift) && shift >= 1 && shift <= 50)) {
+      errors.push(`Строка ${index + 1}: смена должна быть числом от 1 до 50`);
       return;
     }
     rows.push({
@@ -32,6 +38,8 @@ export function parseRoster(text: string): { rows: Row[]; errors: string[] } {
       firstName,
       ...(club ? { club } : {}),
       ...(team ? { team } : {}),
+      ...(category ? { category } : {}),
+      ...(shift !== undefined ? { shift } : {}),
     });
   });
   return { rows, errors };

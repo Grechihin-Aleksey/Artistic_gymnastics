@@ -115,6 +115,14 @@ describe("список участников из таблицы", () => {
     expect(rows).toEqual([{ bib: 1, lastName: "Сидорова", firstName: "Вера", team: "Олимп" }]);
     expect(errors).toEqual(["Строка 2: нет номера участника", "Строка 3: нужны фамилия и имя"]);
   });
+
+  it("читает разряд и смену", () => {
+    const { rows, errors } = parseRoster("5\tКозлов\tЯн\t\tШкола 5\t2 юношеский\t3\n6\tОрлов\tЛев\t\t\t\tдве");
+    expect(rows).toEqual([
+      { bib: 5, lastName: "Козлов", firstName: "Ян", team: "Школа 5", category: "2 юношеский", shift: 3 },
+    ]);
+    expect(errors).toEqual(["Строка 2: смена должна быть числом от 1 до 50"]);
+  });
 });
 
 describe("teamFormatWarnings", () => {
