@@ -50,6 +50,13 @@
       "when": 1792478007739,
       "tag": "0006_gymnast_status",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792478393160,
+      "tag": "0007_finals",
+      "breakpoints": true
     }
   ]
 }

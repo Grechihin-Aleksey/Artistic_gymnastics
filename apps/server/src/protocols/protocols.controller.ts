@@ -1,11 +1,11 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query, Res } from "@nestjs/common";
 import type { Apparatus } from "@ag/scoring";
-import { apparatusSchema } from "@ag/shared";
+import { apparatusSchema, type Stage } from "@ag/shared";
 import type { Response } from "express";
 import { z } from "zod";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
-import { categoryQuery } from "../results/results.controller";
+import { categoryQuery, stageQuery } from "../results/results.controller";
 import type { CategoryScope } from "../results/results.service";
 import { ProtocolsService } from "./protocols.service";
 
@@ -20,9 +20,11 @@ export class ProtocolsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Param("apparatus", new ZodPipe(apparatusSchema)) apparatus: Apparatus,
     @Query("category", categoryQuery) category: CategoryScope,
+    @Query("stage", stageQuery) stage: Stage,
     @Res() res: Response,
   ) {
-    send(res, await this.protocols.apparatus(id, apparatus, category), `protocol-${apparatus}.pdf`);
+    const name = stage === "FINAL" ? `final-${apparatus}.pdf` : `protocol-${apparatus}.pdf`;
+    send(res, await this.protocols.apparatus(id, apparatus, category, stage), name);
   }
 
   @Get("all-around")
@@ -56,9 +58,10 @@ export class ProtocolsController {
   async sheet(
     @Param("id", ParseUUIDPipe) id: string,
     @Param("apparatus", new ZodPipe(apparatusSchema)) apparatus: Apparatus,
+    @Query("stage", stageQuery) stage: Stage,
     @Res() res: Response,
   ) {
-    send(res, await this.protocols.apparatusSheet(id, apparatus), `sheet-${apparatus}.pdf`);
+    send(res, await this.protocols.apparatusSheet(id, apparatus, stage), `sheet-${apparatus}.pdf`);
   }
 
   /** Грамоты призёрам: ?kind=all-around (многоборье и команды) или apparatus, ?places=3. */

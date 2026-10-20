@@ -6,6 +6,7 @@ import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
 import {
   DrawPanel,
+  FinalsPanel,
   InquiriesPanel,
   NewCompetitionForm,
   ProtocolsPanel,
@@ -291,6 +292,7 @@ export function AdminScreen() {
             adminToken={adminToken}
             onError={setError}
           />
+          <FinalsPanel key={`finals-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
           <InquiriesPanel
             key={competition.id}
             competitionId={competition.id}

@@ -68,6 +68,16 @@ select {
   font-weight: 700;
 }
 
+.stage-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
 .muted {
   color: var(--muted);
   font-size: 14px;
@@ -740,4 +750,15 @@ select {
 
 .link.danger {
   color: var(--bad);
+}
+
+.finals-phase {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.finals h3 {
+  margin: 8px 0 4px;
 }

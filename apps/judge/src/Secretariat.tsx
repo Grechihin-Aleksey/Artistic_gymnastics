@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, type GymnastStatus } from "@ag/shared";
-import type { DrawView, InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { DrawView, FinalsView, InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -184,7 +184,10 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
     const download = filename.endsWith(".xlsx");
     // Окно открываем сразу по нажатию, иначе браузер сочтёт его всплывающей рекламой.
     const tab = download ? null : window.open("", "_blank");
-    const query = byCategory && (categories.length > 1 || categories[0]?.id) ? `?category=${category}` : "";
+    const query =
+      byCategory && (categories.length > 1 || categories[0]?.id)
+        ? `${path.includes("?") ? "&" : "?"}category=${category}`
+        : "";
     try {
       const response = await fetch(`/competitions/${competitionId}/protocols/${path}${query}`, {
         headers: { Authorization: `Bearer ${adminToken}` },
@@ -251,6 +254,22 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
           Все итоги в Excel
         </button>
       </div>
+      <h2>Финалы на снарядах</h2>
+      <p className="muted">Протокол финала — по выбранному разряду, ведомость — финалисты всех разрядов в порядке выступления.</p>
+      <div className="buttons">
+        {apparatusFor(discipline).map((a) => (
+          <button key={a} type="button" onClick={() => void open(`apparatus/${a}?stage=final`, `final-${a}.pdf`)}>
+            Финал: {APPARATUS_NAMES[a]}
+          </button>
+        ))}
+      </div>
+      <div className="buttons">
+        {apparatusFor(discipline).map((a) => (
+          <button key={a} type="button" onClick={() => void open(`sheet/${a}?stage=final`, `final-sheet-${a}.pdf`, false)}>
+            Ведомость финала: {APPARATUS_NAMES[a]}
+          </button>
+        ))}
+      </div>
       <h2>Грамоты призёрам</h2>
       <p className="muted">По всем разрядам сразу, по листу A4 на каждого призёра. Разделившие место получают грамоту оба.</p>
       <div className="buttons">
@@ -258,7 +277,7 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
           Многоборье и команды
         </button>
         <button type="button" onClick={() => void open("diplomas?kind=apparatus", "diplomas.pdf", false)}>
-          Отдельные снаряды
+          Отдельные снаряды (по финалам, если они были)
         </button>
       </div>
     </section>
@@ -1209,6 +1228,180 @@ export function DrawPanel({
           </button>
         )}
       </div>
+    </section>
+  );
+}
+
+/**
+ * Финалы на отдельных снарядах: отбор лучших по квалификации в каждом разряде,
+ * жеребьёвка порядка выступления, замена запасными и переключение этапа.
+ */
+export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<FinalsView | null>(null);
+  const [size, setSize] = useState("8");
+  const [reserves, setReserves] = useState("2");
+  const [perClub, setPerClub] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const finals = await apiRequest<FinalsView>(`/competitions/${competitionId}/finals`);
+      setView(finals);
+      setSize(String(finals.size));
+      setReserves(String(finals.reserves));
+      setPerClub(finals.perClub === null ? "" : String(finals.perClub));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const post = async (path: string, body: object, question?: string) => {
+    if (question && !confirm(question)) return;
+    setBusy(true);
+    try {
+      setView(await apiRequest<FinalsView>(`/competitions/${competitionId}/finals${path}`, { token: adminToken, method: "POST", body }));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!view) return null;
+  const sizeN = Number(size);
+  const reservesN = Number(reserves);
+  const perClubN = perClub ? Number(perClub) : null;
+  const valid =
+    Number.isInteger(sizeN) && sizeN >= 1 && sizeN <= 16 &&
+    Number.isInteger(reservesN) && reservesN >= 0 && reservesN <= 5 &&
+    (perClubN === null || (Number.isInteger(perClubN) && perClubN >= 1 && perClubN <= 16));
+  const isFinal = view.phase === "FINAL";
+  const hasFinals = view.lists.length > 0;
+
+  return (
+    <section className="panel no-print finals">
+      <h2>Финалы на снарядах</h2>
+      <p className="muted wide">
+        В каждом разряде на каждом снаряде в финал выходят лучшие по оценкам квалификации; разделившие последнее
+        проходное место проходят все. Порядок выступления — жеребьёвка. Многоборье и команды считаются только
+        по квалификации.
+      </p>
+      {!view.started && (
+        <div className="wide draw-random">
+          <label>
+            Финалистов
+            <input inputMode="numeric" value={size} onChange={(e) => setSize(e.target.value.trim())} />
+          </label>
+          <label>
+            Запасных
+            <input inputMode="numeric" value={reserves} onChange={(e) => setReserves(e.target.value.trim())} />
+          </label>
+          <label>
+            Не больше от клуба
+            <input inputMode="numeric" placeholder="без огр." value={perClub} onChange={(e) => setPerClub(e.target.value.trim())} />
+          </label>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !valid}
+            onClick={() =>
+              void post(
+                "",
+                { size: sizeN, reserves: reservesN, perClub: perClubN },
+                hasFinals
+                  ? "Пересобрать финалы? Состав и порядок выступления будут определены заново."
+                  : "Сформировать финалы по утверждённым оценкам квалификации?",
+              )
+            }
+          >
+            {hasFinals ? "Пересобрать финалы" : "Сформировать финалы"}
+          </button>
+        </div>
+      )}
+      <div className="wide finals-phase">
+        <span>
+          Сейчас идёт: <strong>{isFinal ? "финалы" : "квалификация"}</strong>
+          {isFinal && <span className="muted"> · судьи вызывают только финалистов</span>}
+        </span>
+        {(hasFinals || isFinal) && (
+          <button
+            type="button"
+            className={isFinal ? undefined : "primary"}
+            disabled={busy}
+            onClick={() =>
+              void post(
+                "/phase",
+                { phase: isFinal ? "QUAL" : "FINAL" },
+                isFinal
+                  ? "Вернуться к квалификации? Судьи снова будут вызывать участников по сменам."
+                  : "Начать финалы? Планшеты судей переключатся на списки финалистов.",
+              )
+            }
+          >
+            {isFinal ? "Вернуться к квалификации" : "Начать финалы"}
+          </button>
+        )}
+      </div>
+      {view.lists.map((l) => {
+        const main = l.finalists.filter((f) => !f.reserve);
+        const spare = l.finalists.filter((f) => f.reserve);
+        return (
+          <div key={`${l.apparatus}-${l.category.id}`} className="wide">
+            <h3>
+              {APPARATUS_NAMES[l.apparatus]}
+              {l.category.name && <span className="muted"> · {l.category.name}</span>}
+            </h3>
+            <table className="draw-table">
+              <tbody>
+                {main.map((f) => (
+                  <tr key={f.gymnast.id}>
+                    <td>{f.position}.</td>
+                    <td>№{f.gymnast.bib}</td>
+                    <td>
+                      {f.gymnast.lastName} {f.gymnast.firstName}
+                    </td>
+                    <td className="muted">{f.gymnast.club ?? ""}</td>
+                    <td className="muted">
+                      квал.: {f.qualRank} место, {fmt(f.qualTotal)}
+                    </td>
+                    <td>
+                      {spare.length > 0 && (
+                        <button
+                          type="button"
+                          className="link"
+                          disabled={busy}
+                          onClick={() =>
+                            void post(
+                              `/${l.apparatus}/replace`,
+                              { gymnastId: f.gymnast.id },
+                              `Снять с финала: ${f.gymnast.lastName} ${f.gymnast.firstName}? Место в порядке выступления займёт первый запасной.`,
+                            )
+                          }
+                        >
+                          Заменить запасным
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {spare.length > 0 && (
+              <p className="muted">
+                Запасные:{" "}
+                {spare
+                  .map((f) => `${f.position}. №${f.gymnast.bib} ${f.gymnast.lastName} ${f.gymnast.firstName} (${fmt(f.qualTotal)})`)
+                  .join("; ")}
+              </p>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }

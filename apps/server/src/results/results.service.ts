@@ -9,7 +9,7 @@ import {
   type Apparatus,
   type ScoreBreakdown,
 } from "@ag/scoring";
-import type { BoardSnapshot, CategoryResults, LiveApparatus } from "@ag/shared";
+import type { BoardSnapshot, CategoryResults, LiveApparatus, Stage } from "@ag/shared";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
@@ -51,12 +51,21 @@ export class ResultsService {
     private readonly competitions: CompetitionsService,
   ) {}
 
-  /** Утверждённые оценки: участник → снаряд → попытка → оценка. */
-  private async approvedScores(competitionId: string) {
+  /**
+   * Утверждённые оценки этапа: участник → снаряд → попытка → оценка.
+   * Многоборье и команды считаются только по квалификации.
+   */
+  private async approvedScores(competitionId: string, stage: Stage = "QUAL") {
     const rows = await this.db
       .select()
       .from(performances)
-      .where(and(eq(performances.competitionId, competitionId), eq(performances.status, "APPROVED")));
+      .where(
+        and(
+          eq(performances.competitionId, competitionId),
+          eq(performances.status, "APPROVED"),
+          eq(performances.stage, stage),
+        ),
+      );
     const byGymnast = new Map<string, Map<Apparatus, Map<number, ScoreBreakdown>>>();
     for (const r of rows) {
       if (r.total === null) continue;
@@ -139,13 +148,14 @@ export class ResultsService {
     apparatus: Apparatus,
     vaultMode: VaultMode = "average",
     scope: CategoryScope = undefined,
+    stage: Stage = "QUAL",
   ) {
     const competition = await this.competitions.get(competitionId);
     if (!apparatusFor(competition.discipline).includes(apparatus)) {
       throw new UnprocessableEntityException(`Снаряда ${apparatus} нет в программе ${competition.discipline}`);
     }
     const [scores, people] = await Promise.all([
-      this.approvedScores(competitionId),
+      this.approvedScores(competitionId, stage),
       this.gymnastsById(competitionId),
     ]);
     const entries = [...scores].flatMap(([gymnastId, byApparatus]) => {
@@ -261,6 +271,7 @@ export class ResultsService {
     competitionId: string,
     category: { id: string | null; name: string },
     apparatusList: Apparatus[],
+    stage: Stage,
   ): Promise<CategoryResults> {
     const [allAround, teams, apparatus] = await Promise.all([
       this.allAround(competitionId, category.id),
@@ -268,7 +279,7 @@ export class ResultsService {
         if (e instanceof UnprocessableEntityException) return [];
         throw e;
       }),
-      Promise.all(apparatusList.map((a) => this.apparatus(competitionId, a, "average", category.id))),
+      Promise.all(apparatusList.map((a) => this.apparatus(competitionId, a, "average", category.id, stage))),
     ]);
     return {
       ...category,
@@ -278,13 +289,13 @@ export class ResultsService {
     };
   }
 
-  /** Снимок для табло и сайта: все таблицы одним ответом. */
+  /** Снимок для табло и сайта: все таблицы одним ответом. Во время финалов таблицы снарядов — финальные. */
   async snapshot(competitionId: string): Promise<BoardSnapshot> {
     const competition = await this.competitions.get(competitionId);
     const [live, categoryList] = await Promise.all([this.live(competitionId), this.categoryList(competitionId)]);
     const apparatusList = live.map((a) => a.apparatus);
     const results = await Promise.all(
-      categoryList.map((c) => this.categoryResults(competitionId, c, apparatusList)),
+      categoryList.map((c) => this.categoryResults(competitionId, c, apparatusList, competition.phase)),
     );
     return {
       competition: {
@@ -292,6 +303,7 @@ export class ResultsService {
         name: competition.name,
         discipline: competition.discipline,
         rules: competition.rules,
+        phase: competition.phase,
       },
       live,
       categories: results,

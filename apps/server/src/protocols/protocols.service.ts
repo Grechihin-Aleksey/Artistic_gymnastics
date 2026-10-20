@@ -11,7 +11,7 @@ import {
   shiftApparatus,
   type Apparatus,
 } from "@ag/scoring";
-import { APPARATUS_NAMES, GYMNAST_STATUS_NAMES, scoreLabels, type GymnastView } from "@ag/shared";
+import { APPARATUS_NAMES, GYMNAST_STATUS_NAMES, scoreLabels, type GymnastView, type Stage } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   Content,
@@ -30,6 +30,7 @@ import {
   shifts,
   teams,
 } from "../db/schema";
+import { FinalsService } from "../finals/finals.service";
 import { ResultsService, type CategoryScope } from "../results/results.service";
 import { renderPdf } from "./pdf";
 import { resultsWorkbook } from "./workbook";
@@ -77,12 +78,14 @@ export class ProtocolsService {
     @Inject(DB) private readonly db: Db,
     private readonly competitions: CompetitionsService,
     private readonly results: ResultsService,
+    private readonly finals: FinalsService,
   ) {}
 
   async apparatus(
     competitionId: string,
     apparatus: Apparatus,
     scope: CategoryScope = undefined,
+    stage: Stage = "QUAL",
   ): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
     const rows = await this.results.apparatus(
@@ -90,6 +93,7 @@ export class ProtocolsService {
       apparatus,
       "average",
       scope,
+      stage,
     );
     const eSeats = (
       await this.db
@@ -104,7 +108,7 @@ export class ProtocolsService {
         )
         .orderBy(asc(judges.seat))
     ).map((j) => j.seat);
-    const attempts = await this.attempts(competitionId, apparatus, eSeats);
+    const attempts = await this.attempts(competitionId, apparatus, eSeats, stage);
     const teamNames = await this.teamNames(competitionId);
     const isVault = apparatus === "VT";
     const custom = competition.rules === "CUSTOM";
@@ -192,7 +196,7 @@ export class ProtocolsService {
     return renderPdf(
       this.document(
         competition,
-        `Протокол: ${APPARATUS_NAMES[apparatus]}${await this.categoryTitle(competitionId, scope)}`,
+        `${stage === "FINAL" ? "Финал" : "Протокол"}: ${APPARATUS_NAMES[apparatus]}${await this.categoryTitle(competitionId, scope)}`,
         [
           rows.length === 0 ? emptyNote() : table(body),
           ...notes.map((n) => ({ text: n, style: "note" }) as Content),
@@ -374,6 +378,7 @@ export class ProtocolsService {
     competitionId: string,
     apparatus: Apparatus,
     eSeats: number[],
+    stage: Stage,
   ) {
     const perfs = await this.db
       .select()
@@ -383,6 +388,7 @@ export class ProtocolsService {
           eq(performances.competitionId, competitionId),
           eq(performances.apparatus, apparatus),
           eq(performances.status, "APPROVED"),
+          eq(performances.stage, stage),
         ),
       )
       .orderBy(asc(performances.attempt));
@@ -464,7 +470,10 @@ export class ProtocolsService {
         }
       } else {
         for (const code of apparatusFor(competition.discipline)) {
-          for (const r of await this.results.apparatus(competitionId, code, "average", c.id)) {
+          // Если на снаряде был финал, медали разыгрывались в нём.
+          const final = await this.results.apparatus(competitionId, code, "average", c.id, "FINAL");
+          const rows = final.length > 0 ? final : await this.results.apparatus(competitionId, code, "average", c.id);
+          for (const r of rows) {
             if (r.rank > places) continue;
             list.push({ who: fullName(r.gymnast), from: from(r.gymnast), place: r.rank, event: APPARATUS_EVENT[code]!, category, team: false });
           }
@@ -498,6 +507,12 @@ export class ProtocolsService {
               "average",
               c.id,
             ),
+          })),
+        ),
+        finals: await Promise.all(
+          program.map(async (code) => ({
+            code,
+            rows: await this.results.apparatus(competitionId, code, "average", c.id, "FINAL"),
           })),
         ),
       })),
@@ -614,6 +629,7 @@ export class ProtocolsService {
   async apparatusSheet(
     competitionId: string,
     apparatus: Apparatus,
+    stage: Stage = "QUAL",
   ): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
     if (!apparatusFor(competition.discipline).includes(apparatus)) {
@@ -702,7 +718,24 @@ export class ProtocolsService {
       );
 
     const content: Content[] = [];
-    if (shiftRows.length > 0) {
+    if (stage === "FINAL") {
+      // Финал: по разрядам финалисты в порядке жеребьёвки, ниже запасные.
+      const byId = new Map(people.map((g) => [g.id, g]));
+      const lists = (await this.finals.view(competitionId)).lists.filter((l) => l.apparatus === apparatus);
+      for (const l of lists) {
+        const members = l.finalists.filter((f) => !f.reserve && byId.has(f.gymnast.id));
+        if (l.category.name) content.push({ text: l.category.name, style: "section" });
+        content.push(sheet(members.map((f) => byId.get(f.gymnast.id)!)));
+        const reserves = l.finalists.filter((f) => f.reserve);
+        if (reserves.length > 0) {
+          content.push({
+            text: `Запасные: ${reserves.map((f) => `${f.position}. №${f.gymnast.bib} ${f.gymnast.lastName} ${f.gymnast.firstName}`).join("; ")}`,
+            style: "note",
+          });
+        }
+      }
+      if (content.length === 0) content.push(emptyList());
+    } else if (shiftRows.length > 0) {
       apparatusFor(competition.discipline).forEach((_, r) => {
         for (const s of shiftRows) {
           if (
@@ -738,7 +771,7 @@ export class ProtocolsService {
     return renderPdf(
       this.document(
         competition,
-        `Судейская ведомость: ${APPARATUS_NAMES[apparatus]}`,
+        `${stage === "FINAL" ? "Финал, судейская ведомость" : "Судейская ведомость"}: ${APPARATUS_NAMES[apparatus]}`,
         content,
       ),
     );

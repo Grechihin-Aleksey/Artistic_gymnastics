@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from "@nestjs/common";
-import { apparatusSchema } from "@ag/shared";
+import { apparatusSchema, type Stage } from "@ag/shared";
 import type { Apparatus } from "@ag/scoring";
 import { z } from "zod";
 import { ZodPipe } from "../zod.pipe";
@@ -11,6 +11,14 @@ export const categoryQuery = new ZodPipe(
     .union([z.uuid(), z.literal("none")])
     .optional()
     .transform((v): CategoryScope => (v === "none" ? null : v)),
+);
+
+/** ?stage=final — финал на снаряде, без параметра — квалификация. */
+export const stageQuery = new ZodPipe(
+  z
+    .enum(["qual", "final"])
+    .default("qual")
+    .transform((v): Stage => (v === "final" ? "FINAL" : "QUAL")),
 );
 
 /** Результаты открыты всем: их читают табло в зале и ретранслятор для сайта. */
@@ -39,8 +47,9 @@ export class ResultsController {
     @Param("apparatus", new ZodPipe(apparatusSchema)) apparatus: Apparatus,
     @Query("vault", new ZodPipe(z.enum(["first", "average"]).default("average"))) vault: VaultMode,
     @Query("category", categoryQuery) category: CategoryScope,
+    @Query("stage", stageQuery) stage: Stage,
   ) {
-    return this.results.apparatus(id, apparatus, vault, category);
+    return this.results.apparatus(id, apparatus, vault, category, stage);
   }
 
   @Get("all-around")

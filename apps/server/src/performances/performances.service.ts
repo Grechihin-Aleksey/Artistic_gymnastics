@@ -20,7 +20,7 @@ import { and, asc, eq } from "drizzle-orm";
 import type { JudgeRow, Principal } from "../auth/auth";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { auditLog, categories, competitions, gymnasts, judges, marks, performances } from "../db/schema";
+import { auditLog, categories, competitions, finalists, gymnasts, judges, marks, performances } from "../db/schema";
 import { LiveGateway } from "../live/live.gateway";
 
 type PerformanceRow = typeof performances.$inferSelect;
@@ -69,6 +69,23 @@ export class PerformancesService {
         `${gymnast.lastName} ${gymnast.firstName}: ${gymnast.status === "DNS" ? "неявка" : "снятие с соревнований"}, вызвать нельзя`,
       );
     }
+    // Во время финалов на снаряд вызывают только его финалистов.
+    const stage = competition.phase;
+    if (stage === "FINAL") {
+      const [finalist] = await this.db
+        .select({ reserve: finalists.reserve })
+        .from(finalists)
+        .where(
+          and(
+            eq(finalists.competitionId, competitionId),
+            eq(finalists.apparatus, input.apparatus),
+            eq(finalists.gymnastId, input.gymnastId),
+          ),
+        );
+      if (!finalist || finalist.reserve) {
+        throw new ConflictException(`${gymnast.lastName} ${gymnast.firstName} не в финале на этом снаряде`);
+      }
+    }
     // Судьи видят одно текущее выступление: следующего вызывают после утверждения.
     const [open] = await this.db
       .select({ gymnastId: performances.gymnastId })
@@ -85,7 +102,7 @@ export class PerformancesService {
 
     const [row] = await this.db
       .insert(performances)
-      .values({ competitionId, ...input })
+      .values({ competitionId, ...input, stage })
       .onConflictDoNothing()
       .returning();
     if (!row) throw new ConflictException("Это выступление уже создано");
@@ -128,6 +145,7 @@ export class PerformancesService {
       gymnastId: row.gymnastId,
       apparatus: row.apparatus,
       attempt: row.attempt,
+      stage: row.stage,
       status: row.status,
       score:
         row.total === null

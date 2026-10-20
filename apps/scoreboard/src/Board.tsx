@@ -203,6 +203,7 @@ function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
     <ApparatusTable
       code={code}
       rules={rules}
+      final={data.competition.phase === "FINAL"}
       rows={slide.pages > 1 ? pageRows(rows, slide.page) : rows}
       note={pageNote}
     />
@@ -281,11 +282,14 @@ function Empty() {
 function ApparatusTable({
   code,
   rules,
+  final,
   rows,
   note,
 }: {
   code: string;
   rules: Rules | undefined;
+  /** Идут финалы: в таблице финальные оценки. */
+  final: boolean;
   rows: ApparatusResultRow[];
   note: string;
 }) {
@@ -293,6 +297,7 @@ function ApparatusTable({
   return (
     <section>
       <h1>
+        {final && "Финал: "}
         {APPARATUS_NAMES[code]}
         {note}
       </h1>
