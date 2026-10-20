@@ -700,6 +700,146 @@ export function NewCompetitionForm({
   );
 }
 
+const DEMO_PEOPLE: Record<Discipline, [string, string][]> = {
+  WAG: [
+    ["Абрамова", "Анна"],
+    ["Белова", "Вера"],
+    ["Волкова", "Дарья"],
+    ["Гусева", "Ева"],
+    ["Дёмина", "Жанна"],
+    ["Ершова", "Зоя"],
+    ["Жукова", "Ирина"],
+    ["Зайцева", "Ксения"],
+  ],
+  MAG: [
+    ["Антонов", "Борис"],
+    ["Быков", "Глеб"],
+    ["Васильев", "Денис"],
+    ["Громов", "Егор"],
+    ["Данилов", "Иван"],
+    ["Ефимов", "Кирилл"],
+    ["Жаров", "Лев"],
+    ["Зотов", "Максим"],
+  ],
+};
+
+/**
+ * Пробный турнир для репетиции накануне: 8 участников двух разрядов в двух сменах,
+ * на каждом снаряде старший судья с одним планшетом и два судьи E. После проверки его удаляют.
+ */
+export function DemoCompetitionForm<J>({
+  adminToken,
+  onCreated,
+  onError,
+}: {
+  adminToken: string;
+  /** Старшие судьи с токенами: их QR-коды сразу появятся на экране «Судьи». */
+  onCreated: (id: string, supervisors: J[]) => void;
+  onError: (message: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const create = async (form: FormData) => {
+    const discipline = String(form.get("discipline")) as Discipline;
+    const rules = String(form.get("rules"));
+    const program = apparatusFor(discipline);
+    const call = <T,>(path: string, body: unknown, method = "POST") =>
+      apiRequest<T>(path, { token: adminToken, method, body });
+    setBusy(true);
+    setDone(false);
+    try {
+      const date = new Date().toLocaleDateString("ru-RU");
+      const { id } = await call<CompetitionCreated>("/competitions", {
+        name: `Пробный турнир ${date} — удалить после проверки`,
+        discipline,
+        rules,
+      });
+      await call(`/competitions/${id}/gymnasts/import`, {
+        rows: DEMO_PEOPLE[discipline].map(([lastName, firstName], i) => ({
+          bib: 101 + i,
+          lastName,
+          firstName,
+          club: i % 2 === 0 ? "Пробный клуб А" : "Пробный клуб Б",
+          category: i < 4 ? "3 спортивный" : "2 юношеский",
+          shift: i < 4 ? 1 : 2,
+        })),
+      });
+      if (rules === "CUSTOM") {
+        const categories = await apiRequest<{ id: string }[]>(`/competitions/${id}/categories`, { token: adminToken });
+        await call(
+          `/competitions/${id}/rules`,
+          {
+            rules,
+            deductions: [{ name: "Нет обязательного элемента", value: 0.5 }],
+            bases: categories.map((c) => ({ categoryId: c.id, base: 10, apparatus: {} })),
+          },
+          "PUT",
+        );
+      }
+      await call(`/competitions/${id}/shifts/1`, { startApparatus: program[0] }, "PUT");
+      await call(`/competitions/${id}/shifts/2`, { startApparatus: program[1] }, "PUT");
+      const supervisors: J[] = [];
+      for (const apparatus of program) {
+        supervisors.push(await call<J>(`/competitions/${id}/judges`, {
+          name: "Старший судья",
+          apparatus,
+          role: "SUPERVISOR",
+          seat: 1,
+          enterAllMarks: true,
+        }));
+        for (const seat of [1, 2]) await call(`/competitions/${id}/judges`, { name: `Судья E${seat}`, apparatus, role: "E", seat });
+      }
+      await call(`/competitions/${id}/rotation`, { rotation: 0 });
+      setDone(true);
+      onError(null);
+      onCreated(id, supervisors);
+    } catch (e) {
+      onError(`Пробный турнир создан не полностью: ${(e as Error).message}. Удалите его и попробуйте ещё раз`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="panel no-print"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void create(new FormData(e.currentTarget));
+      }}
+    >
+      <p className="muted wide">
+        Для репетиции накануне: 8 участников двух разрядов в двух сменах, на каждом снаряде старший судья с одним
+        планшетом на всю бригаду и два судьи E. Всё как на настоящем турнире: вызов, оценки, табло, протоколы.
+      </p>
+      <label>
+        Программа
+        <select name="discipline" defaultValue="WAG">
+          <option value="WAG">Женщины (4 снаряда)</option>
+          <option value="MAG">Мужчины (6 снарядов)</option>
+        </select>
+      </label>
+      <label>
+        Правила судейства
+        <select name="rules" defaultValue="FIG">
+          <option value="FIG">FIG: D + E</option>
+          <option value="CUSTOM">Свои: база 10 минус сбавки</option>
+        </select>
+      </label>
+      <button type="submit" className="primary" disabled={busy}>
+        {busy ? "Создаю…" : "Создать пробный турнир"}
+      </button>
+      {done && (
+        <p className="wide">
+          Пробный турнир создан и выбран. QR-коды старших судей уже на экране «Судьи»: по одному планшету на снаряд,
+          другим судьям коды не нужны. После репетиции удалите турнир кнопкой «Удалить турнир» ниже на этом экране.
+        </p>
+      )}
+    </form>
+  );
+}
+
 /** Участники: вставка списка из таблицы и проверка перед загрузкой. */
 export function RosterPanel({
   competitionId,

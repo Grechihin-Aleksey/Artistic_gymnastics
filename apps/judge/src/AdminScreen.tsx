@@ -18,6 +18,7 @@ import {
   ProgressPanel,
   InquiriesPanel,
   NewCompetitionForm,
+  DemoCompetitionForm,
   ImportCompetitionForm,
   TransferPanel,
   ProtocolsPanel,
@@ -250,6 +251,19 @@ export function AdminScreen() {
               onError={setError}
               onImported={(id) => {
                 setIssued([]);
+                void loadCompetitions(id);
+              }}
+            />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
+            <summary>Пробный турнир для репетиции</summary>
+            <DemoCompetitionForm<IssuedJudge>
+              adminToken={adminToken}
+              onError={setError}
+              onCreated={(id, supervisors) => {
+                setIssued(supervisors);
                 void loadCompetitions(id);
               }}
             />
