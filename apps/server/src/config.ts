@@ -39,3 +39,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     exportInterval: Number(env.EXPORT_INTERVAL ?? 1800),
   };
 }
+
+/**
+ * Заголовки запросов к ретранслятору. Токен идёт дважды: часть PHP-хостингов
+ * не передаёт Authorization в скрипт, и тогда PHP-ретранслятор берёт X-Relay-Token.
+ */
+export function relayHeaders(config: AppConfig): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    authorization: `Bearer ${config.relayToken}`,
+    "x-relay-token": config.relayToken ?? "",
+  };
+}

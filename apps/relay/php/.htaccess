@@ -1,0 +1,15 @@
+# Ретранслятор результатов. Готовые файлы (виджет, embed.js, форма заявки)
+# отдаёт сам хостинг, всё остальное обрабатывает index.php.
+Options -Indexes
+DirectoryIndex index.html index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Передать в PHP заголовок с токеном зала.
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+  RewriteRule ^(data|config\.php) - [F,L]
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+  RewriteRule ^ index.php [L,QSA]
+</IfModule>

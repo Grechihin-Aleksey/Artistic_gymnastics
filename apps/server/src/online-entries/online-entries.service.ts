@@ -17,7 +17,7 @@ import type {
 import { and, asc, eq, max } from "drizzle-orm";
 import { newToken } from "../auth/tokens";
 import { CompetitionsService } from "../competitions/competitions.service";
-import { APP_CONFIG, type AppConfig } from "../config";
+import { APP_CONFIG, relayHeaders, type AppConfig } from "../config";
 import { DB, type Db } from "../db/db.module";
 import { auditLog, competitions, gymnasts, onlineEntries } from "../db/schema";
 import { ResultsService } from "../results/results.service";
@@ -222,7 +222,7 @@ export class OnlineEntriesService {
     try {
       response = await fetch(this.relayUrl(path), {
         method,
-        headers: { "content-type": "application/json", authorization: `Bearer ${this.config.relayToken}` },
+        headers: relayHeaders(this.config),
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
