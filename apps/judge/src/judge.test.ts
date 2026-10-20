@@ -1,6 +1,6 @@
 import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
-import { parseScore } from "./labels";
+import { parsePoints, parseScore } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
@@ -160,5 +160,15 @@ describe("teamFormatWarnings", () => {
     expect(out).toHaveLength(2);
     expect(out[0]).toContain("5-5-3");
     expect(out[1]).toContain("допускается 5");
+  });
+});
+
+describe("очки общекомандного зачёта", () => {
+  it("читает очки через пробел, запятая — десятичный знак", () => {
+    expect(parsePoints("10 8  6,5;5")).toEqual([10, 8, 6.5, 5]);
+    expect(parsePoints("")).toEqual([]);
+    expect(parsePoints("10 -1")).toBeNull();
+    expect(parsePoints("1,25")).toBeNull();
+    expect(parsePoints("десять")).toBeNull();
   });
 });

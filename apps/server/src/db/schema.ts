@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Official } from "@ag/shared";
+import type { Ceremony, ClubStandingSettings, Official } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -42,6 +42,13 @@ export const competitions = pgTable("competitions", {
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
   /** Идёт квалификация или финалы на снарядах: новые выступления получают этот этап. */
   phase: stageEnum("phase").notNull().default("QUAL"),
+  /** Общекомандный зачёт: очки за места. Пустые таблицы — зачёт не ведётся. */
+  clubStanding: jsonb("club_standing")
+    .$type<ClubStandingSettings>()
+    .notNull()
+    .default({ allAround: [], apparatus: [], teams: [], best: null }),
+  /** Награждение, выведенное на табло; null — табло показывает результаты. */
+  ceremony: jsonb("ceremony").$type<Ceremony>(),
   /** Главный судья и главный секретарь: их ФИО и категории печатаются в протоколах. */
   officials: jsonb("officials").$type<{ chiefJudge: Official | null; chiefSecretary: Official | null }>().notNull().default({ chiefJudge: null, chiefSecretary: null }),
   /** Параметры отбора в финалы, с которыми их сформировали последний раз. */

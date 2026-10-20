@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { APPARATUS_NAMES, scoreLabels, type AllAroundRow, type Rules, type ApparatusResultRow, type TeamResultRow } from "@ag/shared";
+import { APPARATUS_NAMES, scoreLabels, type AllAroundRow, type ClubStandingRow, type Rules, type ApparatusResultRow, type TeamResultRow } from "@ag/shared";
 
 export interface WorkbookCategory {
   name: string;
@@ -22,6 +22,7 @@ export async function resultsWorkbook(
   categories: WorkbookCategory[],
   teamNames: Map<string, string>,
   rules: Rules = "FIG",
+  clubs: ClubStandingRow[] = [],
 ): Promise<Buffer> {
   const labels = scoreLabels(rules);
   const book = new ExcelJS.Workbook();
@@ -109,6 +110,12 @@ export async function resultsWorkbook(
       for (const t of c.teams) teams.addRow([t.rank, t.team.name ?? "", ...t.apparatus.map((a) => a.total), t.total]);
       for (let i = 3; i <= 3 + c.teams[0]!.apparatus.length; i++) teams.getColumn(i).numFmt = score;
     }
+  }
+
+  if (clubs.length > 0) {
+    const ws = sheet("Общекомандный зачёт");
+    header(ws, ["Место", "Клуб", "Многоборье", "Снаряды", "Команды", "1-х мест", "2-х мест", "3-х мест", "Очки"]);
+    for (const r of clubs) ws.addRow([r.rank, r.club, r.allAround, r.apparatus, r.teams, ...r.places, r.total]);
   }
 
   for (const ws of book.worksheets) {

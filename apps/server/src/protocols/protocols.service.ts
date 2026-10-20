@@ -17,6 +17,8 @@ import {
   birthYear,
   officialLabel,
   scoreLabels,
+  AUDIT_GROUP_NAMES,
+  type AuditGroup,
   type GymnastView,
   type Official,
   type Stage,
@@ -39,8 +41,10 @@ import {
   shifts,
   teams,
 } from "../db/schema";
+import { AuditService } from "../audit/audit.service";
 import { FinalsService } from "../finals/finals.service";
 import { ResultsService, type CategoryScope } from "../results/results.service";
+import ExcelJS from "exceljs";
 import { renderPdf } from "./pdf";
 import { resultsWorkbook } from "./workbook";
 import { APPARATUS_EVENT, diplomasDocument, type Diploma } from "./diplomas";
@@ -88,6 +92,7 @@ export class ProtocolsService {
     private readonly competitions: CompetitionsService,
     private readonly results: ResultsService,
     private readonly finals: FinalsService,
+    private readonly audit: AuditService,
   ) {}
 
   async apparatus(
@@ -318,6 +323,95 @@ export class ProtocolsService {
       .sort((a, b) => order[a.role] - order[b.role] || a.seat - b.seat)
       .map((j) => `${j.role === "SUPERVISOR" ? "Старший судья" : `${j.role}${j.seat}`} — ${officialLabel(j)}`)
       .join("; ");
+  }
+
+  /** Общекомандный зачёт клубов: очки по видам и места. */
+  async clubs(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const { settings, rows } = await this.results.clubs(competitionId);
+    const parts = [
+      ["allAround", "Многоборье"],
+      ["apparatus", "Снаряды"],
+      ["teams", "Команды"],
+    ] as const;
+    const used = parts.filter(([key]) => settings[key].length > 0);
+    const points = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+    const body: TableCell[][] = [
+      [
+        th("Место"),
+        th("Клуб"),
+        ...used.map(([, title]) => th(title, "right")),
+        th("1-х / 2-х / 3-х мест", "right"),
+        th("Очки", "right"),
+      ],
+      ...rows.map((r): TableCell[] => [
+        { text: String(r.rank), bold: true },
+        { text: r.club, bold: true },
+        ...used.map(([key]): TableCell => ({ text: points(r[key]), alignment: "right" })),
+        { text: r.places.join(" / "), alignment: "right" },
+        { text: points(r.total), alignment: "right", bold: true },
+      ]),
+    ];
+    const notes = used.map(
+      ([key, title]) => `${title}: очки за места ${settings[key].map(points).join("; ")}, дальше — 0.`,
+    );
+    if (settings.best !== null && settings.allAround.length > 0) {
+      notes.push(`В многоборье в каждом разряде в зачёт идут лучшие результаты клуба, не больше ${settings.best}.`);
+    }
+    notes.push("Места на снарядах — по финалу, если он проводился. При равенстве очков выше клуб с бо́льшим числом 1-х, затем 2-х и 3-х мест.");
+    const content: Content[] =
+      used.length === 0
+        ? [{ text: "Общекомандный зачёт не настроен: задайте очки за места в блоке «Общекомандный зачёт».", style: "note" }]
+        : [rows.length === 0 ? emptyNote() : table(body, 1), ...notes.map((n) => ({ text: n, style: "note" }) as Content)];
+    return renderPdf(this.document(competition, "Общекомандный зачёт", content));
+  }
+
+  /** Журнал изменений для жюри: по времени, с исполнителем, снарядом и участником. */
+  async auditLog(competitionId: string, group?: AuditGroup): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const entries = (await this.audit.list(competitionId, group)).reverse();
+    const body: TableCell[][] = [
+      [th("Время"), th("Кто"), th("Снаряд"), th("Участник"), th("Что произошло")],
+      ...entries.map((e): TableCell[] => [
+        { text: auditTime(e.at), noWrap: true },
+        { text: e.actor },
+        { text: e.apparatus ? APPARATUS_NAMES[e.apparatus]! : "" },
+        { text: e.gymnast ?? "" },
+        { text: e.text },
+      ]),
+    ];
+    const title = group ? `Журнал изменений: ${AUDIT_GROUP_NAMES[group].toLowerCase()}` : "Журнал изменений";
+    const content: Content[] = [
+      entries.length === 0 ? { text: "Записей нет.", italics: true, margin: [0, 6, 0, 0] } : table(body, 4, { 1: 150, 3: 120 }),
+    ];
+    return renderPdf(this.document(competition, title, content));
+  }
+
+  async auditWorkbook(competitionId: string, group?: AuditGroup): Promise<Buffer> {
+    const entries = (await this.audit.list(competitionId, group)).reverse();
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet("Журнал изменений");
+    sheet.columns = [
+      { header: "Время", key: "at", width: 20 },
+      { header: "Раздел", key: "group", width: 18 },
+      { header: "Кто", key: "actor", width: 40 },
+      { header: "Снаряд", key: "apparatus", width: 22 },
+      { header: "Участник", key: "gymnast", width: 30 },
+      { header: "Что произошло", key: "text", width: 90 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    for (const e of entries) {
+      sheet.addRow({
+        at: auditTime(e.at),
+        group: AUDIT_GROUP_NAMES[e.group],
+        actor: e.actor,
+        apparatus: e.apparatus ? APPARATUS_NAMES[e.apparatus] : "",
+        gymnast: e.gymnast ?? "",
+        text: e.text,
+      });
+    }
+    return Buffer.from(await book.xlsx.writeBuffer());
   }
 
   /**
@@ -816,6 +910,7 @@ export class ProtocolsService {
       categories,
       await this.teamNames(competitionId),
       competition.rules,
+      (await this.results.clubs(competitionId)).rows,
     );
   }
 
@@ -1195,6 +1290,10 @@ export class ProtocolsService {
     };
   }
 }
+
+/** «20.10.2026, 14:05:31» — до секунд: жюри важен порядок действий. */
+export const auditTime = (iso: string) =>
+  new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 function th(text: string, alignment: "left" | "right" = "left"): TableCell {
   return { text, style: "th", alignment };

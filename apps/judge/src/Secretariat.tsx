@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apparatusFor, type Discipline } from "@ag/scoring";
-import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
+import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
-import { APPARATUS_NAMES, parseScore } from "./labels";
+import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
 
 interface Gymnast {
@@ -170,6 +170,25 @@ export function RotationPanel({ competitionId, discipline, adminToken, onError }
   );
 }
 
+/** Скачивает протокол: PDF показывает в заранее открытой вкладке tab, остальное сохраняет файлом. */
+async function fetchProtocol(competitionId: string, adminToken: string, path: string, filename: string, tab: Window | null) {
+  const response = await fetch(`/competitions/${competitionId}/protocols/${path}`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new ApiError(response.status, data?.message ?? `Ошибка сервера ${response.status}`);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  if (tab) tab.location.href = url;
+  else {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+  }
+}
+
 /** Протоколы в PDF: открываются в новой вкладке, оттуда их печатают или сохраняют. */
 export function ProtocolsPanel({ competitionId, discipline, adminToken, onError }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -193,21 +212,7 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         ? `${path.includes("?") ? "&" : "?"}category=${category}`
         : "";
     try {
-      const response = await fetch(`/competitions/${competitionId}/protocols/${path}${query}`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new ApiError(response.status, data?.message ?? `Ошибка сервера ${response.status}`);
-      }
-      const url = URL.createObjectURL(await response.blob());
-      if (tab) tab.location.href = url;
-      else {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        link.click();
-      }
+      await fetchProtocol(competitionId, adminToken, `${path}${query}`, filename, tab);
       onError(null);
     } catch (e) {
       tab?.close();
@@ -265,6 +270,9 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         </button>
         <button type="button" onClick={() => void open("earned", "earned.pdf", false)}>
           Выполнили разряды
+        </button>
+        <button type="button" onClick={() => void open("clubs", "clubs.pdf", false)}>
+          Общекомандный зачёт
         </button>
         <button type="button" onClick={() => void open("report", "report.pdf", false)}>
           Итоговый отчёт
@@ -1418,6 +1426,359 @@ export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, 
           </div>
         );
       })}
+    </section>
+  );
+}
+
+/** «20 17 15 14» или «20, 17, 15» → [20, 17, 15]; null — в строке ошибка. */
+
+const AUDIT_PAGE = 50;
+
+/** «14:05:31», а для записей не сегодняшнего дня — с датой. */
+function auditTime(iso: string): string {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return at.toDateString() === new Date().toDateString()
+    ? time
+    : `${at.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })} ${time}`;
+}
+
+/**
+ * Журнал изменений: кто и когда ставил и правил оценки, разбирал запросы,
+ * менял участников и настройки. Выгружается для жюри в PDF и Excel.
+ */
+export function AuditPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [group, setGroup] = useState<AuditGroup | "">("");
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  const [limit, setLimit] = useState(AUDIT_PAGE);
+
+  const load = useCallback(async () => {
+    try {
+      const query = group ? `?group=${group}` : "";
+      setEntries(await apiRequest<AuditEntry[]>(`/competitions/${competitionId}/audit${query}`, { token: adminToken }));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, group, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const download = async (pdf: boolean) => {
+    const tab = pdf ? window.open("", "_blank") : null;
+    const query = group ? `?group=${group}` : "";
+    try {
+      await fetchProtocol(competitionId, adminToken, `${pdf ? "audit" : "audit.xlsx"}${query}`, pdf ? "audit.pdf" : "audit.xlsx", tab);
+      onError(null);
+    } catch (e) {
+      tab?.close();
+      onError(e instanceof ApiError && e.status !== 0 ? e.message : "Нет связи с сервером");
+    }
+  };
+
+  return (
+    <section className="panel no-print audit">
+      <h2>Журнал изменений</h2>
+      <p className="muted wide">
+        Кто и когда ставил, правил и утверждал оценки, разбирал запросы тренеров, менял участников и настройки. Новые записи
+        сверху; в PDF и Excel — по порядку времени, для жюри.
+      </p>
+      <label>
+        Раздел
+        <select value={group} onChange={(e) => setGroup(e.target.value as AuditGroup | "")}>
+          <option value="">Все записи</option>
+          {AUDIT_GROUPS.map((g) => (
+            <option key={g} value={g}>
+              {AUDIT_GROUP_NAMES[g]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="buttons">
+        <button type="button" onClick={() => void load()}>
+          Обновить
+        </button>
+        <button type="button" onClick={() => void download(true)}>
+          Журнал в PDF
+        </button>
+        <button type="button" onClick={() => void download(false)}>
+          Журнал в Excel
+        </button>
+      </div>
+      {entries && entries.length === 0 && <p className="muted wide">Записей пока нет.</p>}
+      {entries && entries.length > 0 && (
+        <div className="wide table-scroll">
+          <table className="draw-table audit-table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Кто</th>
+                <th>Снаряд</th>
+                <th>Участник</th>
+                <th>Что произошло</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.slice(0, limit).map((e) => (
+                <tr key={e.id}>
+                  <td className="muted">{auditTime(e.at)}</td>
+                  <td>{e.actor}</td>
+                  <td>{e.apparatus ? APPARATUS_NAMES[e.apparatus] : ""}</td>
+                  <td>{e.gymnast ?? ""}</td>
+                  <td>{e.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {entries && entries.length > limit && (
+        <button type="button" className="link" onClick={() => setLimit(limit + AUDIT_PAGE * 4)}>
+          Показать ещё ({entries.length - limit})
+        </button>
+      )}
+    </section>
+  );
+}
+
+const CEREMONY_TITLES: Record<Ceremony["kind"], string> = {
+  allAround: "Многоборье",
+  apparatus: "Отдельный снаряд",
+  teams: "Командный зачёт",
+  clubs: "Общекомандный зачёт",
+};
+
+/** Награждение: секретариат выводит пьедестал на табло в зале и на сайт, затем убирает его. */
+export function CeremonyPanel({ competitionId, discipline, adminToken, onError }: Props) {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [draft, setDraft] = useState<{ kind: Ceremony["kind"]; category: string; apparatus: Apparatus }>({
+    kind: "allAround",
+    category: "",
+    apparatus: apparatusFor(discipline)[0]!,
+  });
+  const [shown, setShown] = useState<CeremonyView | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiRequest<Category[]>(`/competitions/${competitionId}/results/categories`)
+      .then((list) => {
+        setCategories(list);
+        setDraft((d) => ({ ...d, category: d.category || categoryParam(list[0]) }));
+      })
+      .catch(() => setCategories([]));
+    apiRequest<BoardSnapshot>(`/competitions/${competitionId}/results/snapshot`)
+      .then((snapshot) => setShown(snapshot.ceremony ?? null))
+      .catch(() => setShown(null));
+  }, [competitionId]);
+
+  const send = async (ceremony: Ceremony | null) => {
+    setBusy(true);
+    try {
+      const result = await apiRequest<{ ceremony: CeremonyView | null }>(`/competitions/${competitionId}/ceremony`, {
+        token: adminToken,
+        method: "PUT",
+        body: { ceremony },
+      });
+      setShown(result.ceremony);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const show = () =>
+    void send({
+      kind: draft.kind,
+      categoryId: draft.kind === "clubs" || draft.category === "none" ? null : draft.category || null,
+      ...(draft.kind === "apparatus" ? { apparatus: draft.apparatus } : {}),
+    });
+
+  return (
+    <section className="panel no-print ceremony-panel">
+      <h2>Награждение на табло</h2>
+      <p className="muted wide">
+        Табло в зале и на сайте в автоматическом режиме покажет пьедестал с призёрами, пока награждение не уберут. На
+        снаряде награждают по финалу, если он был.
+      </p>
+      <label>
+        Что награждаем
+        <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as Ceremony["kind"] })}>
+          {(Object.keys(CEREMONY_TITLES) as Ceremony["kind"][]).map((k) => (
+            <option key={k} value={k}>
+              {CEREMONY_TITLES[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {draft.kind === "apparatus" && (
+        <label>
+          Снаряд
+          <select value={draft.apparatus} onChange={(e) => setDraft({ ...draft, apparatus: e.target.value as Apparatus })}>
+            {apparatusFor(discipline).map((a) => (
+              <option key={a} value={a}>
+                {APPARATUS_NAMES[a]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {draft.kind !== "clubs" && categories.some((c) => c.id) && (
+        <label>
+          Разряд
+          <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
+            {categories.map((c) => (
+              <option key={categoryParam(c)} value={categoryParam(c)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button type="button" className="primary" disabled={busy} onClick={show}>
+        Показать на табло
+      </button>
+      {shown && (
+        <div className="wide ceremony-shown">
+          <p>
+            Сейчас на табло: <strong>{shown.title}</strong>
+          </p>
+          {shown.podium.length === 0 ? (
+            <p className="muted">Призёров пока нет: результаты не готовы.</p>
+          ) : (
+            <ol className="muted">
+              {shown.podium.map((p) => (
+                <li key={`${p.place}-${p.name}`} value={p.place}>
+                  {p.name}
+                  {p.detail && ` · ${p.detail}`} · {shown.points ? `${p.total} очк.` : p.total.toFixed(3)}
+                </li>
+              ))}
+            </ol>
+          )}
+          <button type="button" disabled={busy} onClick={() => void send(null)}>
+            Убрать с табло
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Общекомандный зачёт: очки клубам за места в многоборье, на снарядах и команд
+ * по таблицам из положения. Ниже — текущая таблица клубов.
+ */
+export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<ClubStandingView | null>(null);
+  const [draft, setDraft] = useState({ allAround: "", apparatus: "", teams: "", best: "" });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const next = await apiRequest<ClubStandingView>(`/competitions/${competitionId}/results/clubs`);
+      setView(next);
+      const { allAround, apparatus, teams, best } = next.settings;
+      const text = (list: number[]) => list.map((v) => String(v).replace(".", ",")).join(" ");
+      setDraft({ allAround: text(allAround), apparatus: text(apparatus), teams: text(teams), best: best ? String(best) : "" });
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!view) return null;
+  const parsed = {
+    allAround: parsePoints(draft.allAround),
+    apparatus: parsePoints(draft.apparatus),
+    teams: parsePoints(draft.teams),
+    best: draft.best.trim() ? Number(draft.best) : null,
+  };
+  const valid =
+    parsed.allAround !== null &&
+    parsed.apparatus !== null &&
+    parsed.teams !== null &&
+    (parsed.best === null || (Number.isInteger(parsed.best) && parsed.best >= 1 && parsed.best <= 50));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await apiRequest(`/competitions/${competitionId}/club-standing`, { token: adminToken, method: "PUT", body: parsed });
+      onError(null);
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = (key: "allAround" | "apparatus" | "teams", title: string) => (
+    <label className="wide">
+      {title}
+      <input
+        value={draft[key]}
+        placeholder="например: 20 17 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1"
+        className={parsed[key] === null ? "invalid" : undefined}
+        onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+      />
+    </label>
+  );
+
+  return (
+    <section className="panel no-print club-standing">
+      <h2>Общекомандный зачёт</h2>
+      <p className="muted wide">
+        Очки клубу за 1-е, 2-е, 3-е… места его участников через пробел, как в положении; дальше списка — 0. Пустое поле —
+        этот вид в зачёт не идёт. На снарядах считаются места в финале, если он был. Клуб участника берётся из заявки, а
+        без клуба — его команда.
+      </p>
+      {field("allAround", "Очки за места в многоборье (в каждом разряде)")}
+      {field("apparatus", "Очки за места на отдельных снарядах")}
+      {field("teams", "Очки за места команд")}
+      <label>
+        Лучших результатов клуба в многоборье в разряде
+        <input inputMode="numeric" placeholder="все" value={draft.best} onChange={(e) => setDraft({ ...draft, best: e.target.value.trim() })} />
+      </label>
+      <button type="button" className="primary" disabled={busy || !valid} onClick={() => void save()}>
+        Сохранить и пересчитать
+      </button>
+      {view.rows.length > 0 && (
+        <table className="draw-table wide">
+          <thead>
+            <tr>
+              <th>Место</th>
+              <th>Клуб</th>
+              <th>Многоборье</th>
+              <th>Снаряды</th>
+              <th>Команды</th>
+              <th>1-2-3 места</th>
+              <th>Очки</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((r) => (
+              <tr key={r.club}>
+                <td>{r.rank}</td>
+                <td>
+                  <strong>{r.club}</strong>
+                </td>
+                <td>{r.allAround}</td>
+                <td>{r.apparatus}</td>
+                <td>{r.teams}</td>
+                <td className="muted">{r.places.join(" / ")}</td>
+                <td>
+                  <strong>{r.total}</strong>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }

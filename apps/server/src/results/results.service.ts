@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
 import {
   apparatusFor,
   averageVaults,
@@ -9,11 +9,21 @@ import {
   type Apparatus,
   type ScoreBreakdown,
 } from "@ag/scoring";
-import type { BoardSnapshot, CategoryResults, LiveApparatus, Stage } from "@ag/shared";
+import {
+  APPARATUS_NAMES,
+  type BoardSnapshot,
+  type CategoryResults,
+  type Ceremony,
+  type CeremonyView,
+  type ClubStandingRow,
+  type ClubStandingView,
+  type LiveApparatus,
+  type Stage,
+} from "@ag/shared";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { categories, gymnasts, judges, marks, performances, teams } from "../db/schema";
+import { auditLog, categories, competitions, gymnasts, judges, marks, performances, teams } from "../db/schema";
 
 type GymnastRow = typeof gymnasts.$inferSelect;
 
@@ -253,6 +263,118 @@ export class ResultsService {
   }
 
   /**
+   * Общекомандный зачёт: клубу начисляются очки за места его участников в многоборье
+   * (в каждом разряде, не больше best лучших), на снарядах (по финалу, если он был)
+   * и за места команд. При равенстве очков выше клуб с бо́льшим числом 1-х, затем 2-х, 3-х мест.
+   */
+  async clubs(competitionId: string): Promise<ClubStandingView> {
+    const competition = await this.competitions.get(competitionId);
+    const settings = competition.clubStanding;
+    const program = apparatusFor(competition.discipline);
+    const teamRows = await this.db.select().from(teams).where(eq(teams.competitionId, competitionId));
+    const teamNames = new Map(teamRows.map((t) => [t.id, t.name]));
+    const rows = new Map<string, ClubStandingRow>();
+    const clubOf = (name: string | null | undefined) => {
+      const title = name?.trim();
+      if (!title) return null;
+      const key = title.toLowerCase();
+      const row = rows.get(key) ?? { rank: 0, club: title, total: 0, allAround: 0, apparatus: 0, teams: 0, places: [0, 0, 0] };
+      rows.set(key, row);
+      return row;
+    };
+    const gymnastClub = (g: { club: string | null; teamId: string | null }) =>
+      clubOf(g.club || (g.teamId ? teamNames.get(g.teamId) : null));
+    const award = (row: ClubStandingRow | null, table: number[], rank: number, part: "allAround" | "apparatus" | "teams") => {
+      if (!row) return;
+      const points = table[rank - 1] ?? 0;
+      row[part] += points;
+      row.total += points;
+      if (rank <= 3) row.places[rank - 1]!++;
+    };
+
+    for (const category of await this.categoryList(competitionId)) {
+      if (settings.allAround.length > 0) {
+        const perClub = new Map<ClubStandingRow, number>();
+        for (const r of await this.allAround(competitionId, category.id)) {
+          if (!r.complete) continue;
+          const row = gymnastClub(r.gymnast);
+          if (!row) continue;
+          const counted = perClub.get(row) ?? 0;
+          if (settings.best !== null && counted >= settings.best) continue;
+          perClub.set(row, counted + 1);
+          award(row, settings.allAround, r.rank, "allAround");
+        }
+      }
+      if (settings.apparatus.length > 0) {
+        for (const a of program) {
+          const final = await this.apparatus(competitionId, a, "average", category.id, "FINAL");
+          const list = final.length > 0 ? final : await this.apparatus(competitionId, a, "average", category.id);
+          for (const r of list) award(gymnastClub(r.gymnast), settings.apparatus, r.rank, "apparatus");
+        }
+      }
+      if (settings.teams.length > 0) {
+        const ranked = await this.teams(competitionId, category.id).catch((e: unknown) => {
+          if (e instanceof UnprocessableEntityException) return [];
+          throw e;
+        });
+        for (const t of ranked) award(clubOf(t.team.name), settings.teams, t.rank, "teams");
+      }
+    }
+
+    const order = (a: ClubStandingRow, b: ClubStandingRow) =>
+      b.total - a.total || b.places[0] - a.places[0] || b.places[1] - a.places[1] || b.places[2] - a.places[2];
+    const list = [...rows.values()].filter((r) => r.total > 0).sort((a, b) => order(a, b) || a.club.localeCompare(b.club, "ru"));
+    list.forEach((r, i) => (r.rank = i > 0 && order(list[i - 1]!, r) === 0 ? list[i - 1]!.rank : i + 1));
+    return { settings, rows: list };
+  }
+
+  /** Вывести награждение на табло или убрать его (null). */
+  async setCeremony(competitionId: string, ceremony: Ceremony | null): Promise<CeremonyView | null> {
+    const view = ceremony ? await this.ceremony(competitionId, ceremony) : null;
+    await this.db.transaction(async (tx) => {
+      await tx.update(competitions).set({ ceremony }).where(eq(competitions.id, competitionId));
+      await tx.insert(auditLog).values({ competitionId, actor: "admin", action: ceremony ? "ceremony.shown" : "ceremony.hidden", details: ceremony ?? {} });
+    });
+    return view;
+  }
+
+  /**
+   * Пьедестал награждения: участники, команды или клубы на 1–3 местах.
+   * На снаряде награждают по финалу, если он был, иначе по квалификации.
+   */
+  async ceremony(competitionId: string, ceremony: Ceremony): Promise<CeremonyView> {
+    const podium: CeremonyView["podium"] = [];
+    if (ceremony.kind === "clubs") {
+      for (const r of (await this.clubs(competitionId)).rows) {
+        if (r.rank <= 3) podium.push({ place: r.rank, name: r.club, detail: null, total: r.total });
+      }
+      return { title: "Общекомандный зачёт", podium, points: true };
+    }
+    const category = (await this.categoryList(competitionId)).find((c) => c.id === ceremony.categoryId);
+    if (!category) throw new BadRequestException("В соревновании нет такого разряда");
+    const person = (g: { lastName: string; firstName: string; club: string | null }) => ({ name: `${g.lastName} ${g.firstName}`, detail: g.club?.trim() || null });
+    let title: string;
+    if (ceremony.kind === "allAround") {
+      title = "Многоборье";
+      for (const r of await this.allAround(competitionId, category.id)) {
+        if (r.complete && r.rank <= 3) podium.push({ place: r.rank, ...person(r.gymnast), total: r.total });
+      }
+    } else if (ceremony.kind === "teams") {
+      title = "Командный зачёт";
+      for (const r of await this.teams(competitionId, category.id)) {
+        if (r.rank <= 3) podium.push({ place: r.rank, name: r.team.name ?? "", detail: null, total: r.total });
+      }
+    } else {
+      const apparatus = ceremony.apparatus!;
+      const final = await this.apparatus(competitionId, apparatus, "average", category.id, "FINAL");
+      title = `${final.length > 0 ? "Финал: " : ""}${APPARATUS_NAMES[apparatus]}`;
+      const list = final.length > 0 ? final : await this.apparatus(competitionId, apparatus, "average", category.id);
+      for (const r of list) if (r.rank <= 3) podium.push({ place: r.rank, ...person(r.gymnast), total: r.score.total });
+    }
+    return { title: category.name ? `${title} · ${category.name}` : title, podium, points: false };
+  }
+
+  /**
    * Разряды соревнования для таблиц. Без разрядов — одна общая запись (id null).
    * Участники без разряда при заданных разрядах идут отдельной записью.
    */
@@ -313,6 +435,7 @@ export class ResultsService {
       },
       live,
       categories: results,
+      ceremony: competition.ceremony ? await this.ceremony(competitionId, competition.ceremony).catch(() => null) : null,
       generatedAt: new Date().toISOString(),
     };
   }

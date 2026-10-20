@@ -78,6 +78,20 @@
       "when": 1792480923951,
       "tag": "0010_officials",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792482744459,
+      "tag": "0011_club_standing",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792483296551,
+      "tag": "0012_ceremony",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { AuditController } from "./audit/audit.controller";
+import { AuditService } from "./audit/audit.service";
 import { AuthGuard, AuthService } from "./auth/auth";
 import { CompetitionsController } from "./competitions/competitions.controller";
 import { CompetitionsService } from "./competitions/competitions.service";
@@ -18,6 +20,7 @@ import { PerformancesService } from "./performances/performances.service";
 import { ProtocolsController } from "./protocols/protocols.controller";
 import { ProtocolsService } from "./protocols/protocols.service";
 import { RelayPublisher } from "./relay/relay.publisher";
+import { CeremonyController } from "./results/ceremony.controller";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
 
@@ -44,6 +47,8 @@ export class AppModule {
         FinalsController,
         InquiriesController,
         ProtocolsController,
+        CeremonyController,
+        AuditController,
       ],
       providers: [
         AuthService,
@@ -55,6 +60,7 @@ export class AppModule {
         FinalsService,
         InquiriesService,
         ProtocolsService,
+        AuditService,
         LiveGateway,
         RelayPublisher,
       ],

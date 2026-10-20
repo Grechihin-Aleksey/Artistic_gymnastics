@@ -363,7 +363,8 @@ select {
   font-size: 18px;
 }
 
-.admin .protocols .buttons {
+.admin .protocols .buttons,
+.admin .audit .buttons {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
@@ -371,6 +372,8 @@ select {
 }
 
 .admin .protocols button,
+.admin .audit .buttons button,
+.admin .ceremony-panel button,
 .admin .rules button:not(.link):not(.primary),
 .admin .actions button,
 .admin .rotation .buttons button {
@@ -802,4 +805,23 @@ select {
 
 .normatives-row > input.narrow {
   width: 7em;
+}
+
+.club-standing input.invalid {
+  border-color: var(--bad);
+}
+
+.audit .table-scroll {
+  overflow-x: auto;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.audit-table td {
+  vertical-align: top;
+  font-size: 14px;
+}
+
+.audit-table td:first-child {
+  white-space: nowrap;
 }

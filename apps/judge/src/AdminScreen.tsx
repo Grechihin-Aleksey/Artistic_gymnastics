@@ -8,6 +8,9 @@ import {
   DrawPanel,
   FinalsPanel,
   NormativesPanel,
+  ClubStandingPanel,
+  CeremonyPanel,
+  AuditPanel,
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
@@ -321,7 +324,15 @@ export function AdminScreen() {
             onError={setError}
             onSaved={() => void loadCompetitions(competition.id)}
           />
+          <ClubStandingPanel key={`clubs-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
           <ProtocolsPanel
+            competitionId={competition.id}
+            discipline={competition.discipline}
+            adminToken={adminToken}
+            onError={setError}
+          />
+          <CeremonyPanel
+            key={`ceremony-${competition.id}`}
             competitionId={competition.id}
             discipline={competition.discipline}
             adminToken={adminToken}
@@ -336,6 +347,7 @@ export function AdminScreen() {
             adminToken={adminToken}
             onError={setError}
           />
+          <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
         </>
       )}
 

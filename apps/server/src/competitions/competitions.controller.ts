@@ -23,6 +23,8 @@ import {
   setLogoSchema,
   setNormativesSchema,
   setOfficialsSchema,
+  setClubStandingSchema,
+  type ClubStandingSettings,
   setRulesSchema,
   updateGymnastSchema,
   type CreateCompetitionInput,
@@ -175,6 +177,16 @@ export class CompetitionsController {
   @RequireAccess("admin")
   setOfficials(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(setOfficialsSchema)) body: SetOfficialsInput) {
     return this.competitions.setOfficials(id, body);
+  }
+
+  /** Общекомандный зачёт: очки за места в многоборье, на снарядах и команд. */
+  @Put(":id/club-standing")
+  @RequireAccess("admin")
+  setClubStanding(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(setClubStandingSchema)) body: ClubStandingSettings,
+  ) {
+    return this.competitions.setClubStanding(id, body);
   }
 
   @Get(":id/normatives")

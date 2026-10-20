@@ -4,6 +4,7 @@ import {
   scoreLabels,
   type AllAroundRow,
   type ApparatusResultRow,
+  type CeremonyView,
   type GymnastView,
   type LiveApparatus,
   type PerformanceView,
@@ -159,9 +160,42 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
       )}
 
       <main className="content">
-        <SlideView data={data} slide={slide} />
+        {data.ceremony && route.view === "auto" ? <Podium ceremony={data.ceremony} /> : <SlideView data={data} slide={slide} />}
       </main>
     </div>
+  );
+}
+
+/** Награждение: пьедестал 2–1–3, при равенстве на одной ступени несколько призёров. */
+export function Podium({ ceremony }: { ceremony: CeremonyView }) {
+  const steps = [2, 1, 3]
+    .map((place) => ({ place, winners: ceremony.podium.filter((p) => p.place === place) }))
+    .filter((s) => s.winners.length > 0);
+  return (
+    <section className="ceremony">
+      <div className="ceremony-label">Награждение</div>
+      <h1>{ceremony.title}</h1>
+      {steps.length === 0 ? (
+        <Empty />
+      ) : (
+        <div className="podium">
+          {steps.map((s) => (
+            <div key={s.place} className={`step place-${s.place}`}>
+              <div className="winners">
+                {s.winners.map((w) => (
+                  <div key={w.name} className="winner">
+                    <div className="winner-name">{w.name}</div>
+                    {w.detail && <div className="muted">{w.detail}</div>}
+                    <div className="winner-total">{ceremony.points ? `${w.total} очк.` : fmt(w.total)}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="block">{s.place}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
