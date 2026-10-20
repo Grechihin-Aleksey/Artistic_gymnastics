@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -1623,6 +1623,83 @@ export function OnlineEntriesPanel({
           )}
         </article>
       ))}
+    </section>
+  );
+}
+
+interface SiteProtocolsView {
+  enabled: boolean;
+  published: ProtocolsIndex | null;
+  page: string | null;
+}
+
+/**
+ * Протоколы на сайте: секретарь одной кнопкой выкладывает итоговые протоколы
+ * в PDF и Excel на сайт соревнований, где их скачивают клубы и зрители.
+ */
+export function SiteProtocolsPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<SiteProtocolsView | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = useCallback(
+    async (method: "GET" | "POST" | "DELETE") => {
+      setBusy(true);
+      try {
+        setView(await apiRequest<SiteProtocolsView>(`/competitions/${competitionId}/site-protocols`, { token: adminToken, method }));
+        onError(null);
+      } catch (e) {
+        onError((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [competitionId, adminToken, onError],
+  );
+
+  useEffect(() => {
+    void run("GET");
+  }, [run]);
+
+  if (!view?.enabled) return null;
+  const published = view.published;
+  return (
+    <section className="panel no-print site-protocols">
+      <h2>Протоколы на сайте</h2>
+      <p className="muted wide">
+        Выкладывает на сайт соревнований протоколы каждого разряда (многоборье, снаряды, финалы, команды), общекомандный
+        зачёт и итоги в Excel. Публикуется то, где есть утверждённые оценки. После правок нажмите кнопку ещё раз, и протоколы
+        на сайте заменятся.
+      </p>
+      {published ? (
+        <p className="wide">
+          <strong>
+            На сайте {published.files.length} файлов, выложены {longTime(published.publishedAt)}.
+          </strong>{" "}
+          {view.page && (
+            <a href={view.page} target="_blank" rel="noopener">
+              Открыть на сайте
+            </a>
+          )}
+        </p>
+      ) : (
+        <p className="wide muted">Протоколы на сайт ещё не выкладывали.</p>
+      )}
+      <div className="buttons">
+        <button type="button" className="primary" disabled={busy} onClick={() => void run("POST")}>
+          {busy ? "Собираю протоколы…" : published ? "Обновить на сайте" : "Выложить на сайт"}
+        </button>
+        {published && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm("Снять протоколы с сайта?")) void run("DELETE");
+            }}
+          >
+            Снять с сайта
+          </button>
+        )}
+      </div>
     </section>
   );
 }

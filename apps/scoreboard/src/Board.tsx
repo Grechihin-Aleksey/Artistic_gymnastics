@@ -8,10 +8,11 @@ import {
   type GymnastView,
   type LiveApparatus,
   type PerformanceView,
+  type ProtocolsIndex,
   type Rules,
   type TeamResultRow,
 } from "@ag/shared";
-import { routeHash, type Route } from "./route";
+import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
 import { useBoard, type BoardData } from "./useBoard";
 
@@ -46,6 +47,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
     setFlash({ key: p.id, apparatus: p.apparatus, gymnastId: p.gymnastId, total: p.score.total });
   }, []);
   const { data, connected, error } = useBoard(route.competitionId, onApproved);
+  const protocols = useProtocols(route.competitionId);
 
   // Имя ищем при показе, а не при получении оценки: свежий снимок мог прийти чуть позже неё.
   const gymnasts = useMemo(() => {
@@ -118,6 +120,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
               a.apparatus,
               SHORT[a.apparatus] ?? a.apparatus,
             ]),
+            ...(protocols && protocols.files.length > 0 ? [["docs", "Протоколы"]] : []),
           ].map(([view, label]) => (
             <a
               key={view}
@@ -133,7 +136,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
           title={connected ? "На связи" : "Нет связи"}
         />
       </header>
-      {categories.length > 0 && route.view !== "auto" && route.view !== "now" && (
+      {categories.length > 0 && route.view !== "auto" && route.view !== "now" && route.view !== "docs" && (
         <nav className="categories">
           {categories.map((c, i) => (
             <a
@@ -160,9 +163,76 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
       )}
 
       <main className="content">
-        {data.ceremony && route.view === "auto" ? <Podium ceremony={data.ceremony} /> : <SlideView data={data} slide={slide} />}
+        {route.view === "docs" ? (
+          <ProtocolsList competitionId={route.competitionId} index={protocols} />
+        ) : data.ceremony && route.view === "auto" ? (
+          <Podium ceremony={data.ceremony} />
+        ) : (
+          <SlideView data={data} slide={slide} />
+        )}
       </main>
     </div>
+  );
+}
+
+const protocolsUrl = (competitionId: string, file?: string) =>
+  `../api/competitions/${encodeURIComponent(competitionId)}/protocols${file ? `/${encodeURIComponent(file)}` : ""}`;
+
+/** Протоколы, выложенные залом на сайт; в зале их нет (null) — печатает секретариат. */
+function useProtocols(competitionId: string): ProtocolsIndex | null {
+  const [index, setIndex] = useState<ProtocolsIndex | null>(null);
+  useEffect(() => {
+    if (!isRelay(location.pathname)) return;
+    const load = () =>
+      fetch(protocolsUrl(competitionId))
+        .then((r) => (r.ok ? (r.json() as Promise<ProtocolsIndex>) : null))
+        .then(setIndex)
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, [competitionId]);
+  return index;
+}
+
+const fileSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} КБ` : `${(bytes / 1024 / 1024).toFixed(1)} МБ`);
+
+export function ProtocolsList({ competitionId, index }: { competitionId: string; index: ProtocolsIndex | null }) {
+  if (!index || index.files.length === 0) {
+    return (
+      <section>
+        <h1>Протоколы</h1>
+        <p className="muted center-text">Протоколы появятся здесь, когда секретариат их опубликует</p>
+      </section>
+    );
+  }
+  const groups = [...new Set(index.files.map((f) => f.group))];
+  return (
+    <section className="protocols">
+      <h1>Протоколы</h1>
+      <p className="muted">
+        Опубликованы {new Date(index.publishedAt).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" })}
+      </p>
+      {groups.map((group) => (
+        <div key={group || "common"} className="protocol-group">
+          <h2>{group || "Общие"}</h2>
+          <ul>
+            {index.files
+              .filter((f) => f.group === group)
+              .map((f) => (
+                <li key={f.file}>
+                  <a href={protocolsUrl(competitionId, f.file)} target="_blank" rel="noopener">
+                    {f.title}
+                  </a>{" "}
+                  <span className="muted">
+                    {f.file.endsWith(".xlsx") ? "Excel" : "PDF"}, {fileSize(f.size)}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+    </section>
   );
 }
 

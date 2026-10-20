@@ -365,6 +365,7 @@ select {
 
 .admin .protocols .buttons,
 .admin .online-entries .buttons,
+.admin .site-protocols .buttons,
 .admin .audit .buttons {
   grid-column: 1 / -1;
   display: flex;
@@ -375,6 +376,7 @@ select {
 .admin .protocols button,
 .admin .audit .buttons button,
 .admin .online-entries button,
+.admin .site-protocols button,
 .admin .ceremony-panel button,
 .admin .rules button:not(.link):not(.primary),
 .admin .actions button,
@@ -516,6 +518,7 @@ select {
 
 .admin .rotation .buttons .primary,
 .admin .online-entries .buttons .primary,
+.admin .site-protocols .buttons .primary,
 .admin .ceremony-panel .primary {
   width: auto;
   min-height: 44px;

@@ -7,6 +7,7 @@ import { DISCIPLINES, onlineEntrySchema, RELAY_EVENTS, type BoardSnapshot, type 
 import { z } from "zod";
 import type { RelayConfig } from "./config.js";
 import { EntryStore, MAX_ENTRIES } from "./entries.js";
+import { PROTOCOL_FILE, ProtocolStore } from "./protocols.js";
 import { SnapshotStore } from "./store.js";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -33,6 +34,22 @@ const publishEntriesSchema = z.object({
     deadline: z.string().nullable(),
     categories: z.array(z.string().max(100)).max(100),
   }),
+});
+
+/** Протоколы соревнования одной отправкой: PDF в base64. */
+const MAX_PROTOCOLS_BYTES = 40 * 1024 * 1024;
+const protocolsSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        file: z.string().regex(PROTOCOL_FILE),
+        title: z.string().min(1).max(300),
+        group: z.string().max(100),
+        data: z.string().regex(/^[A-Za-z0-9+/]*=*$/),
+      }),
+    )
+    .max(300)
+    .refine((files) => new Set(files.map((f) => f.file)).size === files.length, "Имена файлов повторяются"),
 });
 
 /** Заявка клуба невелика: 100 участников укладываются с запасом. */
@@ -62,6 +79,7 @@ export interface Relay {
   server: Server;
   store: SnapshotStore;
   entries: EntryStore;
+  protocols: ProtocolStore;
   close(): Promise<void>;
 }
 
@@ -74,6 +92,8 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
   await store.load();
   const entries = new EntryStore(config.dataDir);
   await entries.load();
+  const protocols = new ProtocolStore(config.dataDir);
+  await protocols.load();
   const viewers = new Map<string, Set<ServerResponse>>();
   const expectedAuth = Buffer.from(`Bearer ${config.token}`);
 
@@ -119,6 +139,18 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
     if (!parsed.success) throw new HttpError(400, "Неверный формат приёма заявок");
     await entries.publish(id, parsed.data.call, parsed.data.key);
     json(res, 200, { ok: true });
+  }
+
+  /** Зал выкладывает протоколы (PUT, заменяя прежние) или снимает их (DELETE). */
+  async function hallProtocols(req: IncomingMessage, res: ServerResponse, id: string) {
+    if (!authorized(req)) throw new HttpError(401, "Неверный токен");
+    if (req.method === "DELETE") {
+      await protocols.remove(id);
+      return json(res, 200, { ok: true });
+    }
+    const parsed = protocolsSchema.safeParse(JSON.parse(await readBody(req, MAX_PROTOCOLS_BYTES)));
+    if (!parsed.success) throw new HttpError(400, "Неверный формат протоколов");
+    json(res, 200, await protocols.publish(id, parsed.data));
   }
 
   /** Клуб открывает ссылку (GET) и отправляет заявку (POST). */
@@ -206,6 +238,10 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
       return hallEntries(req, res, m[1]!.toLowerCase());
     }
+    if ((m = path.match(/^\/protocols\/([^/]+)$/)) && (req.method === "PUT" || req.method === "DELETE")) {
+      if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
+      return hallProtocols(req, res, m[1]!.toLowerCase());
+    }
     if ((m = path.match(/^\/api\/entries\/([^/]+)$/)) && (req.method === "GET" || req.method === "POST")) {
       if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
       return clubEntry(req, res, m[1]!.toLowerCase(), url.searchParams.get("k") ?? "");
@@ -214,6 +250,23 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
 
     if (path === "/health") return json(res, 200, { ok: true });
     if (path === "/api/competitions") return json(res, 200, store.list());
+    if ((m = path.match(/^\/api\/competitions\/([^/]+)\/protocols(?:\/([^/]+))?$/))) {
+      const id = m[1]!.toLowerCase();
+      if (!UUID.test(id)) throw new HttpError(404, "Не найдено");
+      if (!m[2]) return json(res, 200, protocols.index(id) ?? { publishedAt: null, files: [] });
+      const file = decodeURIComponent(m[2]);
+      const data = PROTOCOL_FILE.test(file) ? await protocols.read(id, file) : undefined;
+      if (!data) throw new HttpError(404, "Протокол не найден");
+      const pdf = file.endsWith(".pdf");
+      res.writeHead(200, {
+        "content-type": pdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": `${pdf ? "inline" : "attachment"}; filename="${file}"`,
+        "content-length": data.length,
+        "cache-control": "no-cache",
+        "access-control-allow-origin": "*",
+      });
+      return res.end(req.method === "HEAD" ? undefined : data);
+    }
     if ((m = path.match(/^\/api\/competitions\/([^/]+)(\/events)?$/))) {
       const id = m[1]!.toLowerCase();
       if (!UUID.test(id)) throw new HttpError(404, "Не найдено");
@@ -247,6 +300,7 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
     server,
     store,
     entries,
+    protocols,
     async close() {
       clearInterval(heartbeat);
       for (const set of viewers.values()) for (const res of set) res.end();

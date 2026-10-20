@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Ceremony, ClubStandingSettings, Official, OnlineEntry } from "@ag/shared";
+import type { Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -58,6 +58,8 @@ export const competitions = pgTable("competitions", {
   entriesDeadline: timestamp("entries_deadline", { withTimezone: true }),
   /** Когда последний раз забирали заявки с ретранслятора. */
   entriesSyncedAt: timestamp("entries_synced_at", { withTimezone: true }),
+  /** Протоколы, выложенные на сайт последний раз; null — не выкладывали или сняли. */
+  siteProtocols: jsonb("site_protocols").$type<ProtocolsIndex>(),
   /** Параметры отбора в финалы, с которыми их сформировали последний раз. */
   finalSize: integer("final_size").notNull().default(8),
   finalReserves: integer("final_reserves").notNull().default(2),

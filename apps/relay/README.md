@@ -25,6 +25,10 @@ docker run -d --restart unless-stopped -p 8080:8080 \
 | --- | --- | --- | --- |
 | POST | `/ingest/:id` | сервер в зале, `Authorization: Bearer <RELAY_TOKEN>` | Принимает снимок `{ snapshot, approved }`. Снимок старше уже сохранённого игнорируется |
 | PUT | `/entries/:id` | сервер в зале | Опубликовать приём онлайн-заявок: `{ key, call: { name, discipline, open, deadline, categories } }` |
+| PUT | `/protocols/:id` | сервер в зале | Выложить протоколы `{ files: [{ file, title, group, data }] }` (data в base64), заменив прежние |
+| DELETE | `/protocols/:id` | сервер в зале | Снять протоколы |
+| GET | `/api/competitions/:id/protocols` | все | Список выложенных протоколов |
+| GET | `/api/competitions/:id/protocols/:file` | все | Файл протокола (PDF открывается в браузере, Excel скачивается) |
 | GET | `/entries/:id` | сервер в зале | Все присланные заявки |
 | GET | `/api/entries/:id?k=<ключ>` | клуб по ссылке | Сведения о приёме: название, срок, разряды |
 | POST | `/api/entries/:id?k=<ключ>` | клуб по ссылке | Подать заявку: клуб, город, контакт, участники (до 100). Закрытый приём или вышедший срок — 409 |

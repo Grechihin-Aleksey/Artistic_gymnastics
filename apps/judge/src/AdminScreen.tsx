@@ -12,6 +12,7 @@ import {
   CeremonyPanel,
   AuditPanel,
   OnlineEntriesPanel,
+  SiteProtocolsPanel,
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
@@ -345,6 +346,7 @@ export function AdminScreen() {
             adminToken={adminToken}
             onError={setError}
           />
+          <SiteProtocolsPanel key={`site-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
           <CeremonyPanel
             key={`ceremony-${competition.id}`}
             competitionId={competition.id}

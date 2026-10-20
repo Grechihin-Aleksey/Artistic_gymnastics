@@ -397,3 +397,28 @@ nav.categories {
 :root[data-embed] .podium .winner-name {
   font-size: 1.1rem;
 }
+
+/* Протоколы на сайте: списком по разрядам. */
+.protocols .protocol-group {
+  margin-top: 1.5rem;
+}
+.protocols h2 {
+  font-size: 1.2rem;
+  margin: 0 0 0.5rem;
+}
+.protocols ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.5rem 1.5rem;
+}
+.protocols li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.protocols a {
+  color: var(--text);
+  font-weight: 600;
+}

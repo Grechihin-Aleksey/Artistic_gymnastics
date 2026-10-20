@@ -47,6 +47,9 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/competitions/:id/protocols/diplomas` | секретариат | Грамоты призёрам в PDF: `?kind=all-around` (многоборье и команды) или `apparatus`, `?places=3` |
 | PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, фамилия, имя, отчество, дата рождения, клуб, город, тренер, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
 | GET | `/competitions/:id/normatives` | все | Нормативы разрядов: уровни и минимальная сумма многоборья по каждому разряду |
+| GET | `/competitions/:id/site-protocols` | секретариат | Протоколы на сайте: что выложено и ссылка на страницу протоколов |
+| POST | `/competitions/:id/site-protocols` | секретариат | Собрать PDF по разрядам (многоборье, снаряды, финалы, команды), общекомандный зачёт и Excel и выложить на ретранслятор, заменив прежние |
+| DELETE | `/competitions/:id/site-protocols` | секретариат | Снять протоколы с сайта |
 | GET | `/competitions/:id/online-entries` | секретариат | Онлайн-заявки клубов: идёт ли приём, срок, ссылка для клубов, забранные заявки и решения по ним |
 | PUT | `/competitions/:id/online-entries/settings` | секретариат | Открыть или закрыть приём: `{ open, deadline }`; публикует приём на ретрансляторе и при первом открытии создаёт секретный ключ ссылки |
 | POST | `/competitions/:id/online-entries/sync` | секретариат | Забрать новые заявки с ретранслятора |

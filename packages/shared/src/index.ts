@@ -701,6 +701,26 @@ export interface RelayIngest {
   approved: PerformanceView[];
 }
 
+/** Протокол, выложенный на сайт: file — имя файла в адресе, title — как его показать. */
+export interface PublishedProtocol {
+  file: string;
+  title: string;
+  /** Раздел списка: разряд, а для общих документов — пустая строка. */
+  group: string;
+  size: number;
+}
+
+/** Протоколы соревнования на сайте. */
+export interface ProtocolsIndex {
+  publishedAt: string;
+  files: PublishedProtocol[];
+}
+
+/** Тело запроса PUT /protocols/:competitionId на ретранслятор: файлы в base64. */
+export interface RelayProtocols {
+  files: (Omit<PublishedProtocol, "size"> & { data: string })[];
+}
+
 /** События потока ретранслятора (Server-Sent Events). */
 export const RELAY_EVENTS = {
   snapshot: "snapshot",
