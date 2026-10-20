@@ -737,6 +737,14 @@ select {
   margin: 2px 0;
 }
 
+.roster-table tr.editing input.invalid {
+  border-color: var(--bad);
+}
+
+.roster-table .small {
+  font-size: 12px;
+}
+
 .roster-table tr.editing input.narrow {
   min-width: 3.5em;
   width: 4em;

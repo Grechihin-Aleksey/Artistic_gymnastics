@@ -104,6 +104,11 @@ export const gymnasts = pgTable(
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
     club: text("club"),
+    /** Отчество, дата рождения (ГГГГ или ДД.ММ.ГГГГ), город или регион, тренер. */
+    middleName: text("middle_name"),
+    birthDate: text("birth_date"),
+    city: text("city"),
+    coach: text("coach"),
     categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
     /** Номер смены и порядок выхода в ней (порядок строк в загруженном списке). */
     shift: integer("shift"),
