@@ -12,6 +12,7 @@ import {
   CeremonyPanel,
   AuditPanel,
   OnlineEntriesPanel,
+  SeriesPanel,
   SiteProtocolsPanel,
   OfficialsPanel,
   InquiriesPanel,
@@ -364,6 +365,7 @@ export function AdminScreen() {
             onError={setError}
           />
           <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+          <SeriesPanel competitions={competitions} adminToken={adminToken} onError={setError} />
         </>
       )}
 

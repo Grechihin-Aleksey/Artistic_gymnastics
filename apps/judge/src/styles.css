@@ -883,3 +883,14 @@ select {
 .entry-card .table-scroll {
   overflow-x: auto;
 }
+
+.series-stages {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: grid;
+  gap: 4px;
+}
+.series-standings h4 {
+  margin: 12px 0 4px;
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -2427,5 +2427,259 @@ function GymnastRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+type SeriesDraft = { id: string | null; name: string; points: string; best: string; stages: string[] };
+
+const emptySeries: SeriesDraft = { id: null, name: "", points: "", best: "", stages: [] };
+
+/**
+ * Кубок из нескольких этапов: каждое соревнование — этап, участникам идут очки
+ * за места в многоборье, итог — сумма по этапам (или по лучшим из них).
+ */
+export function SeriesPanel({
+  competitions,
+  adminToken,
+  onError,
+}: {
+  competitions: { id: string; name: string }[];
+  adminToken: string;
+  onError: (message: string | null) => void;
+}) {
+  const [list, setList] = useState<SeriesView[]>([]);
+  const [draft, setDraft] = useState<SeriesDraft | null>(null);
+  const [standings, setStandings] = useState<SeriesStandings | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setList(await apiRequest<SeriesView[]>("/series"));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const show = async (id: string) => {
+    try {
+      setStandings(await apiRequest<SeriesStandings>(`/series/${id}/standings`));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  const edit = (s: SeriesView) =>
+    setDraft({
+      id: s.id,
+      name: s.name,
+      points: s.points.map((v) => String(v).replace(".", ",")).join(" "),
+      best: s.best ? String(s.best) : "",
+      stages: s.stages,
+    });
+
+  const points = draft ? parsePoints(draft.points) : null;
+  const best = draft?.best.trim() ? Number(draft.best) : null;
+  const valid =
+    draft !== null &&
+    draft.name.trim() !== "" &&
+    points !== null &&
+    points.length > 0 &&
+    (best === null || (Number.isInteger(best) && best >= 1 && best <= 50));
+
+  const save = async () => {
+    if (!draft || !valid) return;
+    setBusy(true);
+    try {
+      const body = { name: draft.name.trim(), points, best, stages: draft.stages };
+      const saved = await apiRequest<SeriesView>(draft.id ? `/series/${draft.id}` : "/series", {
+        token: adminToken,
+        method: draft.id ? "PUT" : "POST",
+        body,
+      });
+      setDraft(null);
+      onError(null);
+      await load();
+      await show(saved.id);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (s: SeriesView) => {
+    if (!window.confirm(`Удалить кубок «${s.name}»? Результаты этапов останутся.`)) return;
+    try {
+      await apiRequest(`/series/${s.id}`, { token: adminToken, method: "DELETE" });
+      if (standings?.series.id === s.id) setStandings(null);
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  const pdf = async (id: string) => {
+    const tab = window.open("", "_blank");
+    try {
+      const response = await fetch(`/series/${id}/protocol`, { headers: { Authorization: `Bearer ${adminToken}` } });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new ApiError(response.status, data?.message ?? `Ошибка сервера ${response.status}`);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      if (tab) tab.location.href = url;
+      onError(null);
+    } catch (e) {
+      tab?.close();
+      onError((e as Error).message);
+    }
+  };
+
+  const toggleStage = (id: string) => {
+    if (!draft) return;
+    const stages = draft.stages.includes(id) ? draft.stages.filter((s) => s !== id) : [...draft.stages, id];
+    setDraft({ ...draft, stages });
+  };
+
+  return (
+    <section className="panel no-print series">
+      <h2>Кубок из нескольких этапов</h2>
+      <p className="muted wide">
+        Каждое соревнование — этап кубка. На этапе участник получает очки за место в многоборье своего разряда, итог —
+        сумма очков. Участники разных этапов сопоставляются по фамилии, имени и году рождения, разряды — по названию.
+      </p>
+      {list.length > 0 && (
+        <table className="draw-table wide">
+          <tbody>
+            {list.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <strong>{s.name}</strong>
+                  <div className="muted">
+                    Этапов: {s.stages.length}
+                    {s.best ? ` · в зачёт ${s.best} лучших` : ""}
+                  </div>
+                </td>
+                <td>
+                  <button type="button" onClick={() => void show(s.id)}>
+                    Итоги
+                  </button>{" "}
+                  <button type="button" onClick={() => void pdf(s.id)}>
+                    Протокол PDF
+                  </button>{" "}
+                  <button type="button" className="link" onClick={() => edit(s)}>
+                    Изменить
+                  </button>{" "}
+                  <button type="button" className="link" onClick={() => void remove(s)}>
+                    Удалить
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {draft ? (
+        <>
+          <label className="wide">
+            Название кубка
+            <input value={draft.name} placeholder="Кубок области 2026" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          </label>
+          <label className="wide">
+            Очки за места на этапе
+            <input
+              value={draft.points}
+              placeholder="например: 25 20 16 13 11 10 9 8 7 6 5 4 3 2 1"
+              className={points === null || points.length === 0 ? "invalid" : undefined}
+              onChange={(e) => setDraft({ ...draft, points: e.target.value })}
+            />
+          </label>
+          <label>
+            Лучших этапов в зачёт
+            <input inputMode="numeric" placeholder="все" value={draft.best} onChange={(e) => setDraft({ ...draft, best: e.target.value.trim() })} />
+          </label>
+          <fieldset className="wide series-stages">
+            <legend>Этапы (по порядку проведения — в порядке отметки)</legend>
+            {competitions.map((c) => {
+              const index = draft.stages.indexOf(c.id);
+              return (
+                <label key={c.id} className="check">
+                  <input type="checkbox" checked={index >= 0} onChange={() => toggleStage(c.id)} />
+                  {index >= 0 && <strong>{index + 1}. </strong>}
+                  {c.name}
+                </label>
+              );
+            })}
+          </fieldset>
+          <div className="wide">
+            <button type="button" className="primary" disabled={busy || !valid} onClick={() => void save()}>
+              {draft.id ? "Сохранить кубок" : "Создать кубок"}
+            </button>{" "}
+            <button type="button" onClick={() => setDraft(null)}>
+              Отмена
+            </button>
+          </div>
+        </>
+      ) : (
+        <button type="button" onClick={() => setDraft(emptySeries)}>
+          Новый кубок
+        </button>
+      )}
+
+      {standings && (
+        <div className="wide series-standings">
+          <h3>{standings.series.name}</h3>
+          {standings.categories.length === 0 && <p className="muted">Пока нет законченного многоборья ни на одном этапе.</p>}
+          {standings.categories.map((cat) => (
+            <div key={cat.name}>
+              <h4>{cat.name}</h4>
+              <table className="draw-table">
+                <thead>
+                  <tr>
+                    <th>Место</th>
+                    <th>Участник</th>
+                    {standings.stages.map((s, i) => (
+                      <th key={s.id} title={s.name}>
+                        Этап {i + 1}
+                      </th>
+                    ))}
+                    <th>Очки</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cat.rows.map((r) => (
+                    <tr key={`${r.name}|${r.birthYear}`}>
+                      <td>{r.rank}</td>
+                      <td>
+                        <strong>{r.name}</strong>
+                        <div className="muted">{[r.birthYear, r.club].filter(Boolean).join(" · ")}</div>
+                      </td>
+                      {r.stages.map((p, i) => (
+                        <td key={i} className={r.dropped.includes(i) ? "muted" : undefined}>
+                          {p === null ? "—" : r.dropped.includes(i) ? `(${p})` : p}
+                        </td>
+                      ))}
+                      <td>
+                        <strong>{r.total}</strong>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          <p className="muted">Этапы: {standings.stages.map((s, i) => `${i + 1}. ${s.name}`).join("; ")}</p>
+        </div>
+      )}
+      {draft === null && list.length === 0 && competitions.length < 2 && (
+        <p className="muted wide">Заведите соревнования для каждого этапа — затем соберите их в кубок.</p>
+      )}
+    </section>
   );
 }

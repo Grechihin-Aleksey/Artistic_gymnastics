@@ -274,3 +274,14 @@ export const onlineEntries = pgTable("online_entries", {
   note: text("note"),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
 });
+
+/** Кубок из нескольких этапов: рейтинг по очкам за места в многоборье. */
+export const series = pgTable("series", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  points: jsonb("points").$type<number[]>().notNull(),
+  best: integer("best"),
+  /** id соревнований-этапов по порядку; удалённое соревнование просто пропадает из зачёта. */
+  stages: jsonb("stages").$type<string[]>().notNull().default([]),
+  createdAt: createdAt(),
+});
