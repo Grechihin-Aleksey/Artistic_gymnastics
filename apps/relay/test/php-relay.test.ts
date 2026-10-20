@@ -199,6 +199,6 @@ describe.skipIf(!hasPhp)("PHP-ретранслятор", () => {
   it("не отдаёт файлы данных по прямому адресу", async () => {
     expect((await fetch(`${base}/data/results-${ID}.php`)).status).toBe(403);
     expect((await fetch(`${base}/config.php`)).status).toBe(403);
-    expect((await fetch(`${base}/`, { redirect: "manual" })).headers.get("location")).toBe("/widget/");
+    expect((await fetch(`${base}/`, { redirect: "manual" })).headers.get("location")).toBe("/widget/index.html");
   });
 });

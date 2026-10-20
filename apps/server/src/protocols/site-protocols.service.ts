@@ -32,7 +32,7 @@ export class SiteProtocolsService {
     return {
       enabled: this.enabled,
       published: competition.siteProtocols,
-      page: this.enabled ? `${this.relayUrl("widget/").toString()}#c=${competitionId}&view=docs` : null,
+      page: this.enabled ? `${this.relayUrl("widget/index.html").toString()}#c=${competitionId}&view=docs` : null,
     };
   }
 

@@ -184,6 +184,7 @@ describe("ретранслятор", () => {
     expect((await publish({ key: KEY, call: { ...call, deadline: "2020-01-01T00:00:00Z" } })).status).toBe(200);
     expect((await club(entry)).status).toBe(409);
     expect((await fetch(`${base}/entry/`)).status).toBe(200);
+    expect((await fetch(`${base}/entry/index.html`)).status).toBe(200);
   });
 
   it("хранит выложенные протоколы, отдаёт их сайту и снимает по запросу зала", async () => {

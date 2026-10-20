@@ -25,7 +25,7 @@
     if (category > 1) params.set("cat", String(category - 1));
     params.set("embed", "1");
     var frame = document.createElement("iframe");
-    frame.src = base + "/widget/#" + params.toString();
+    frame.src = base + "/widget/index.html#" + params.toString();
     frame.title = "Результаты соревнований";
     frame.loading = "lazy";
     frame.style.cssText = "display:block;width:100%;height:420px;border:0;";

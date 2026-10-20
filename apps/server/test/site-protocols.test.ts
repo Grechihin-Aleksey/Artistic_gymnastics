@@ -54,7 +54,7 @@ describe("протоколы на сайте", () => {
     expect((await admin.get(base()).expect(200)).body).toEqual({
       enabled: true,
       published: null,
-      page: `http://127.0.0.1:${(relay.address() as AddressInfo).port}/widget/#c=${competitionId}&view=docs`,
+      page: `http://127.0.0.1:${(relay.address() as AddressInfo).port}/widget/index.html#c=${competitionId}&view=docs`,
     });
     expect((await admin.post(base()).expect(409)).body.message).toContain("выкладывать нечего");
   });
