@@ -9,7 +9,13 @@
  * data-category: номер разряда по порядку, начиная с 1 (если разрядов несколько).
  */
 (function () {
+  // currentScript пуст, когда скрипт вставлен конструктором страниц (Elementor)
+  // или отложен плагином кэша, поэтому ищем свой тег по адресу.
   var script = document.currentScript;
+  if (!script || !/\/embed\.js(\?|$)/.test(script.src)) {
+    var tags = document.querySelectorAll("script[src*='/embed.js']");
+    script = tags.length ? tags[tags.length - 1] : null;
+  }
   var base = script ? script.src.replace(/\/embed\.js(\?.*)?$/, "") : "";
   var origin = base ? new URL(base).origin : "";
   var frames = [];
