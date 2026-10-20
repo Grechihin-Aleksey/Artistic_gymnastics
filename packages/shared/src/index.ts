@@ -234,6 +234,21 @@ export const setNormativesSchema = z.object({
     .max(50),
 });
 
+/** Очки за 1-е, 2-е, 3-е… места; дальше списка мест — 0 очков. */
+const placePoints = z.array(z.number().min(0).max(1000).multipleOf(0.5)).max(60);
+
+/**
+ * Общекомандный зачёт клубов: очки за места участников в многоборье, на снарядах
+ * (в финале, если он был) и команд — по таблицам из положения. best — сколько
+ * лучших результатов клуба в многоборье в каждом разряде идёт в зачёт (null — все).
+ */
+export const setClubStandingSchema = z.object({
+  allAround: placePoints,
+  apparatus: placePoints,
+  teams: placePoints,
+  best: z.number().int().min(1).max(50).nullable(),
+});
+
 /** Файл заявки Excel (.xlsx) в base64. */
 export const parseEntriesSchema = z.object({
   file: z.string().min(1).max(6_000_000).regex(/^[A-Za-z0-9+/]+=*$/, "Нужен файл в base64"),
@@ -308,6 +323,7 @@ export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type SetNormativesInput = z.infer<typeof setNormativesSchema>;
+export type ClubStandingSettings = z.infer<typeof setClubStandingSchema>;
 export type Official = z.infer<typeof officialSchema>;
 export type SetOfficialsInput = z.infer<typeof setOfficialsSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
@@ -472,6 +488,23 @@ export interface AllAroundRow {
   apparatus: Partial<Record<(typeof APPARATUS)[number], ScoreView>>;
   /** Выполненный разряд по нормативам разряда соревнований, если он задан и выполнен. */
   earned?: string | null;
+}
+
+export interface ClubStandingRow {
+  rank: number;
+  /** Клуб участника, а без клуба — его команда. */
+  club: string;
+  total: number;
+  allAround: number;
+  apparatus: number;
+  teams: number;
+  /** Сколько 1-х, 2-х и 3-х мест: решают при равенстве очков. */
+  places: [number, number, number];
+}
+
+export interface ClubStandingView {
+  settings: ClubStandingSettings;
+  rows: ClubStandingRow[];
 }
 
 export interface TeamResultRow {

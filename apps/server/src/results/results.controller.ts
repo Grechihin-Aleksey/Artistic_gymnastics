@@ -57,6 +57,11 @@ export class ResultsController {
     return this.results.allAround(id, category);
   }
 
+  @Get("clubs")
+  clubs(@Param("id", ParseUUIDPipe) id: string) {
+    return this.results.clubs(id);
+  }
+
   @Get("teams")
   teams(@Param("id", ParseUUIDPipe) id: string, @Query("category", categoryQuery) category: CategoryScope) {
     return this.results.teams(id, category);

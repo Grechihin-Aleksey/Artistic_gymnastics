@@ -320,6 +320,47 @@ export class ProtocolsService {
       .join("; ");
   }
 
+  /** Общекомандный зачёт клубов: очки по видам и места. */
+  async clubs(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const { settings, rows } = await this.results.clubs(competitionId);
+    const parts = [
+      ["allAround", "Многоборье"],
+      ["apparatus", "Снаряды"],
+      ["teams", "Команды"],
+    ] as const;
+    const used = parts.filter(([key]) => settings[key].length > 0);
+    const points = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+    const body: TableCell[][] = [
+      [
+        th("Место"),
+        th("Клуб"),
+        ...used.map(([, title]) => th(title, "right")),
+        th("1-х / 2-х / 3-х мест", "right"),
+        th("Очки", "right"),
+      ],
+      ...rows.map((r): TableCell[] => [
+        { text: String(r.rank), bold: true },
+        { text: r.club, bold: true },
+        ...used.map(([key]): TableCell => ({ text: points(r[key]), alignment: "right" })),
+        { text: r.places.join(" / "), alignment: "right" },
+        { text: points(r.total), alignment: "right", bold: true },
+      ]),
+    ];
+    const notes = used.map(
+      ([key, title]) => `${title}: очки за места ${settings[key].map(points).join("; ")}, дальше — 0.`,
+    );
+    if (settings.best !== null && settings.allAround.length > 0) {
+      notes.push(`В многоборье в каждом разряде в зачёт идут лучшие результаты клуба, не больше ${settings.best}.`);
+    }
+    notes.push("Места на снарядах — по финалу, если он проводился. При равенстве очков выше клуб с бо́льшим числом 1-х, затем 2-х и 3-х мест.");
+    const content: Content[] =
+      used.length === 0
+        ? [{ text: "Общекомандный зачёт не настроен: задайте очки за места в блоке «Общекомандный зачёт».", style: "note" }]
+        : [rows.length === 0 ? emptyNote() : table(body, 1), ...notes.map((n) => ({ text: n, style: "note" }) as Content)];
+    return renderPdf(this.document(competition, "Общекомандный зачёт", content));
+  }
+
   /**
    * Нагрудные номера: по два на лист A4 (каждый — половина листа), крупный номер,
    * фамилия и имя, клуб и разряд. Не явившихся и снятых не печатаем.
@@ -816,6 +857,7 @@ export class ProtocolsService {
       categories,
       await this.teamNames(competitionId),
       competition.rules,
+      (await this.results.clubs(competitionId)).rows,
     );
   }
 

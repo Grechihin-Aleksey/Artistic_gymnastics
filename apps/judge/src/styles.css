@@ -803,3 +803,7 @@ select {
 .normatives-row > input.narrow {
   width: 7em;
 }
+
+.club-standing input.invalid {
+  border-color: var(--bad);
+}

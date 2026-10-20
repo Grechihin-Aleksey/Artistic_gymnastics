@@ -1,0 +1,1 @@
+ALTER TABLE "competitions" ADD COLUMN "club_standing" jsonb DEFAULT '{"allAround":[],"apparatus":[],"teams":[],"best":null}'::jsonb NOT NULL;

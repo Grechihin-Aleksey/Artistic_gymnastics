@@ -42,3 +42,13 @@ export function parseScore(input: string, kind: MarkKind): number | null {
   const max = kind === "D" ? 20 : 10;
   return value <= max ? value : null;
 }
+
+/** Очки за места из положения: «10 8 6,5 5» → [10, 8, 6.5, 5]; null — если есть ошибка. */
+export function parsePoints(text: string): number[] | null {
+  // Запятая — десятичный знак (1,5 очка), числа разделяются пробелами или «;».
+  const parts = text.split(/[\s;]+/).filter(Boolean);
+  const values = parts.map((p) => Number(p.replace(",", ".")));
+  return values.every((v) => Number.isFinite(v) && v >= 0 && v <= 1000 && Number.isInteger(v * 2)) && values.length <= 60
+    ? values
+    : null;
+}

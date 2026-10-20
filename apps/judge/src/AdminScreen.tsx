@@ -8,6 +8,7 @@ import {
   DrawPanel,
   FinalsPanel,
   NormativesPanel,
+  ClubStandingPanel,
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
@@ -321,6 +322,7 @@ export function AdminScreen() {
             onError={setError}
             onSaved={() => void loadCompetitions(competition.id)}
           />
+          <ClubStandingPanel key={`clubs-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
           <ProtocolsPanel
             competitionId={competition.id}
             discipline={competition.discipline}

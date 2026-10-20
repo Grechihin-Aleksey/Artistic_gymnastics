@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
-import { APPARATUS_NAMES, parseScore } from "./labels";
+import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
 
 interface Gymnast {
@@ -265,6 +265,9 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         </button>
         <button type="button" onClick={() => void open("earned", "earned.pdf", false)}>
           Выполнили разряды
+        </button>
+        <button type="button" onClick={() => void open("clubs", "clubs.pdf", false)}>
+          Общекомандный зачёт
         </button>
         <button type="button" onClick={() => void open("report", "report.pdf", false)}>
           Итоговый отчёт
@@ -1418,6 +1421,125 @@ export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, 
           </div>
         );
       })}
+    </section>
+  );
+}
+
+/** «20 17 15 14» или «20, 17, 15» → [20, 17, 15]; null — в строке ошибка. */
+
+/**
+ * Общекомандный зачёт: очки клубам за места в многоборье, на снарядах и команд
+ * по таблицам из положения. Ниже — текущая таблица клубов.
+ */
+export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<ClubStandingView | null>(null);
+  const [draft, setDraft] = useState({ allAround: "", apparatus: "", teams: "", best: "" });
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const next = await apiRequest<ClubStandingView>(`/competitions/${competitionId}/results/clubs`);
+      setView(next);
+      const { allAround, apparatus, teams, best } = next.settings;
+      const text = (list: number[]) => list.map((v) => String(v).replace(".", ",")).join(" ");
+      setDraft({ allAround: text(allAround), apparatus: text(apparatus), teams: text(teams), best: best ? String(best) : "" });
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!view) return null;
+  const parsed = {
+    allAround: parsePoints(draft.allAround),
+    apparatus: parsePoints(draft.apparatus),
+    teams: parsePoints(draft.teams),
+    best: draft.best.trim() ? Number(draft.best) : null,
+  };
+  const valid =
+    parsed.allAround !== null &&
+    parsed.apparatus !== null &&
+    parsed.teams !== null &&
+    (parsed.best === null || (Number.isInteger(parsed.best) && parsed.best >= 1 && parsed.best <= 50));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await apiRequest(`/competitions/${competitionId}/club-standing`, { token: adminToken, method: "PUT", body: parsed });
+      onError(null);
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = (key: "allAround" | "apparatus" | "teams", title: string) => (
+    <label className="wide">
+      {title}
+      <input
+        value={draft[key]}
+        placeholder="например: 20 17 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1"
+        className={parsed[key] === null ? "invalid" : undefined}
+        onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+      />
+    </label>
+  );
+
+  return (
+    <section className="panel no-print club-standing">
+      <h2>Общекомандный зачёт</h2>
+      <p className="muted wide">
+        Очки клубу за 1-е, 2-е, 3-е… места его участников через пробел, как в положении; дальше списка — 0. Пустое поле —
+        этот вид в зачёт не идёт. На снарядах считаются места в финале, если он был. Клуб участника берётся из заявки, а
+        без клуба — его команда.
+      </p>
+      {field("allAround", "Очки за места в многоборье (в каждом разряде)")}
+      {field("apparatus", "Очки за места на отдельных снарядах")}
+      {field("teams", "Очки за места команд")}
+      <label>
+        Лучших результатов клуба в многоборье в разряде
+        <input inputMode="numeric" placeholder="все" value={draft.best} onChange={(e) => setDraft({ ...draft, best: e.target.value.trim() })} />
+      </label>
+      <button type="button" className="primary" disabled={busy || !valid} onClick={() => void save()}>
+        Сохранить и пересчитать
+      </button>
+      {view.rows.length > 0 && (
+        <table className="draw-table wide">
+          <thead>
+            <tr>
+              <th>Место</th>
+              <th>Клуб</th>
+              <th>Многоборье</th>
+              <th>Снаряды</th>
+              <th>Команды</th>
+              <th>1-2-3 места</th>
+              <th>Очки</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((r) => (
+              <tr key={r.club}>
+                <td>{r.rank}</td>
+                <td>
+                  <strong>{r.club}</strong>
+                </td>
+                <td>{r.allAround}</td>
+                <td>{r.apparatus}</td>
+                <td>{r.teams}</td>
+                <td className="muted">{r.places.join(" / ")}</td>
+                <td>
+                  <strong>{r.total}</strong>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }

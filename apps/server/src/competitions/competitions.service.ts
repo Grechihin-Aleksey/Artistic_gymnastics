@@ -9,6 +9,7 @@ import type {
   NormativesView,
   RulesView,
   SetNormativesInput,
+  ClubStandingSettings,
   SetOfficialsInput,
   SetRulesInput,
   UpdateGymnastInput,
@@ -170,6 +171,16 @@ export class CompetitionsService {
     const [row] = await this.db
       .update(competitions)
       .set({ officials: input })
+      .where(eq(competitions.id, competitionId))
+      .returning();
+    return publicCompetition(row!);
+  }
+
+  async setClubStanding(competitionId: string, input: ClubStandingSettings) {
+    await this.get(competitionId);
+    const [row] = await this.db
+      .update(competitions)
+      .set({ clubStanding: input })
       .where(eq(competitions.id, competitionId))
       .returning();
     return publicCompetition(row!);
