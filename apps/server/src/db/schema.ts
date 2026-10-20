@@ -9,8 +9,8 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Ceremony, ClubStandingSettings, Official } from "@ag/shared";
-import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
+import type { Ceremony, ClubStandingSettings, Official, OnlineEntry } from "@ag/shared";
+import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
 export const apparatusEnum = pgEnum("apparatus", APPARATUS);
@@ -21,6 +21,7 @@ export const inquiryStatusEnum = pgEnum("inquiry_status", INQUIRY_STATUSES);
 export const rulesEnum = pgEnum("rules", RULES);
 export const gymnastStatusEnum = pgEnum("gymnast_status", GYMNAST_STATUSES);
 export const stageEnum = pgEnum("stage", STAGES);
+export const onlineEntryStatusEnum = pgEnum("online_entry_status", ONLINE_ENTRY_STATUSES);
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -51,6 +52,12 @@ export const competitions = pgTable("competitions", {
   ceremony: jsonb("ceremony").$type<Ceremony>(),
   /** Главный судья и главный секретарь: их ФИО и категории печатаются в протоколах. */
   officials: jsonb("officials").$type<{ chiefJudge: Official | null; chiefSecretary: Official | null }>().notNull().default({ chiefJudge: null, chiefSecretary: null }),
+  /** Онлайн-заявки: секрет ссылки для клубов (появляется при первом открытии приёма), идёт ли приём и до когда. */
+  entryKey: text("entry_key"),
+  entriesOpen: boolean("entries_open").notNull().default(false),
+  entriesDeadline: timestamp("entries_deadline", { withTimezone: true }),
+  /** Когда последний раз забирали заявки с ретранслятора. */
+  entriesSyncedAt: timestamp("entries_synced_at", { withTimezone: true }),
   /** Параметры отбора в финалы, с которыми их сформировали последний раз. */
   finalSize: integer("final_size").notNull().default(8),
   finalReserves: integer("final_reserves").notNull().default(2),
@@ -251,4 +258,17 @@ export const auditLog = pgTable("audit_log", {
   action: text("action").notNull(),
   details: jsonb("details").notNull(),
   createdAt: createdAt(),
+});
+
+/** Онлайн-заявка клуба, забранная с ретранслятора; id — тот, что дал ретранслятор. */
+export const onlineEntries = pgTable("online_entries", {
+  id: uuid("id").primaryKey(),
+  competitionId: uuid("competition_id")
+    .notNull()
+    .references(() => competitions.id, { onDelete: "cascade" }),
+  entry: jsonb("entry").$type<OnlineEntry>().notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+  status: onlineEntryStatusEnum("status").notNull().default("NEW"),
+  note: text("note"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
 });

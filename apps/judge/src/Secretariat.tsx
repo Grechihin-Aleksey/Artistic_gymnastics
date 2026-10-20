@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -1431,6 +1431,201 @@ export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, 
 }
 
 /** «20 17 15 14» или «20, 17, 15» → [20, 17, 15]; null — в строке ошибка. */
+
+const ENTRY_STATUS_NAMES = { NEW: "новая", ACCEPTED: "принята", REJECTED: "отклонена" } as const;
+
+/** Значение для поля datetime-local в местном времени. */
+function localInput(iso: string | null): string {
+  if (!iso) return "";
+  const at = new Date(iso);
+  return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+const longTime = (iso: string) => new Date(iso).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
+
+/**
+ * Онлайн-заявки клубов: секретарь открывает приём, рассылает клубам ссылку,
+ * забирает присланные заявки и принимает их в список участников.
+ */
+export function OnlineEntriesPanel({
+  competitionId,
+  adminToken,
+  onError,
+  onAccepted,
+}: Omit<Props, "discipline"> & { onAccepted: () => void }) {
+  const [view, setView] = useState<OnlineEntriesView | null>(null);
+  const [deadline, setDeadline] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const run = useCallback(
+    async (path: string, method: "GET" | "POST" | "PUT" = "GET", body?: unknown) => {
+      setBusy(true);
+      try {
+        const next = await apiRequest<OnlineEntriesView>(`/competitions/${competitionId}/online-entries${path}`, {
+          token: adminToken,
+          method,
+          ...(body === undefined ? {} : { body }),
+        });
+        setView(next);
+        setDeadline(localInput(next.deadline));
+        onError(null);
+        return true;
+      } catch (e) {
+        onError((e as Error).message);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [competitionId, adminToken, onError],
+  );
+
+  useEffect(() => {
+    void run("");
+  }, [run]);
+
+  if (!view) return null;
+  if (!view.enabled) {
+    return (
+      <section className="panel no-print online-entries">
+        <h2>Онлайн-заявки клубов</h2>
+        <p className="muted wide">
+          Клубы могут подавать заявки по ссылке на сайте соревнований, когда сервер в зале подключён к сайту (переменные
+          RELAY_URL и RELAY_TOKEN). Пока заявки загружаются из Excel или вставляются списком.
+        </p>
+      </section>
+    );
+  }
+
+  const settings = (open: boolean) =>
+    void run("/settings", "PUT", { open, deadline: open && deadline ? new Date(deadline).toISOString() : null });
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(view.link!);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      onError("Не удалось скопировать: выделите ссылку и скопируйте вручную");
+    }
+  };
+  const fresh = view.entries.filter((e) => e.status === "NEW").length;
+
+  return (
+    <section className="panel no-print online-entries">
+      <h2>Онлайн-заявки клубов</h2>
+      <p className="muted wide">
+        Откройте приём и отправьте клубам ссылку: заявку заполняют на сайте с телефона или компьютера. Присланное попадает
+        сюда по кнопке «Забрать заявки», а в список участников — только после «Принять в список».
+      </p>
+      <p className="wide">
+        {view.open ? (
+          <strong>Приём открыт{view.deadline ? ` до ${longTime(view.deadline)}` : ""}.</strong>
+        ) : (
+          <strong>Приём закрыт.</strong>
+        )}
+      </p>
+      <label>
+        Принимать до (необязательно)
+        <input type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+      </label>
+      <div className="buttons">
+        <button type="button" className="primary" disabled={busy} onClick={() => settings(true)}>
+          {view.open ? "Сохранить срок" : "Открыть приём"}
+        </button>
+        {view.open && (
+          <button type="button" disabled={busy} onClick={() => settings(false)}>
+            Закрыть приём
+          </button>
+        )}
+        {view.link && (
+          <button type="button" disabled={busy} onClick={() => void run("/sync", "POST")}>
+            Забрать заявки
+          </button>
+        )}
+      </div>
+      {view.link && (
+        <div className="wide entry-link">
+          <input readOnly value={view.link} aria-label="Ссылка для клубов" onFocus={(e) => e.target.select()} />
+          <button type="button" onClick={() => void copy()}>
+            {copied ? "Скопировано" : "Скопировать ссылку"}
+          </button>
+        </div>
+      )}
+      {view.syncedAt && (
+        <p className="muted wide">
+          Заявки забраны {longTime(view.syncedAt)}: всего {view.entries.length}, новых {fresh}.
+        </p>
+      )}
+      {[...view.entries].reverse().map((e) => (
+        <article key={e.id} className={`wide entry-card status-${e.status.toLowerCase()}`}>
+          <header>
+            <strong>{e.club}</strong>
+            {e.city && <span className="muted"> · {e.city}</span>}
+            <span className={`entry-status ${e.status.toLowerCase()}`}>{ENTRY_STATUS_NAMES[e.status]}</span>
+          </header>
+          <p className="muted">
+            {e.contact} · получена {longTime(e.receivedAt)} · участников: {e.rows.length}
+          </p>
+          {e.comment && <p>Комментарий: {e.comment}</p>}
+          {e.note && <p className="muted">Причина отказа: {e.note}</p>}
+          <div className="table-scroll">
+            <table className="draw-table">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Участник</th>
+                  <th>Дата рождения</th>
+                  <th>Разряд</th>
+                  <th>Команда</th>
+                  <th>Тренер</th>
+                </tr>
+              </thead>
+              <tbody>
+                {e.rows.map((r, i) => (
+                  <tr key={i}>
+                    <td className="muted">{i + 1}</td>
+                    <td>{[r.lastName, r.firstName, r.middleName].filter(Boolean).join(" ")}</td>
+                    <td>{r.birthDate ?? ""}</td>
+                    <td>{r.category ?? ""}</td>
+                    <td>{r.team ?? ""}</td>
+                    <td>{r.coach ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {e.status === "NEW" && (
+            <div className="buttons">
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  void run(`/${e.id}/accept`, "POST").then((ok) => {
+                    if (ok) onAccepted();
+                  })
+                }
+              >
+                Принять в список
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const note = window.prompt(`Отклонить заявку клуба «${e.club}»? Причина (необязательно):`);
+                  if (note !== null) void run(`/${e.id}/reject`, "POST", note.trim() ? { note: note.trim() } : {});
+                }}
+              >
+                Отклонить
+              </button>
+            </div>
+          )}
+        </article>
+      ))}
+    </section>
+  );
+}
 
 const AUDIT_PAGE = 50;
 

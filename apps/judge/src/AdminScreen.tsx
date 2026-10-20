@@ -11,6 +11,7 @@ import {
   ClubStandingPanel,
   CeremonyPanel,
   AuditPanel,
+  OnlineEntriesPanel,
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
@@ -175,6 +176,19 @@ export function AdminScreen() {
             }}
           />
         </details>
+      )}
+
+      {competition && adminToken && (
+        <OnlineEntriesPanel
+          key={`online-${competition.id}`}
+          competitionId={competition.id}
+          adminToken={adminToken}
+          onError={setError}
+          onAccepted={() => {
+            setDrawVersion((v) => v + 1);
+            setRosterVersion((v) => v + 1);
+          }}
+        />
       )}
 
       {competition && adminToken && (
