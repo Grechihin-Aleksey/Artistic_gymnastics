@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
-import type { InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { DrawView, InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -995,6 +995,190 @@ export function RulesPanel({
       <button type="button" className="primary" disabled={problems.length > 0} onClick={() => void save()}>
         {saved ? "Сохранено" : "Сохранить правила"}
       </button>
+    </section>
+  );
+}
+
+interface DrawGymnast extends RosterGymnast {
+  startOrder: number | null;
+}
+
+/**
+ * Жеребьёвка стартовых номеров до начала соревнований: случайная или ручная.
+ * Порядок выхода в смене — по возрастанию номеров.
+ */
+export function DrawPanel({
+  competitionId,
+  adminToken,
+  onError,
+  onDrawn,
+}: Omit<Props, "discipline"> & { onDrawn: () => void }) {
+  const [view, setView] = useState<DrawView | null>(null);
+  const [people, setPeople] = useState<DrawGymnast[]>([]);
+  const [teams, setTeams] = useState<Map<string, string>>(new Map());
+  const [categories, setCategories] = useState<Map<string, string>>(new Map());
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [firstBib, setFirstBib] = useState("1");
+  const [keepTeams, setKeepTeams] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [drawView, list, teamList, categoryList] = await Promise.all([
+        apiRequest<DrawView>(`/competitions/${competitionId}/draw`, { token: adminToken }),
+        apiRequest<DrawGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/teams`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/categories`),
+      ]);
+      setView(drawView);
+      // Как выйдут на старт: по сменам, внутри смены по порядку выхода.
+      const last = Number.MAX_SAFE_INTEGER;
+      setPeople(
+        [...list].sort(
+          (a, b) =>
+            (a.shift ?? last) - (b.shift ?? last) ||
+            (a.startOrder ?? last) - (b.startOrder ?? last) ||
+            a.bib - b.bib,
+        ),
+      );
+      setTeams(new Map(teamList.map((t) => [t.id, t.name])));
+      setCategories(new Map(categoryList.map((c) => [c.id, c.name])));
+      setEdits({});
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const bibOf = (g: DrawGymnast) => edits[g.id] ?? String(g.bib);
+  const invalid = people.filter((g) => !/^\d{1,6}$/.test(bibOf(g).trim()) || Number(bibOf(g)) < 1);
+  const counts = new Map<string, number>();
+  for (const g of people) counts.set(bibOf(g).trim(), (counts.get(bibOf(g).trim()) ?? 0) + 1);
+  const repeated = people.filter((g) => (counts.get(bibOf(g).trim()) ?? 0) > 1);
+  const changed = people.filter((g) => edits[g.id] !== undefined && Number(edits[g.id]) !== g.bib);
+  const locked = view?.started ?? false;
+
+  const run = async (body: object, question: string) => {
+    if (!confirm(question)) return;
+    setBusy(true);
+    try {
+      await apiRequest(`/competitions/${competitionId}/draw`, { token: adminToken, method: "POST", body });
+      onError(null);
+      await load();
+      onDrawn();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!view || people.length === 0) return null;
+  const first = Number(firstBib);
+  const firstValid = Number.isInteger(first) && first >= 1 && first <= 100_000;
+
+  return (
+    <section className="panel no-print draw">
+      <h2>Жеребьёвка</h2>
+      <p className="muted wide">
+        {view.last
+          ? `Последняя жеребьёвка: ${view.last.mode === "random" ? "случайная" : "ручная"}, ${new Date(view.last.at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}. `
+          : "Жеребьёвку ещё не проводили. "}
+        {locked
+          ? "Оценки уже ставятся: номера больше не меняются."
+          : "Порядок выхода в смене — по возрастанию стартовых номеров."}
+      </p>
+
+      {!locked && (
+        <div className="wide draw-random">
+          <h3>Случайная</h3>
+          <label>
+            Номера с
+            <input inputMode="numeric" value={firstBib} onChange={(e) => setFirstBib(e.target.value.trim())} />
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={keepTeams} onChange={(e) => setKeepTeams(e.target.checked)} />
+            Участники одной команды выступают подряд
+          </label>
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || !firstValid}
+            onClick={() =>
+              void run(
+                { mode: "random", firstBib: first, keepTeams },
+                `Провести жеребьёвку? Все ${people.length} уч. получат новые номера с №${first} в случайном порядке внутри своей смены.`,
+              )
+            }
+          >
+            Провести жеребьёвку
+          </button>
+        </div>
+      )}
+
+      <div className="wide">
+        {!locked && (
+          <h3>
+            Вручную <span className="muted">— впишите номера и сохраните</span>
+          </h3>
+        )}
+        <table className="draw-table">
+          <thead>
+            <tr>
+              <th>Смена</th>
+              <th>№</th>
+              <th>Участник</th>
+              <th>Клуб · команда</th>
+              <th>Разряд</th>
+            </tr>
+          </thead>
+          <tbody>
+            {people.map((g) => (
+              <tr key={g.id} className={repeated.includes(g) || invalid.includes(g) ? "invalid" : undefined}>
+                <td className="muted">{g.shift ?? "—"}</td>
+                <td>
+                  <input
+                    inputMode="numeric"
+                    disabled={locked}
+                    value={bibOf(g)}
+                    onChange={(e) => setEdits((all) => ({ ...all, [g.id]: e.target.value }))}
+                  />
+                </td>
+                <td>
+                  {g.lastName} {g.firstName}
+                </td>
+                <td className="muted">
+                  {[g.club, g.teamId ? teams.get(g.teamId) : null].filter(Boolean).join(" · ")}
+                </td>
+                <td className="muted">{g.categoryId ? categories.get(g.categoryId) : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {repeated.length > 0 && (
+          <div className="alert">
+            Номера повторяются: {[...new Set(repeated.map((g) => bibOf(g).trim()))].map((b) => `№${b}`).join(", ")}
+          </div>
+        )}
+        {!locked && (
+          <button
+            type="button"
+            className="primary"
+            disabled={busy || changed.length === 0 || repeated.length > 0 || invalid.length > 0}
+            onClick={() =>
+              void run(
+                { mode: "manual", bibs: changed.map((g) => ({ gymnastId: g.id, bib: Number(bibOf(g)) })) },
+                `Сохранить новые номера у ${changed.length} уч.?`,
+              )
+            }
+          >
+            Сохранить номера{changed.length > 0 ? ` (${changed.length})` : ""}
+          </button>
+        )}
+      </div>
     </section>
   );
 }

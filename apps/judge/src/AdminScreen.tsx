@@ -5,6 +5,7 @@ import type { JudgeRole, Rules } from "@ag/shared";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
 import {
+  DrawPanel,
   InquiriesPanel,
   NewCompetitionForm,
   ProtocolsPanel,
@@ -53,6 +54,8 @@ export function AdminScreen() {
   const [error, setError] = useState<string | null>(null);
   // Растёт после загрузки участников: в правилах появляются новые разряды.
   const [rosterVersion, setRosterVersion] = useState(0);
+  // Растёт после жеребьёвки: списку участников и сменам нужны новые номера.
+  const [drawVersion, setDrawVersion] = useState(0);
 
   const competition = competitions.find((c) => c.id === competitionId);
 
@@ -166,7 +169,7 @@ export function AdminScreen() {
 
       {competition && adminToken && (
         <RosterPanel
-          key={competition.id}
+          key={`${competition.id}-${drawVersion}`}
           competitionId={competition.id}
           teamFormat={{
             roster: competition.teamRoster,
@@ -191,8 +194,18 @@ export function AdminScreen() {
       )}
 
       {competition && adminToken && (
+        <DrawPanel
+          key={`draw-${competition.id}-${rosterVersion}`}
+          competitionId={competition.id}
+          adminToken={adminToken}
+          onError={setError}
+          onDrawn={() => setDrawVersion((v) => v + 1)}
+        />
+      )}
+
+      {competition && adminToken && (
         <RotationPanel
-          key={`rotation-${competition.id}`}
+          key={`rotation-${competition.id}-${drawVersion}`}
           competitionId={competition.id}
           discipline={competition.discipline}
           adminToken={adminToken}
