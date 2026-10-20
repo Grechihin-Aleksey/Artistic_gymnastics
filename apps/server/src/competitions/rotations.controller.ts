@@ -1,5 +1,12 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Put } from "@nestjs/common";
-import { setRotationSchema, setShiftStartSchema, type SetRotationInput, type SetShiftStartInput } from "@ag/shared";
+import {
+  drawSchema,
+  setRotationSchema,
+  setShiftStartSchema,
+  type DrawInput,
+  type SetRotationInput,
+  type SetShiftStartInput,
+} from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { RotationsService } from "./rotations.service";
@@ -17,6 +24,18 @@ export class RotationsController {
   @RequireAccess("admin")
   setRotation(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(setRotationSchema)) body: SetRotationInput) {
     return this.rotations.setRotation(id, body);
+  }
+
+  @Get("draw")
+  @RequireAccess("admin")
+  drawView(@Param("id", ParseUUIDPipe) id: string) {
+    return this.rotations.drawView(id);
+  }
+
+  @Post("draw")
+  @RequireAccess("admin")
+  draw(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(drawSchema)) body: DrawInput) {
+    return this.rotations.draw(id, body);
   }
 
   @Put("shifts/:number")

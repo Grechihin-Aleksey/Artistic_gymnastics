@@ -671,3 +671,34 @@ select {
   align-items: center;
   margin: 4px 12px 4px 0;
 }
+
+.draw-random {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: end;
+}
+
+.draw-random h3 {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.draw-random input[inputmode="numeric"] {
+  width: 6em;
+}
+
+.draw-table td,
+.draw-table th {
+  padding: 3px 10px 3px 0;
+  text-align: left;
+}
+
+.draw-table input {
+  width: 5em;
+}
+
+.draw-table tr.invalid input {
+  border-color: var(--bad);
+  color: var(--bad);
+}

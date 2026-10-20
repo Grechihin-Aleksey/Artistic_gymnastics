@@ -145,6 +145,27 @@ export const parseEntriesSchema = z.object({
   nextBib: z.number().int().min(1).max(1_000_000).optional(),
 });
 
+/**
+ * Жеребьёвка стартовых номеров. Случайная — номера по порядку от firstBib в
+ * случайном порядке внутри каждой смены (без смен — внутри разряда); участники
+ * одной команды при keepTeams выходят подряд. Ручная — секретарь сам ставит номера.
+ * Порядок выхода в смене — по возрастанию номеров.
+ */
+export const drawSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("random"),
+    firstBib: z.number().int().min(1).max(100_000).default(1),
+    keepTeams: z.boolean().default(true),
+  }),
+  z.object({
+    mode: z.literal("manual"),
+    bibs: z
+      .array(z.object({ gymnastId: z.uuid(), bib: z.number().int().min(1).max(100_000) }))
+      .min(1)
+      .max(2000),
+  }),
+]);
+
 export const setShiftStartSchema = z.object({ startApparatus: apparatusSchema });
 
 export const setRotationSchema = z.object({ rotation: z.number().int().min(0).max(20) });
@@ -175,11 +196,19 @@ export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
+export type DrawInput = z.infer<typeof drawSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
+
+export interface DrawView {
+  /** Оценки уже ставятся: номера не меняются. */
+  started: boolean;
+  /** Последняя жеребьёвка: случайная или ручная, когда (ISO). */
+  last: { mode: "random" | "manual"; at: string } | null;
+}
 
 export interface RulesView {
   rules: Rules;
