@@ -30,15 +30,19 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | POST | `/performances/:id/inquiries` | секретариат | Запрос тренера на пересмотр D: `{ coach, claimedD? }`. Только на утверждённую оценку, один нерассмотренный на выступление. Подан после показа следующей оценки на снаряде или позже 4 минут — помечается `late` |
 | GET | `/competitions/:id/inquiries` | секретариат | Все запросы соревнования |
 | POST | `/inquiries/:id/resolve` | секретариат | Решение жюри: `{ decision: "accept", d, note? }` меняет D и итог, оценка заново уходит на табло и сайт; `{ decision: "reject", note? }` оставляет как есть |
-| GET | `/competitions/:id/protocols/apparatus/:apparatus` | секретариат | Протокол снаряда в PDF: D, сбавки каждого судьи E (крайние в скобках), E, нейтральные сбавки, итог; у прыжка обе попытки |
+| GET | `/competitions/:id/protocols/apparatus/:apparatus` | секретариат | Протокол снаряда в PDF: D, сбавки каждого судьи E (крайние в скобках), E, нейтральные сбавки, итог; у прыжка обе попытки; `?stage=final` — протокол финала |
 | GET | `/competitions/:id/protocols/all-around` | секретариат | Протокол многоборья в PDF |
 | GET | `/competitions/:id/protocols/teams` | секретариат | Командный протокол в PDF с оценками участников, не вошедшие в зачёт — в скобках |
 | | | | Протоколы выше принимают `?category=<id>` (или `none` — участники без разряда) |
 | GET | `/competitions/:id/protocols/start-list` | секретариат | Стартовый протокол в PDF: порядок ротаций и смены в порядке выхода |
-| GET | `/competitions/:id/protocols/sheet/:apparatus` | секретариат | Судейская ведомость снаряда в PDF: участники по ротациям и пустые графы для оценок |
+| GET | `/competitions/:id/protocols/sheet/:apparatus` | секретариат | Судейская ведомость снаряда в PDF: участники по ротациям и пустые графы для оценок; `?stage=final` — финалисты в порядке выступления и запасные |
 | GET | `/competitions/:id/protocols/results.xlsx` | секретариат | Итоги в Excel: по каждому разряду многоборье, снаряды и команды |
 | GET | `/competitions/:id/protocols/diplomas` | секретариат | Грамоты призёрам в PDF: `?kind=all-around` (многоборье и команды) или `apparatus`, `?places=3` |
-| PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, ФИО, клуб, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
+| PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, фамилия, имя, отчество, дата рождения, клуб, город, тренер, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
+| GET | `/competitions/:id/finals` | все | Финалы на снарядах: этап (`QUAL`/`FINAL`), параметры отбора, финалисты по снарядам и разрядам в порядке выступления, запасные |
+| POST | `/competitions/:id/finals` | секретариат | Сформировать финалы по квалификации: `{ size, reserves, perClub }`; пока нет финальных оценок, можно пересобрать |
+| POST | `/competitions/:id/finals/phase` | секретариат | Переключить этап: `{ phase: "QUAL" \| "FINAL" }`; в финалах вызывают только финалистов |
+| POST | `/competitions/:id/finals/:apparatus/replace` | секретариат | Финалист снимается до выступления, его место занимает первый запасной: `{ gymnastId }` |
 | DELETE | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Удалить участника, который ещё не выступал |
 | POST | `/competitions/:id/draw` | секретариат | Жеребьёвка до первых оценок: `{ mode: "random", firstBib, keepTeams }` или `{ mode: "manual", bibs: [{ gymnastId, bib }] }` |
 | GET | `/competitions/:id/draw` | секретариат | Идут ли уже оценки и когда была последняя жеребьёвка |
@@ -54,7 +58,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | PUT | `/competitions/:id/shifts/:number` | секретариат | Стартовый снаряд смены `{ startApparatus }` |
 | POST | `/performances/:id/tablet-score` | планшет снаряда | Оценки всей бригады `{ d, e[], neutral? }` и утверждение |
 | GET | `/competitions/:id/results/snapshot` | все | Всё для табло одним ответом: «сейчас», многоборье, команды, снаряды. Этот же снимок уходит на сайт |
-| GET | `/competitions/:id/results/apparatus/:apparatus?vault=average` | все | Места на снаряде |
+| GET | `/competitions/:id/results/apparatus/:apparatus?vault=average` | все | Места на снаряде; `?stage=final` — в финале |
 | GET | `/competitions/:id/results/all-around` | все | Многоборье |
 | GET | `/competitions/:id/results/teams` | все | Командный зачёт |
 

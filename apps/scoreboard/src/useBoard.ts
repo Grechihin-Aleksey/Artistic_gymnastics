@@ -69,6 +69,7 @@ function useHallBoard(competitionId: string, onApproved: (p: PerformanceView) =>
     socket.on(LIVE_EVENTS.called, schedule);
     socket.on(LIVE_EVENTS.reopened, schedule);
     socket.on(LIVE_EVENTS.rotation, schedule);
+    socket.on(LIVE_EVENTS.finals, schedule);
     socket.on(LIVE_EVENTS.approved, (p: PerformanceView) => {
       onApproved(p);
       schedule();

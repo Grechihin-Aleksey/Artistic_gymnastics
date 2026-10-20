@@ -95,7 +95,7 @@ describe("финалы на снарядах", () => {
     // Пока финалы не начались, их можно пересобрать.
     const again: Finals = (await admin.post(base(), { size: 2, reserves: 0 }).expect(201)).body;
     expect(bibs(list(again, "FX", "КМС")).sort()).toEqual([1, 2]);
-    await admin.post(base(), { size: 3, reserves: 1, perClub: 2 }).expect(201);
+    await admin.post(base(), { size: 3, reserves: 2, perClub: 2 }).expect(201);
   });
 
   it("в финале вызывают только финалистов, запасной заменяет снявшегося", async () => {
@@ -111,7 +111,7 @@ describe("финалы на снарядах", () => {
     const kms = list(after, "FX", "КМС");
     expect(kms.find((f) => f.gymnast.bib === 6)).toMatchObject({ reserve: false, position });
     expect(bibs(kms)).not.toContain(2);
-    await admin.post(`${base()}/FX/replace`, { gymnastId: ids.get(1) }).expect(409);
+    expect(kms.filter((f) => f.reserve).map((f) => [f.gymnast.bib, f.position])).toEqual([[7, 1]]);
 
     const final = await perform(1, "FX", 3);
     expect(final).toMatchObject({ stage: "FINAL", score: { total: 12 } });

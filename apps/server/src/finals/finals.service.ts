@@ -189,6 +189,11 @@ export class FinalsService {
       if (!next) throw new ConflictException("Запасных в этом разряде не осталось");
       await tx.delete(finalists).where(eq(finalists.id, row.id));
       await tx.update(finalists).set({ reserve: false, position: row.position }).where(eq(finalists.id, next.id));
+      // Очередь запасных сдвигается: следующий становится первым.
+      const rest = reserves.map((r) => r.finalists).filter((r) => r.categoryId === row.categoryId && r.id !== next.id);
+      for (const [i, r] of rest.entries()) {
+        await tx.update(finalists).set({ position: i + 1 }).where(eq(finalists.id, r.id));
+      }
       await tx.insert(auditLog).values({
         competitionId,
         actor: "admin",
