@@ -6,7 +6,7 @@ import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, Protocol
 import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
-import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
+import { parseRoster, splitByGender, teamFormatWarnings, type TeamFormat } from "./roster";
 
 interface Gymnast {
   id: string;
@@ -632,21 +632,27 @@ export function NewCompetitionForm({
 }) {
   const create = async (form: FormData) => {
     try {
-      const created = await apiRequest<CompetitionCreated>("/competitions", {
-        token: adminToken,
-        method: "POST",
-        body: {
-          name: String(form.get("name")).trim(),
-          discipline: String(form.get("discipline")),
-          teamFormat: {
-            roster: Number(form.get("roster")),
-            perApparatus: Number(form.get("perApparatus")),
-            counting: Number(form.get("counting")),
+      const program = String(form.get("discipline"));
+      const post = (discipline: string, pairWith?: string) =>
+        apiRequest<CompetitionCreated>("/competitions", {
+          token: adminToken,
+          method: "POST",
+          body: {
+            name: String(form.get("name")).trim(),
+            discipline,
+            teamFormat: {
+              roster: Number(form.get("roster")),
+              perApparatus: Number(form.get("perApparatus")),
+              counting: Number(form.get("counting")),
+            },
+            publishJudgeMarks: form.get("publishJudgeMarks") === "on",
+            rules: String(form.get("rules")),
+            ...(pairWith ? { pairWith } : {}),
           },
-          publishJudgeMarks: form.get("publishJudgeMarks") === "on",
-          rules: String(form.get("rules")),
-        },
-      });
+        });
+      // Девочки и мальчики: две связанные части одного турнира, у каждой свой подсчёт.
+      const created = await post(program === "MIXED" ? "WAG" : program);
+      if (program === "MIXED") await post("MAG", created.id);
       onError(null);
       onCreated(created.id);
     } catch (e) {
@@ -672,6 +678,7 @@ export function NewCompetitionForm({
         <select name="discipline" defaultValue="WAG">
           <option value="WAG">Женщины (4 снаряда)</option>
           <option value="MAG">Мужчины (6 снарядов)</option>
+          <option value="MIXED">Девочки и мальчики (4 и 6 снарядов)</option>
         </select>
       </label>
       <label>
@@ -847,11 +854,18 @@ export function DemoCompetitionForm<J>({
 /** Участники: вставка списка из таблицы и проверка перед загрузкой. */
 export function RosterPanel({
   competitionId,
+  discipline,
+  partner,
   teamFormat,
   adminToken,
   onError,
   onImported,
-}: Omit<Props, "discipline"> & { teamFormat: TeamFormat; onImported?: () => void }) {
+}: Props & {
+  teamFormat: TeamFormat;
+  onImported?: () => void;
+  /** Вторая часть турнира девочек и мальчиков: список делится между частями по столбцу «Пол». */
+  partner?: { id: string; discipline: Discipline } | undefined;
+}) {
   const [text, setText] = useState("");
   const [people, setPeople] = useState<RosterGymnast[]>([]);
   const [teams, setTeams] = useState<Map<string, string>>(new Map());
@@ -912,13 +926,21 @@ export function RosterPanel({
     }
   };
 
+  const split = partner ? splitByGender(parsed.rows) : null;
   const upload = async () => {
     try {
-      await apiRequest(`/competitions/${competitionId}/gymnasts/import`, {
-        token: adminToken,
-        method: "POST",
-        body: { rows: parsed.rows },
-      });
+      const send = (id: string, rows: unknown[]) =>
+        rows.length > 0
+          ? apiRequest(`/competitions/${id}/gymnasts/import`, { token: adminToken, method: "POST", body: { rows } })
+          : Promise.resolve();
+      if (split && partner) {
+        if (split.missing.length > 0) throw new Error(`Не указан пол у №${split.missing.join(", №")}: впишите «Ж» или «М»`);
+        const [mine, theirs] = discipline === "MAG" ? [split.boys, split.girls] : [split.girls, split.boys];
+        await send(competitionId, mine);
+        await send(partner.id, theirs);
+      } else {
+        await send(competitionId, parsed.rows.map(({ gender: _gender, ...row }) => row));
+      }
       setText("");
       setFileNotes([]);
       onError(null);
@@ -949,7 +971,7 @@ export function RosterPanel({
           Бланк заявки для клубов
         </a>
         <span className="muted">
-          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Отчество, Дата рождения, Клуб, Город, Тренер, Команда, Разряд, Смена, Стартовый номер.
+          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Отчество, Дата рождения, Клуб, Город, Тренер, Команда, Разряд, Смена, Стартовый номер, Пол.
           Заявки нескольких клубов можно загрузить по очереди, а потом добавить всех разом.
         </span>
       </div>
@@ -979,7 +1001,7 @@ export function RosterPanel({
         <summary>Вставить список из таблицы или проверить загруженную заявку Excel</summary>
         <label className="wide">
           Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
-          Тренер · Отчество. Обязательны первые три столбца. Порядок строк в смене — порядок выхода.
+          Тренер · Отчество · Пол. Обязательны первые три столбца{partner ? " и пол" : ""}. Порядок строк в смене — порядок выхода.
           <textarea
             rows={6}
             value={text}
@@ -996,10 +1018,18 @@ export function RosterPanel({
             {w}
           </div>
         ))}
+        {split && (
+          <p className={split.missing.length > 0 ? "alert wide" : "muted wide"}>
+            Турнир девочек и мальчиков: последний столбец «Пол» (Ж или М) решает, в какую часть попадёт участник.
+            {parsed.rows.length > 0 &&
+              ` В списке девочек ${split.girls.length}, мальчиков ${split.boys.length}` +
+                (split.missing.length > 0 ? `, без пола ${split.missing.length} (№${split.missing.join(", №")}).` : ".")}
+          </p>
+        )}
         <button
           type="button"
           className="primary"
-          disabled={parsed.rows.length === 0 || parsed.errors.length > 0}
+          disabled={parsed.rows.length === 0 || parsed.errors.length > 0 || (split?.missing.length ?? 0) > 0}
           onClick={() => void upload()}
         >
           Добавить из списка {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
@@ -2138,22 +2168,37 @@ export function SitePanel({
   adminToken,
   onError,
   competitions,
-}: Omit<Props, "discipline"> & { competitions: { id: string; name: string; discipline: string }[] }) {
+  partnerId,
+}: Omit<Props, "discipline"> & {
+  competitions: { id: string; name: string; discipline: string }[];
+  /** Вторая часть турнира девочек и мальчиков: отправляется и встраивается вместе с этой. */
+  partnerId?: string | undefined;
+}) {
   const [view, setView] = useState<SiteView | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   // Второе соревнование в той же рамке: девочки и мальчики с переключателем над табло.
-  const [partner, setPartner] = useState("");
+  const [partner, setPartner] = useState(partnerId ?? "");
   const others = competitions.filter((c) => c.id !== competitionId);
   const embed =
     view?.embed && partner && others.some((c) => c.id === partner)
-      ? view.embed.replace(`data-ag-results="${competitionId}"`, `data-ag-results="${competitionId},${partner}"`)
+      ? view.embed.replace(
+          `data-ag-results="${competitionId}"`,
+          // Девочки первыми: так кнопки переключателя идут «Девочки | Мальчики».
+          `data-ag-results="${[competitionId, partner]
+            .sort((a, b) => Number(competitions.find((c) => c.id === b)?.discipline === "WAG") - Number(competitions.find((c) => c.id === a)?.discipline === "WAG"))
+            .join(",")}"`,
+        )
       : view?.embed;
 
   const run = useCallback(
     async (method: "GET" | "POST") => {
       setBusy(method === "POST");
       try {
+        // Турнир девочек и мальчиков уходит на сайт целиком: сначала вторая часть.
+        if (method === "POST" && partnerId) {
+          await apiRequest(`/competitions/${partnerId}/site`, { token: adminToken, method });
+        }
         setView(await apiRequest<SiteView>(`/competitions/${competitionId}/site`, { token: adminToken, method }));
         onError(null);
       } catch (e) {
@@ -2163,7 +2208,7 @@ export function SitePanel({
         setBusy(false);
       }
     },
-    [competitionId, adminToken, onError],
+    [competitionId, partnerId, adminToken, onError],
   );
 
   useEffect(() => {

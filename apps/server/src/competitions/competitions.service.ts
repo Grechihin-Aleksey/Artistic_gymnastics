@@ -14,7 +14,7 @@ import type {
   SetRulesInput,
   UpdateGymnastInput,
 } from "@ag/shared";
-import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, max, ne } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
 import { auditLog, categories, competitions, gymnasts, judges, performances, shifts, teams } from "../db/schema";
@@ -53,19 +53,39 @@ export class CompetitionsService {
     if (format.counting > format.perApparatus || format.perApparatus > format.roster) {
       throw new BadRequestException("Формат команды: в зачёт ≤ выступают ≤ в составе");
     }
-    const [row] = await this.db
-      .insert(competitions)
-      .values({
-        name: input.name,
-        discipline: input.discipline,
-        teamRoster: format.roster,
-        teamPerApparatus: format.perApparatus,
-        teamCounting: format.counting,
-        publishJudgeMarks: input.publishJudgeMarks,
-        rules: input.rules,
-      })
-      .returning();
-    return row!;
+    return this.db.transaction(async (tx) => {
+      let pairId: string | null = null;
+      if (input.pairWith) {
+        const [partner] = await tx.select().from(competitions).where(eq(competitions.id, input.pairWith));
+        if (!partner) throw new NotFoundException("Соревнование для пары не найдено");
+        if (partner.discipline === input.discipline) {
+          throw new BadRequestException("Во второй части турнира должна быть другая программа: девочки и мальчики");
+        }
+        if (partner.pairId) {
+          const [taken] = await tx
+            .select({ id: competitions.id })
+            .from(competitions)
+            .where(and(eq(competitions.pairId, partner.pairId), ne(competitions.id, partner.id)));
+          if (taken) throw new ConflictException("У этого соревнования уже есть вторая часть");
+        }
+        pairId = partner.pairId ?? partner.id;
+        if (!partner.pairId) await tx.update(competitions).set({ pairId }).where(eq(competitions.id, partner.id));
+      }
+      const [row] = await tx
+        .insert(competitions)
+        .values({
+          name: input.name,
+          discipline: input.discipline,
+          teamRoster: format.roster,
+          teamPerApparatus: format.perApparatus,
+          teamCounting: format.counting,
+          publishJudgeMarks: input.publishJudgeMarks,
+          rules: input.rules,
+          pairId,
+        })
+        .returning();
+      return row!;
+    });
   }
 
   list(): Promise<CompetitionRow[]> {

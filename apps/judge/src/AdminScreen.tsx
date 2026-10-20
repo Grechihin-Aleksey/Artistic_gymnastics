@@ -38,7 +38,11 @@ interface Competition {
   teamCounting: number;
   rules: Rules;
   officials?: { chiefJudge: Official | null; chiefSecretary: Official | null };
+  /** Девочки и мальчики одного турнира: у обеих частей один pairId. */
+  pairId?: string | null;
 }
+
+const PART_NAMES: Record<string, string> = { WAG: "Девочки", MAG: "Мальчики" };
 
 interface Judge {
   id: string;
@@ -93,13 +97,25 @@ export function AdminScreen() {
   const [drawVersion, setDrawVersion] = useState(0);
 
   const competition = competitions.find((c) => c.id === competitionId);
+  // Вторая часть турнира (девочки или мальчики), если она есть.
+  const partner = competition?.pairId
+    ? competitions.find((c) => c.pairId === competition.pairId && c.id !== competition.id)
+    : undefined;
+  // В списке турнир из двух частей — одна строка: по первой созданной части.
+  const listed = competitions.filter(
+    (c) => !c.pairId || competitions.find((o) => o.pairId === c.pairId)?.id === c.id,
+  );
+  const listedId = competition?.pairId
+    ? (competitions.find((c) => c.pairId === competition.pairId)?.id ?? competitionId)
+    : competitionId;
 
   const loadCompetitions = useCallback(async (select?: string) => {
     try {
       const list = await apiRequest<Competition[]>("/competitions");
       setCompetitions(list);
       if (select) setCompetitionId(select);
-      else if (list.length > 0) setCompetitionId((id) => id || list.at(-1)!.id);
+      // Турнир девочек и мальчиков открывается с девочек.
+      else if (list.length > 0) setCompetitionId((id) => id || (list.find((c) => c.pairId && c.pairId === list.at(-1)!.pairId) ?? list.at(-1)!).id);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -205,15 +221,32 @@ export function AdminScreen() {
         </label>
         <label>
           Соревнование
-          <select value={competitionId} onChange={(e) => setCompetitionId(e.target.value)}>
-            {competitions.map((c) => (
+          <select value={listedId} onChange={(e) => setCompetitionId(e.target.value)}>
+            {listed.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} ({c.discipline})
+                {c.name} ({competitions.some((o) => o.pairId && o.pairId === c.pairId && o.id !== c.id) ? "девочки и мальчики" : c.discipline})
               </option>
             ))}
           </select>
         </label>
       </section>
+      {competition && partner && (
+        <div className="part-switch no-print" role="group" aria-label="Часть турнира">
+          {[competition, partner]
+            .sort((a, b) => (a.discipline === "WAG" ? -1 : b.discipline === "WAG" ? 1 : 0))
+            .map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={c.id === competitionId ? "active" : undefined}
+                aria-pressed={c.id === competitionId}
+                onClick={() => setCompetitionId(c.id)}
+              >
+                {PART_NAMES[c.discipline] ?? c.name}
+              </button>
+            ))}
+        </div>
+      )}
 
       <nav className="admin-tabs no-print" aria-label="Экраны секретариата">
         {TABS.map((t) => (
@@ -276,6 +309,7 @@ export function AdminScreen() {
           <>
             <SitePanel
               key={`site-now-${competition.id}`}
+              partnerId={partner?.id}
               competitionId={competition.id}
               competitions={competitions}
               adminToken={adminToken}
@@ -338,6 +372,8 @@ export function AdminScreen() {
             <RosterPanel
               key={`${competition.id}-${drawVersion}`}
               competitionId={competition.id}
+              discipline={competition.discipline}
+              partner={partner}
               teamFormat={{
                 roster: competition.teamRoster,
                 perApparatus: competition.teamPerApparatus,

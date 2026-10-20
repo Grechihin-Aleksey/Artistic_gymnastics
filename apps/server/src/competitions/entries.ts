@@ -13,6 +13,7 @@ export const ENTRY_COLUMNS = [
   "Город",
   "Тренер",
   "Отчество",
+  "Пол",
 ] as const;
 
 type Field =
@@ -27,7 +28,8 @@ type Field =
   | "coach"
   | "team"
   | "category"
-  | "shift";
+  | "shift"
+  | "gender";
 
 /**
  * Заголовки, по которым узнаём столбцы заявки. Первый подходящий столбец побеждает.
@@ -47,7 +49,17 @@ const HEADERS: [Field, RegExp][] = [
   ["team", /команд/i],
   ["category", /разряд|категори|групп|программ/i],
   ["shift", /смена|поток/i],
+  ["gender", /^пол\.?$/i],
 ];
+
+/** Пол из заявки: «Ж» или «М»; пустая строка — не указан, null — не распознан. */
+export function normalizeGender(text: string): "Ж" | "М" | "" | null {
+  const t = text.trim().toLowerCase().replace(/\.$/, "");
+  if (!t) return "";
+  if (/^(ж|жен|женский|д|дев|девочка|девушка|f|w)$/.test(t)) return "Ж";
+  if (/^(м|муж|мужской|мал|мальчик|юн|юноша|m)$/.test(t)) return "М";
+  return null;
+}
 
 export interface ParsedEntries {
   /** Список в формате поля вставки: столбцы ENTRY_COLUMNS через табуляцию, без заголовка. */
@@ -138,6 +150,10 @@ export async function parseEntries(file: Buffer, nextBib: number): Promise<Parse
         autoBibs++;
       }
       const shift = get(cells, "shift").replace(/^(смена|поток)\s*/i, "");
+      const gender = normalizeGender(get(cells, "gender"));
+      if (gender === null) {
+        notes.push(`Лист «${ws.name}», строка ${rowNumber}: пол «${get(cells, "gender")}» не распознан: нужно «Ж» или «М»`);
+      }
       const birth = normalizeBirthDate(get(cells, "birthDate"));
       if (birth === null) {
         notes.push(`Лист «${ws.name}», строка ${rowNumber}: дата рождения «${get(cells, "birthDate")}» не распознана, не загружена`);
@@ -155,6 +171,7 @@ export async function parseEntries(file: Buffer, nextBib: number): Promise<Parse
           get(cells, "city"),
           get(cells, "coach"),
           middleName,
+          gender ?? "",
         ]
           .join("\t")
           .replace(/\t+$/, ""),
@@ -195,9 +212,9 @@ export async function entriesTemplate(): Promise<Buffer> {
   const ws = book.addWorksheet("Заявка");
   const header = ws.addRow([...ENTRY_COLUMNS]);
   header.font = { bold: true };
-  ws.addRow([101, "Иванова", "Анна", "СШОР №1", "СШОР №1", "1 юношеский", 1, "15.03.2014", "Тула", "Смирнова О. В.", "Сергеевна"]);
-  ws.addRow([102, "Петрова", "Мария", "СШОР №1", "СШОР №1", "1 юношеский", 1, "2014", "Тула", "Смирнова О. В.", ""]);
-  ws.columns.forEach((c, i) => (c.width = [16, 18, 14, 24, 20, 16, 8, 14, 14, 20, 16][i]));
+  ws.addRow([101, "Иванова", "Анна", "СШОР №1", "СШОР №1", "1 юношеский", 1, "15.03.2014", "Тула", "Смирнова О. В.", "Сергеевна", "Ж"]);
+  ws.addRow([102, "Петрова", "Мария", "СШОР №1", "СШОР №1", "1 юношеский", 1, "2014", "Тула", "Смирнова О. В.", "", "Ж"]);
+  ws.columns.forEach((c, i) => (c.width = [16, 18, 14, 24, 20, 16, 8, 14, 14, 20, 16, 6][i]));
   ws.views = [{ state: "frozen", ySplit: 1 }];
   return Buffer.from(await book.xlsx.writeBuffer());
 }

@@ -2,7 +2,7 @@ import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
 import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
-import { parseRoster, teamFormatWarnings } from "./roster";
+import { parseRoster, splitByGender, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
 import { uuid } from "./uuid";
 
@@ -239,5 +239,21 @@ describe("подсказка на снаряде без смены", () => {
   it("говорит, что смен больше не будет", () => {
     const rotation = { rotation: 3, rotations: 4, shifts: [shift(1, "VT", "FX"), shift(2, "UB", "VT")] };
     expect(restHint(rotation, "WAG", "UB")).toContain("больше смен на этом снаряде не будет");
+  });
+});
+
+describe("список турнира девочек и мальчиков", () => {
+  it("делит участников по столбцу «Пол» и не теряет тех, у кого пол не указан", () => {
+    const text = ["1\tБелова\tАнна\t\t\t\t\t\t\t\t\tЖ", "2\tОрлов\tЛев\t\t\t\t\t\t\t\t\tм", "3\tКим\tСаша"].join("\n");
+    const parsed = parseRoster(text);
+    expect(parsed.errors).toEqual([]);
+    const split = splitByGender(parsed.rows);
+    expect(split.girls.map((r) => r.lastName)).toEqual(["Белова"]);
+    expect(split.boys.map((r) => r.lastName)).toEqual(["Орлов"]);
+    expect(split.missing).toEqual([3]);
+    expect("gender" in split.girls[0]!).toBe(false);
+  });
+  it("не принимает непонятный пол", () => {
+    expect(parseRoster("1\tБелова\tАнна\t\t\t\t\t\t\t\t\tX").errors[0]).toContain("пол");
   });
 });

@@ -47,6 +47,8 @@ export const createCompetitionSchema = z.object({
   /** Публиковать ли на сайте сбавки каждого судьи E. */
   publishJudgeMarks: z.boolean().default(false),
   rules: z.enum(RULES).default("FIG"),
+  /** Вторая часть того же турнира (девочки к мальчикам или наоборот): у неё другая программа. */
+  pairWith: z.string().uuid().optional(),
 });
 
 export const createTeamSchema = z.object({

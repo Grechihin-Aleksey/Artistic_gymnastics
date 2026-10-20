@@ -297,3 +297,18 @@ describe("таблицы результатов", () => {
     await api(app).get(`/competitions/${competition.id}/results/apparatus/PH`).expect(422);
   });
 });
+
+describe("девочки и мальчики одного турнира", () => {
+  it("вторая часть с другой программой связывается с первой, третьей не бывает", async () => {
+    const girls = (await admin.post("/competitions", { name: "Кубок города", discipline: "WAG" }).expect(201)).body;
+    expect(girls.pairId).toBeNull();
+    const boys = (await admin.post("/competitions", { name: "Кубок города", discipline: "MAG", pairWith: girls.id }).expect(201)).body;
+    expect(boys.pairId).toBe(girls.id);
+    expect((await admin.get(`/competitions/${girls.id}`).expect(200)).body.pairId).toBe(girls.id);
+
+    await admin.post("/competitions", { name: "Ещё", discipline: "WAG", pairWith: girls.id }).expect(400);
+    await admin.post("/competitions", { name: "Ещё", discipline: "MAG", pairWith: girls.id }).expect(409);
+    await admin.post("/competitions", { name: "Ещё", discipline: "WAG", pairWith: boys.id }).expect(409);
+    await admin.post("/competitions", { name: "Ещё", discipline: "MAG", pairWith: randomUUID() }).expect(404);
+  });
+});
