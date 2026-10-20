@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES } from "@ag/shared";
+import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
 export const apparatusEnum = pgEnum("apparatus", APPARATUS);
@@ -18,6 +18,7 @@ export const markKindEnum = pgEnum("mark_kind", MARK_KINDS);
 export const performanceStatusEnum = pgEnum("performance_status", PERFORMANCE_STATUSES);
 export const inquiryStatusEnum = pgEnum("inquiry_status", INQUIRY_STATUSES);
 export const rulesEnum = pgEnum("rules", RULES);
+export const gymnastStatusEnum = pgEnum("gymnast_status", GYMNAST_STATUSES);
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -96,10 +97,17 @@ export const gymnasts = pgTable(
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
     club: text("club"),
+    /** Отчество, дата рождения (ГГГГ или ДД.ММ.ГГГГ), город или регион, тренер. */
+    middleName: text("middle_name"),
+    birthDate: text("birth_date"),
+    city: text("city"),
+    coach: text("coach"),
     categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
     /** Номер смены и порядок выхода в ней (порядок строк в загруженном списке). */
     shift: integer("shift"),
     startOrder: integer("start_order"),
+    /** Не явился или снялся: не вызывается на снаряды и не попадает в многоборье. */
+    status: gymnastStatusEnum("status").notNull().default("ACTIVE"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("gymnasts_bib_unique").on(t.competitionId, t.bib)],

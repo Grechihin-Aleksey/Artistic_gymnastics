@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
+import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, type GymnastStatus } from "@ag/shared";
 import type { DrawView, InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
@@ -17,6 +18,11 @@ interface RosterGymnast extends Gymnast {
   teamId: string | null;
   categoryId: string | null;
   shift: number | null;
+  status: GymnastStatus;
+  middleName: string | null;
+  birthDate: string | null;
+  city: string | null;
+  coach: string | null;
 }
 
 interface Props {
@@ -700,7 +706,7 @@ export function RosterPanel({
           Бланк заявки для клубов
         </a>
         <span className="muted">
-          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Клуб, Команда, Разряд, Смена, Стартовый номер.
+          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Отчество, Дата рождения, Клуб, Город, Тренер, Команда, Разряд, Смена, Стартовый номер.
           Заявки нескольких клубов можно загрузить по очереди, а потом добавить всех разом.
         </span>
       </div>
@@ -712,13 +718,13 @@ export function RosterPanel({
         </div>
       )}
       <label className="wide">
-        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена. Порядок строк в
-        смене — порядок выхода.
+        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
+        Тренер · Отчество. Обязательны первые три столбца. Порядок строк в смене — порядок выхода.
         <textarea
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"12\tИванова\tАнна\tг. Тверь\tСШОР №1\t1 юношеский\t1\n13\tПетрова\tМария\tг. Тверь\tСШОР №1\t1 юношеский\t1"}
+          placeholder={"12\tИванова\tАнна\tСШОР №1\tСШОР №1\t1 юношеский\t1\t15.03.2014\tТверь\tСмирнова О. В.\n13\tПетрова\tМария\tСШОР №1\tСШОР №1\t1 юношеский\t1\t2014\tТверь"}
         />
       </label>
       {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
@@ -736,21 +742,49 @@ export function RosterPanel({
         Добавить {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
       </button>
       {people.length > 0 && (
-        <details className="wide">
-          <summary>Список участников</summary>
-          <table>
+        <details className="wide" open={people.some((g) => g.status !== "ACTIVE")}>
+          <summary>
+            Список участников: правка, неявка, снятие
+            {people.some((g) => g.status !== "ACTIVE") &&
+              ` (не выступают: ${people.filter((g) => g.status !== "ACTIVE").length})`}
+          </summary>
+          <datalist id="category-names">
+            {[...categories.values()].map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <datalist id="team-names">
+            {[...new Set(teams.values())].map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+          <table className="roster-table">
             <tbody>
               {people.map((g) => (
-                <tr key={g.id}>
-                  <td>№{g.bib}</td>
-                  <td>
-                    {g.lastName} {g.firstName}
-                  </td>
-                  <td className="muted">{g.club ?? ""}</td>
-                  <td className="muted">{g.teamId ? teams.get(g.teamId) : ""}</td>
-                  <td className="muted">{g.categoryId ? categories.get(g.categoryId) : ""}</td>
-                  <td className="muted">{g.shift ? `смена ${g.shift}` : ""}</td>
-                </tr>
+                <GymnastRow
+                  key={g.id}
+                  gymnast={g}
+                  team={g.teamId ? (teams.get(g.teamId) ?? "") : ""}
+                  category={g.categoryId ? (categories.get(g.categoryId) ?? "") : ""}
+                  save={async (patch) => {
+                    await apiRequest(`/competitions/${competitionId}/gymnasts/${g.id}`, {
+                      token: adminToken,
+                      method: "PATCH",
+                      body: patch,
+                    });
+                    await load();
+                    onImported?.();
+                  }}
+                  remove={async () => {
+                    await apiRequest(`/competitions/${competitionId}/gymnasts/${g.id}`, {
+                      token: adminToken,
+                      method: "DELETE",
+                    });
+                    await load();
+                    onImported?.();
+                  }}
+                  onError={onError}
+                />
               ))}
             </tbody>
           </table>
@@ -1180,5 +1214,181 @@ export function DrawPanel({
         )}
       </div>
     </section>
+  );
+}
+
+interface GymnastDraft {
+  bib: string;
+  lastName: string;
+  firstName: string;
+  middleName: string;
+  birthDate: string;
+  club: string;
+  city: string;
+  coach: string;
+  team: string;
+  category: string;
+  shift: string;
+}
+
+/** Строка участника: статус меняется сразу, остальное — по кнопке «Изменить». */
+function GymnastRow({
+  gymnast: g,
+  team,
+  category,
+  save,
+  remove,
+  onError,
+}: {
+  gymnast: RosterGymnast;
+  team: string;
+  category: string;
+  save: (patch: object) => Promise<void>;
+  remove: () => Promise<void>;
+  onError: (message: string | null) => void;
+}) {
+  const [draft, setDraft] = useState<GymnastDraft | null>(null);
+  const run = async (action: () => Promise<void>) => {
+    try {
+      await action();
+      onError(null);
+      return true;
+    } catch (e) {
+      onError((e as Error).message);
+      return false;
+    }
+  };
+  const statusSelect = (
+    <select
+      value={g.status}
+      className={g.status === "ACTIVE" ? undefined : "out"}
+      onChange={(e) => void run(() => save({ status: e.target.value }))}
+    >
+      {GYMNAST_STATUSES.map((s) => (
+        <option key={s} value={s}>
+          {GYMNAST_STATUS_NAMES[s]}
+        </option>
+      ))}
+    </select>
+  );
+
+  if (!draft) {
+    return (
+      <tr className={g.status === "ACTIVE" ? undefined : "out"}>
+        <td>№{g.bib}</td>
+        <td>
+          {g.lastName} {g.firstName} {g.middleName ?? ""}
+          {(g.birthDate || g.coach) && (
+            <div className="muted small">
+              {[g.birthDate && `д.р. ${g.birthDate}`, g.coach && `тренер ${g.coach}`].filter(Boolean).join(" · ")}
+            </div>
+          )}
+        </td>
+        <td className="muted">{[g.club, g.city].filter(Boolean).join(", ")}</td>
+        <td className="muted">{team}</td>
+        <td className="muted">{category}</td>
+        <td className="muted">{g.shift ? `смена ${g.shift}` : ""}</td>
+        <td>{statusSelect}</td>
+        <td>
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              setDraft({
+                bib: String(g.bib),
+                lastName: g.lastName,
+                firstName: g.firstName,
+                middleName: g.middleName ?? "",
+                birthDate: g.birthDate ?? "",
+                club: g.club ?? "",
+                city: g.city ?? "",
+                coach: g.coach ?? "",
+                team,
+                category,
+                shift: g.shift ? String(g.shift) : "",
+              })
+            }
+          >
+            Изменить
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  const field = (key: keyof GymnastDraft, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <input value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} {...props} />
+  );
+  const bib = Number(draft.bib);
+  const shift = draft.shift.trim() ? Number(draft.shift) : null;
+  const birthOk = draft.birthDate.trim() === "" || /^(\d{4}|\d{2}\.\d{2}\.\d{4})$/.test(draft.birthDate.trim());
+  const valid =
+    birthOk &&
+    Number.isInteger(bib) &&
+    bib >= 1 &&
+    draft.lastName.trim() !== "" &&
+    draft.firstName.trim() !== "" &&
+    (shift === null || (Number.isInteger(shift) && shift >= 1 && shift <= 50));
+  return (
+    <tr className="editing">
+      <td>{field("bib", { inputMode: "numeric", "aria-label": "Номер", className: "narrow" })}</td>
+      <td>
+        {field("lastName", { "aria-label": "Фамилия", placeholder: "Фамилия" })}
+        {field("firstName", { "aria-label": "Имя", placeholder: "Имя" })}
+        {field("middleName", { "aria-label": "Отчество", placeholder: "Отчество" })}
+        {field("birthDate", {
+          "aria-label": "Дата рождения",
+          placeholder: "Дата рождения: 2014 или 15.03.2014",
+          className: birthOk ? undefined : "invalid",
+        })}
+      </td>
+      <td>
+        {field("club", { "aria-label": "Клуб", placeholder: "Клуб" })}
+        {field("city", { "aria-label": "Город", placeholder: "Город" })}
+        {field("coach", { "aria-label": "Тренер", placeholder: "Тренер" })}
+      </td>
+      <td>{field("team", { "aria-label": "Команда", placeholder: "Команда", list: "team-names" })}</td>
+      <td>{field("category", { "aria-label": "Разряд", placeholder: "Разряд", list: "category-names" })}</td>
+      <td>{field("shift", { "aria-label": "Смена", placeholder: "Смена", inputMode: "numeric", className: "narrow" })}</td>
+      <td>{statusSelect}</td>
+      <td className="actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={!valid}
+          onClick={() =>
+            void run(() =>
+              save({
+                bib,
+                lastName: draft.lastName.trim(),
+                firstName: draft.firstName.trim(),
+                middleName: draft.middleName.trim() || null,
+                birthDate: draft.birthDate.trim() || null,
+                club: draft.club.trim() || null,
+                city: draft.city.trim() || null,
+                coach: draft.coach.trim() || null,
+                team: draft.team.trim() || null,
+                category: draft.category.trim() || null,
+                shift,
+              }),
+            ).then((ok) => ok && setDraft(null))
+          }
+        >
+          Сохранить
+        </button>
+        <button type="button" onClick={() => setDraft(null)}>
+          Отмена
+        </button>
+        <button
+          type="button"
+          className="link danger"
+          onClick={() => {
+            if (confirm(`Удалить ${g.lastName} ${g.firstName} из списка?`)) void run(remove);
+          }}
+        >
+          Удалить
+        </button>
+      </td>
+    </tr>
   );
 }

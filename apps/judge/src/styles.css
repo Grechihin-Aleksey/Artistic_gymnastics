@@ -702,3 +702,50 @@ select {
   border-color: var(--bad);
   color: var(--bad);
 }
+
+.roster-table td {
+  padding: 3px 8px 3px 0;
+  vertical-align: middle;
+}
+
+.roster-table tr.out td {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.roster-table tr.out td:nth-last-child(-n + 2) {
+  text-decoration: none;
+}
+
+.roster-table select.out {
+  color: var(--bad);
+}
+
+.roster-table tr.editing input {
+  width: 100%;
+  min-width: 6em;
+  margin: 2px 0;
+}
+
+.roster-table tr.editing input.invalid {
+  border-color: var(--bad);
+}
+
+.roster-table .small {
+  font-size: 12px;
+}
+
+.roster-table tr.editing input.narrow {
+  min-width: 3.5em;
+  width: 4em;
+}
+
+.roster-table .actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.link.danger {
+  color: var(--bad);
+}

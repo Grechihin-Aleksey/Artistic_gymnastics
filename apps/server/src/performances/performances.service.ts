@@ -64,6 +64,11 @@ export class PerformancesService {
       .from(gymnasts)
       .where(and(eq(gymnasts.id, input.gymnastId), eq(gymnasts.competitionId, competitionId)));
     if (!gymnast) throw new BadRequestException("Участник не найден в этом соревновании");
+    if (gymnast.status !== "ACTIVE") {
+      throw new ConflictException(
+        `${gymnast.lastName} ${gymnast.firstName}: ${gymnast.status === "DNS" ? "неявка" : "снятие с соревнований"}, вызвать нельзя`,
+      );
+    }
     // Судьи видят одно текущее выступление: следующего вызывают после утверждения.
     const [open] = await this.db
       .select({ gymnastId: performances.gymnastId })

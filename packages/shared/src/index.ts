@@ -6,6 +6,14 @@ export const JUDGE_ROLES = ["D", "E", "SUPERVISOR"] as const;
 export const MARK_KINDS = ["D", "E", "NEUTRAL"] as const;
 export const PERFORMANCE_STATUSES = ["SCORING", "APPROVED"] as const;
 export const INQUIRY_STATUSES = ["PENDING", "ACCEPTED", "REJECTED"] as const;
+/** Участник выступает, не явился или снялся по ходу соревнований. */
+export const GYMNAST_STATUSES = ["ACTIVE", "DNS", "WITHDRAWN"] as const;
+export type GymnastStatus = (typeof GYMNAST_STATUSES)[number];
+export const GYMNAST_STATUS_NAMES: Readonly<Record<GymnastStatus, string>> = {
+  ACTIVE: "выступает",
+  DNS: "неявка",
+  WITHDRAWN: "снятие",
+};
 /** Правила судейства: FIG или свои (база по разряду минус сбавки). */
 export const RULES = ["FIG", "CUSTOM"] as const;
 export type Rules = (typeof RULES)[number];
@@ -41,12 +49,30 @@ export const createTeamSchema = z.object({
   name: z.string().min(1).max(200),
 });
 
+/** Дата рождения: год (2012) или полная дата (15.03.2012). */
+export const birthDateSchema = z
+  .string()
+  .trim()
+  .regex(/^(\d{4}|\d{2}\.\d{2}\.\d{4})$/, "Дата рождения: год (2012) или дата (15.03.2012)");
+
+/** Год рождения из даты рождения: для протоколов («г.р.»). */
+export const birthYear = (birthDate: string | null | undefined): string => birthDate?.slice(-4) ?? "";
+
+/** Необязательные сведения об участнике: отчество, дата рождения, город, тренер. */
+const gymnastDetails = {
+  middleName: z.string().trim().max(100).optional(),
+  birthDate: birthDateSchema.optional(),
+  city: z.string().trim().max(200).optional(),
+  coach: z.string().trim().max(200).optional(),
+};
+
 export const createGymnastSchema = z.object({
   bib: z.number().int().min(1),
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   club: z.string().max(200).optional(),
   teamId: z.uuid().optional(),
+  ...gymnastDetails,
 });
 
 export const createJudgeSchema = z.object({
@@ -102,10 +128,30 @@ export const importGymnastsSchema = z.object({
         category: z.string().max(100).optional(),
         /** Номер смены; порядок выхода в смене — порядок строк. */
         shift: z.number().int().min(1).max(50).optional(),
+        ...gymnastDetails,
       }),
     )
     .min(1)
     .max(1000),
+});
+
+/**
+ * Правка участника. Разряд, команда и смена — по названию (номеру), как при импорте;
+ * пустая строка или null убирает. Не переданные поля не меняются.
+ */
+export const updateGymnastSchema = z.object({
+  bib: z.number().int().min(1).max(100_000).optional(),
+  lastName: z.string().trim().min(1).max(100).optional(),
+  firstName: z.string().trim().min(1).max(100).optional(),
+  club: z.string().trim().max(200).nullable().optional(),
+  team: z.string().trim().max(200).nullable().optional(),
+  category: z.string().trim().max(100).nullable().optional(),
+  shift: z.number().int().min(1).max(50).nullable().optional(),
+  status: z.enum(GYMNAST_STATUSES).optional(),
+  middleName: z.string().trim().max(100).nullable().optional(),
+  birthDate: birthDateSchema.nullable().optional(),
+  city: z.string().trim().max(200).nullable().optional(),
+  coach: z.string().trim().max(200).nullable().optional(),
 });
 
 /** Логотип соревнования: картинка PNG или JPEG как data URL, не больше ~1,5 МБ. */
@@ -196,6 +242,7 @@ export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
+export type UpdateGymnastInput = z.infer<typeof updateGymnastSchema>;
 export type DrawInput = z.infer<typeof drawSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;

@@ -167,8 +167,12 @@ export class ResultsService {
       this.approvedScores(competitionId),
       this.gymnastsById(competitionId),
     ]);
+    // Снявшиеся в многоборье не ранжируются; их оценки на снарядах остаются.
     const entries = [...scores]
-      .filter(([gymnastId]) => inScope(scope, people.get(gymnastId)!.categoryId))
+      .filter(([gymnastId]) => {
+        const g = people.get(gymnastId)!;
+        return inScope(scope, g.categoryId) && g.status === "ACTIVE";
+      })
       .map(([gymnastId, byApparatus]) => ({
       id: gymnastId,
       scores: Object.fromEntries(

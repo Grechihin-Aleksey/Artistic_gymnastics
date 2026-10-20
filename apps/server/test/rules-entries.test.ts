@@ -49,8 +49,8 @@ describe("заявка из Excel", () => {
     const parsed = (await admin.post(`/competitions/${competitionId}/gymnasts/parse-xlsx`, { file, nextBib: 5 }).expect(201))
       .body;
     expect(parsed.text.split("\n")).toEqual([
-      "5\tСмирнов\tИлья\tДЮСШ №2\t\t2 юношеский\t",
-      "6\tПопов\tЕгор\tДЮСШ №2\t\t2 юношеский\t",
+      "5\tСмирнов\tИлья\tДЮСШ №2\t\t2 юношеский\t\t2015\t\tКозлов\tПетрович",
+      "6\tПопов\tЕгор\tДЮСШ №2\t\t2 юношеский\t\t2015\t\tКозлов",
     ]);
     expect(parsed.notes.join(" ")).toContain("выданы по порядку с №5");
     expect(parsed.notes.join(" ")).toContain("строка 6");
