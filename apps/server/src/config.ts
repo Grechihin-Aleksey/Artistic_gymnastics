@@ -11,6 +11,10 @@ export interface AppConfig {
   /** Адрес облачного ретранслятора для сайта; без него результаты остаются в зале. */
   relayUrl?: string;
   relayToken?: string;
+  /** Папка для автовыгрузки турниров файлами, как кнопка «Выгрузить в файл»; без неё выгрузки нет. */
+  exportDir?: string;
+  /** Как часто выгружать, секунды. */
+  exportInterval?: number;
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -31,5 +35,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     boardDist: env.BOARD_DIST ?? join(__dirname, "..", "..", "scoreboard", "dist"),
     relayUrl: env.RELAY_URL || undefined,
     relayToken: env.RELAY_TOKEN || undefined,
+    exportDir: env.EXPORT_DIR || undefined,
+    exportInterval: Number(env.EXPORT_INTERVAL ?? 1800),
   };
 }

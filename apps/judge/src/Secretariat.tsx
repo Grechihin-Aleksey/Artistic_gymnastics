@@ -3384,6 +3384,8 @@ export function ProgressPanel({
                     const s = view === "AA" ? undefined : app.get(g.id)?.score;
                     const now = onApparatus.get(g.id);
                     const out = g.status !== "ACTIVE";
+                    // Пустая графа у неявившегося или снятого — пометка вместо прочерка.
+                    const blank = g.status === "DNS" ? "н/я" : g.status === "WITHDRAWN" ? "снят" : "—";
                     return (
                       <tr key={g.id} className={now ? "now" : out ? "out" : undefined}>
                         <td>{out ? GYMNAST_STATUS_NAMES[g.status] : (rankOf(g.id) ?? "")}</td>
@@ -3398,20 +3400,20 @@ export function ProgressPanel({
                           <>
                             {program.map((a) => (
                               <td key={a} className="num">
-                                {r?.apparatus[a] ? fmt(r.apparatus[a]!.total) : "—"}
+                                {r?.apparatus[a] ? fmt(r.apparatus[a]!.total) : blank}
                               </td>
                             ))}
                             <td className="num">
-                              <strong>{r ? fmt(r.total) : "—"}</strong>
+                              <strong>{r ? fmt(r.total) : blank}</strong>
                             </td>
                           </>
                         ) : (
                           <>
-                            <td className="num">{s ? fmt(s.d) : "—"}</td>
+                            <td className="num">{s ? fmt(s.d) : blank}</td>
                             <td className="num">{s ? fmt(s.e) : "—"}</td>
                             <td className="num">{s && s.neutral > 0 ? fmt(s.neutral) : "—"}</td>
                             <td className="num">
-                              <strong>{s ? fmt(s.total) : "—"}</strong>
+                              <strong>{s ? fmt(s.total) : blank}</strong>
                             </td>
                           </>
                         )}
