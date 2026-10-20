@@ -527,6 +527,31 @@ export interface ClubStandingRow {
   places: [number, number, number];
 }
 
+/** Разделы журнала изменений: оценки, запросы тренеров, участники, организация. */
+export const AUDIT_GROUPS = ["marks", "inquiries", "roster", "setup"] as const;
+export type AuditGroup = (typeof AUDIT_GROUPS)[number];
+export const AUDIT_GROUP_NAMES: Readonly<Record<AuditGroup, string>> = {
+  marks: "Оценки",
+  inquiries: "Запросы тренеров",
+  roster: "Участники",
+  setup: "Организация",
+};
+
+/** Запись журнала изменений для секретариата и жюри, уже понятным текстом. */
+export interface AuditEntry {
+  id: string;
+  /** ISO-время записи. */
+  at: string;
+  /** «Секретариат» или судья: «Судья E2 · Иванова А. А.» (снаряд — в apparatus). */
+  actor: string;
+  group: AuditGroup;
+  action: string;
+  apparatus: (typeof APPARATUS)[number] | null;
+  /** «№12 Петрова Анна», если запись об участнике. */
+  gymnast: string | null;
+  text: string;
+}
+
 /** Пьедестал для табло: призёры 1–3 мест (при равенстве — все, кто делит место). */
 export interface CeremonyView {
   /** Например: «Многоборье · КМС», «Финал: Бревно · 1 разряд», «Общекомандный зачёт». */

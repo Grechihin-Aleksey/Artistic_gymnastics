@@ -1,8 +1,9 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query, Res } from "@nestjs/common";
 import type { Apparatus } from "@ag/scoring";
-import { apparatusSchema, type Stage } from "@ag/shared";
+import { apparatusSchema, type AuditGroup, type Stage } from "@ag/shared";
 import type { Response } from "express";
 import { z } from "zod";
+import { auditGroupQuery } from "../audit/audit.controller";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { categoryQuery, stageQuery } from "../results/results.controller";
@@ -79,6 +80,31 @@ export class ProtocolsController {
   @Get("clubs")
   async clubs(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     send(res, await this.protocols.clubs(id), "clubs.pdf");
+  }
+
+  @Get("audit")
+  async audit(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("group", auditGroupQuery) group: AuditGroup | undefined,
+    @Res() res: Response,
+  ) {
+    send(res, await this.protocols.auditLog(id, group), "audit.pdf");
+  }
+
+  @Get("audit.xlsx")
+  async auditWorkbook(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("group", auditGroupQuery) group: AuditGroup | undefined,
+    @Res() res: Response,
+  ) {
+    res
+      .status(200)
+      .set({
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="audit.xlsx"',
+        "Cache-Control": "no-store",
+      })
+      .end(await this.protocols.auditWorkbook(id, group));
   }
 
   @Get("bibs")

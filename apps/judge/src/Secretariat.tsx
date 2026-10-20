@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
-import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { BoardSnapshot, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -170,6 +170,25 @@ export function RotationPanel({ competitionId, discipline, adminToken, onError }
   );
 }
 
+/** Скачивает протокол: PDF показывает в заранее открытой вкладке tab, остальное сохраняет файлом. */
+async function fetchProtocol(competitionId: string, adminToken: string, path: string, filename: string, tab: Window | null) {
+  const response = await fetch(`/competitions/${competitionId}/protocols/${path}`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new ApiError(response.status, data?.message ?? `Ошибка сервера ${response.status}`);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  if (tab) tab.location.href = url;
+  else {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+  }
+}
+
 /** Протоколы в PDF: открываются в новой вкладке, оттуда их печатают или сохраняют. */
 export function ProtocolsPanel({ competitionId, discipline, adminToken, onError }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -193,21 +212,7 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         ? `${path.includes("?") ? "&" : "?"}category=${category}`
         : "";
     try {
-      const response = await fetch(`/competitions/${competitionId}/protocols/${path}${query}`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-      });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new ApiError(response.status, data?.message ?? `Ошибка сервера ${response.status}`);
-      }
-      const url = URL.createObjectURL(await response.blob());
-      if (tab) tab.location.href = url;
-      else {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        link.click();
-      }
+      await fetchProtocol(competitionId, adminToken, `${path}${query}`, filename, tab);
       onError(null);
     } catch (e) {
       tab?.close();
@@ -1426,6 +1431,116 @@ export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, 
 }
 
 /** «20 17 15 14» или «20, 17, 15» → [20, 17, 15]; null — в строке ошибка. */
+
+const AUDIT_PAGE = 50;
+
+/** «14:05:31», а для записей не сегодняшнего дня — с датой. */
+function auditTime(iso: string): string {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return at.toDateString() === new Date().toDateString()
+    ? time
+    : `${at.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })} ${time}`;
+}
+
+/**
+ * Журнал изменений: кто и когда ставил и правил оценки, разбирал запросы,
+ * менял участников и настройки. Выгружается для жюри в PDF и Excel.
+ */
+export function AuditPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [group, setGroup] = useState<AuditGroup | "">("");
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  const [limit, setLimit] = useState(AUDIT_PAGE);
+
+  const load = useCallback(async () => {
+    try {
+      const query = group ? `?group=${group}` : "";
+      setEntries(await apiRequest<AuditEntry[]>(`/competitions/${competitionId}/audit${query}`, { token: adminToken }));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, group, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const download = async (pdf: boolean) => {
+    const tab = pdf ? window.open("", "_blank") : null;
+    const query = group ? `?group=${group}` : "";
+    try {
+      await fetchProtocol(competitionId, adminToken, `${pdf ? "audit" : "audit.xlsx"}${query}`, pdf ? "audit.pdf" : "audit.xlsx", tab);
+      onError(null);
+    } catch (e) {
+      tab?.close();
+      onError(e instanceof ApiError && e.status !== 0 ? e.message : "Нет связи с сервером");
+    }
+  };
+
+  return (
+    <section className="panel no-print audit">
+      <h2>Журнал изменений</h2>
+      <p className="muted wide">
+        Кто и когда ставил, правил и утверждал оценки, разбирал запросы тренеров, менял участников и настройки. Новые записи
+        сверху; в PDF и Excel — по порядку времени, для жюри.
+      </p>
+      <label>
+        Раздел
+        <select value={group} onChange={(e) => setGroup(e.target.value as AuditGroup | "")}>
+          <option value="">Все записи</option>
+          {AUDIT_GROUPS.map((g) => (
+            <option key={g} value={g}>
+              {AUDIT_GROUP_NAMES[g]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="buttons">
+        <button type="button" onClick={() => void load()}>
+          Обновить
+        </button>
+        <button type="button" onClick={() => void download(true)}>
+          Журнал в PDF
+        </button>
+        <button type="button" onClick={() => void download(false)}>
+          Журнал в Excel
+        </button>
+      </div>
+      {entries && entries.length === 0 && <p className="muted wide">Записей пока нет.</p>}
+      {entries && entries.length > 0 && (
+        <div className="wide table-scroll">
+          <table className="draw-table audit-table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Кто</th>
+                <th>Снаряд</th>
+                <th>Участник</th>
+                <th>Что произошло</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.slice(0, limit).map((e) => (
+                <tr key={e.id}>
+                  <td className="muted">{auditTime(e.at)}</td>
+                  <td>{e.actor}</td>
+                  <td>{e.apparatus ? APPARATUS_NAMES[e.apparatus] : ""}</td>
+                  <td>{e.gymnast ?? ""}</td>
+                  <td>{e.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {entries && entries.length > limit && (
+        <button type="button" className="link" onClick={() => setLimit(limit + AUDIT_PAGE * 4)}>
+          Показать ещё ({entries.length - limit})
+        </button>
+      )}
+    </section>
+  );
+}
 
 const CEREMONY_TITLES: Record<Ceremony["kind"], string> = {
   allAround: "Многоборье",

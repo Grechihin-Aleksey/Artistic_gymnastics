@@ -17,9 +17,12 @@ import type {
 import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
-import { categories, competitions, gymnasts, judges, performances, shifts, teams } from "../db/schema";
+import { auditLog, categories, competitions, gymnasts, judges, performances, shifts, teams } from "../db/schema";
 
 export type CompetitionRow = typeof competitions.$inferSelect;
+
+/** Участник в записи журнала: после удаления его уже не найти по id. */
+const gymnastNote = (g: typeof gymnasts.$inferSelect) => ({ gymnastId: g.id, bib: g.bib, name: `${g.lastName} ${g.firstName}` });
 
 /** Соревнование для клиентов: сам логотип отдаётся отдельно, он тяжёлый. */
 export function publicCompetition({ logo, deductions, ...rest }: CompetitionRow) {
@@ -162,6 +165,7 @@ export class CompetitionsService {
           })
           .where(eq(categories.id, b.categoryId));
       }
+      await tx.insert(auditLog).values({ competitionId, actor: "admin", action: "rules.changed", details: input });
     });
     return this.getRules(competitionId);
   }
@@ -240,11 +244,11 @@ export class CompetitionsService {
         .where(and(eq(teams.id, input.teamId), eq(teams.competitionId, competitionId)));
       if (!team) throw new BadRequestException("Команда не найдена в этом соревновании");
     }
-    const [row] = await this.db
-      .insert(gymnasts)
-      .values({ competitionId, ...input })
-      .returning();
-    return row!;
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.insert(gymnasts).values({ competitionId, ...input }).returning();
+      await tx.insert(auditLog).values({ competitionId, actor: "admin", action: "gymnast.added", details: gymnastNote(row!) });
+      return row!;
+    });
   }
 
   /**
@@ -317,7 +321,7 @@ export class CompetitionsService {
         }
       }
 
-      return tx
+      const created = await tx
         .insert(gymnasts)
         .values(
           input.rows.map((r) => {
@@ -345,6 +349,13 @@ export class CompetitionsService {
           }),
         )
         .returning();
+      await tx.insert(auditLog).values({
+        competitionId,
+        actor: "admin",
+        action: "gymnasts.imported",
+        details: { count: created.length, bibs: created.map((g) => g.bib) },
+      });
+      return created;
     });
   }
 
@@ -453,6 +464,20 @@ export class CompetitionsService {
 
       if (Object.keys(changes).length === 0) return current;
       const [row] = await tx.update(gymnasts).set(changes).where(eq(gymnasts.id, gymnastId)).returning();
+      // В журнал — понятные названия: разряд и команду по имени, а не по id.
+      const nameOf = async (table: typeof categories | typeof teams, id: string | null) =>
+        id ? ((await tx.select({ name: table.name }).from(table).where(eq(table.id, id)))[0]?.name ?? null) : null;
+      const diff: Record<string, { from: unknown; to: unknown }> = {};
+      for (const key of Object.keys(changes) as (keyof typeof changes)[]) {
+        if (key === "startOrder") continue;
+        if (key === "categoryId") diff.category = { from: await nameOf(categories, current.categoryId), to: await nameOf(categories, row!.categoryId) };
+        else if (key === "teamId") diff.team = { from: await nameOf(teams, current.teamId), to: await nameOf(teams, row!.teamId) };
+        else if (current[key] !== row![key]) diff[key] = { from: current[key], to: row![key] };
+      }
+      if (diff.team && diff.team.from === diff.team.to) delete diff.team;
+      if (Object.keys(diff).length > 0) {
+        await tx.insert(auditLog).values({ competitionId, actor: "admin", action: "gymnast.updated", details: { ...gymnastNote(current), changes: diff } });
+      }
       return row!;
     });
   }
@@ -465,12 +490,15 @@ export class CompetitionsService {
       .where(eq(performances.gymnastId, gymnastId))
       .limit(1);
     if (scored) throw new ConflictException("Участник уже выступал: удалить нельзя, отметьте «снятие»");
-    const [row] = await this.db
-      .delete(gymnasts)
-      .where(and(eq(gymnasts.id, gymnastId), eq(gymnasts.competitionId, competitionId)))
-      .returning();
-    if (!row) throw new NotFoundException("Участник не найден");
-    return { deleted: row.id };
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(gymnasts)
+        .where(and(eq(gymnasts.id, gymnastId), eq(gymnasts.competitionId, competitionId)))
+        .returning();
+      if (!row) throw new NotFoundException("Участник не найден");
+      await tx.insert(auditLog).values({ competitionId, actor: "admin", action: "gymnast.deleted", details: gymnastNote(row) });
+      return { deleted: row.id };
+    });
   }
 
   listCategories(competitionId: string) {
@@ -504,6 +532,7 @@ export class CompetitionsService {
       .values({ competitionId, ...input, tokenHash: hashToken(token) })
       .returning();
     const { tokenHash: _, ...judge } = row!;
+    await this.db.insert(auditLog).values({ competitionId, actor: "admin", action: "judge.added", details: { judgeId: judge.id } });
     return { ...judge, token };
   }
 
@@ -517,6 +546,9 @@ export class CompetitionsService {
       .returning();
     if (!row) throw new NotFoundException("Судья не найден");
     const { tokenHash: _, ...judge } = row;
+    await this.db
+      .insert(auditLog)
+      .values({ competitionId: row.competitionId, actor: "admin", action: "judge.token_reissued", details: { judgeId: row.id } });
     return { ...judge, token };
   }
 

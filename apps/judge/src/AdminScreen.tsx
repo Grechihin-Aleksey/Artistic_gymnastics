@@ -10,6 +10,7 @@ import {
   NormativesPanel,
   ClubStandingPanel,
   CeremonyPanel,
+  AuditPanel,
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
@@ -346,6 +347,7 @@ export function AdminScreen() {
             adminToken={adminToken}
             onError={setError}
           />
+          <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
         </>
       )}
 
