@@ -57,6 +57,33 @@ export function parseScore(input: string, kind: MarkKind): number | null {
   return value <= max ? value : null;
 }
 
+/** Допуск расхождения сбавок судей E: больше — старший судья видит предупреждение. */
+export const E_TOLERANCE = 0.5;
+
+/** Предупреждение, если сбавки судей E расходятся больше допуска; null — всё в порядке. */
+export function eSpreadWarning(values: number[]): string | null {
+  if (values.length < 2) return null;
+  const spread = Math.round((Math.max(...values) - Math.min(...values)) * 1000) / 1000;
+  return spread > E_TOLERANCE
+    ? `Сбавки судей E расходятся на ${spread.toFixed(2)} (допуск ${E_TOLERANCE.toFixed(2)}). Проверьте перед утверждением`
+    : null;
+}
+
+/** Предельное время упражнения по правилам FIG, секунды; null — на снаряде время не ограничено. */
+export function timeLimit(discipline: string, apparatus: string): number | null {
+  if (discipline === "WAG") return apparatus === "BB" || apparatus === "FX" ? 90 : null;
+  if (discipline === "MAG") return apparatus === "FX" ? 70 : null;
+  return null;
+}
+
+/** Время секундомера: «1:05.3». */
+export function formatTime(ms: number): string {
+  const tenths = Math.floor(ms / 100);
+  const minutes = Math.floor(tenths / 600);
+  const seconds = Math.floor((tenths % 600) / 10);
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${tenths % 10}`;
+}
+
 /** Очки за места из положения: «10 8 6,5 5» → [10, 8, 6.5, 5]; null — если есть ошибка. */
 export function parsePoints(text: string): number[] | null {
   // Запятая — десятичный знак (1,5 очка), числа разделяются пробелами или «;».
