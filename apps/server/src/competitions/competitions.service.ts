@@ -349,12 +349,17 @@ export class CompetitionsService {
           }),
         )
         .returning();
-      await tx.insert(auditLog).values({
-        competitionId,
-        actor: "admin",
-        action: "gymnasts.imported",
-        details: { count: created.length, bibs: created.map((g) => g.bib) },
-      });
+      // Один участник — это ручное добавление из формы, в журнале оно видно с фамилией.
+      await tx.insert(auditLog).values(
+        created.length === 1
+          ? { competitionId, actor: "admin", action: "gymnast.added", details: gymnastNote(created[0]!) }
+          : {
+              competitionId,
+              actor: "admin",
+              action: "gymnasts.imported",
+              details: { count: created.length, bibs: created.map((g) => g.bib) },
+            },
+      );
       return created;
     });
   }
