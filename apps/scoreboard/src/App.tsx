@@ -39,11 +39,15 @@ export function App() {
   }, [route.embed]);
 
   if (!route.competitionId) return <Picker />;
-  return <Board key={route.competitionId} route={{ ...route, competitionId: route.competitionId }} />;
+  return (
+    <>
+      {route.group && <GroupSwitch route={route} group={route.group} />}
+      <Board key={route.competitionId} route={{ ...route, competitionId: route.competitionId }} />
+    </>
+  );
 }
 
-/** Без соревнования в адресе табло предлагает выбрать его из списка. */
-function Picker() {
+function useCompetitions(): Competition[] | null {
   const [list, setList] = useState<Competition[] | null>(null);
   useEffect(() => {
     // В зале список отдаёт сервер соревнований, на сайте — ретранслятор (уже свежие сверху).
@@ -53,6 +57,48 @@ function Picker() {
       .then((items) => setList(relay ? items : [...items].reverse()))
       .catch(() => setList([]));
   }, []);
+  return list;
+}
+
+/** Другое соревнование открывается с начала: разряд и клуб у него свои. */
+function switchHash(route: Route, competitionId: string): string {
+  const { category: _category, club: _club, ...rest } = route;
+  return routeHash({ ...rest, competitionId, view: "auto" });
+}
+
+const GROUP_LABELS: Record<string, string> = { WAG: "Девочки", MAG: "Мальчики" };
+
+/** Переключатель «Девочки | Мальчики», когда в одной рамке несколько соревнований. */
+function GroupSwitch({ route, group }: { route: Route; group: string[] }) {
+  const list = useCompetitions();
+  const known = new Map(list?.map((c) => [c.id, c]));
+  const disciplines = group.map((id) => known.get(id)?.discipline);
+  // Подпись «Девочки» или «Мальчики», если у каждого соревнования своя программа, иначе название.
+  const byDiscipline = new Set(disciplines).size === group.length;
+  const label = (id: string, i: number) => {
+    const c = known.get(id);
+    if (!c) return `Соревнование ${i + 1}`;
+    return (byDiscipline && GROUP_LABELS[c.discipline]) || c.name;
+  };
+  return (
+    <nav className="group-switch" aria-label="Соревнования">
+      {group.map((id, i) => (
+        <a
+          key={id}
+          href={switchHash(route, id)}
+          className={id === route.competitionId ? "active" : undefined}
+          aria-current={id === route.competitionId ? "page" : undefined}
+        >
+          {label(id, i)}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+/** Без соревнования в адресе табло предлагает выбрать его из списка. */
+function Picker() {
+  const list = useCompetitions();
   return (
     <div className="center column">
       <h1>Выберите соревнование</h1>

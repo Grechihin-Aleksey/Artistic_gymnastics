@@ -2133,10 +2133,22 @@ export function SiteBadge({ adminToken }: { adminToken: string }) {
  * Результаты на сайте: состояние отправки этого турнира, кнопка «Отправить на сайт сейчас»
  * и готовый код для вставки на страницу сайта.
  */
-export function SitePanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+export function SitePanel({
+  competitionId,
+  adminToken,
+  onError,
+  competitions,
+}: Omit<Props, "discipline"> & { competitions: { id: string; name: string; discipline: string }[] }) {
   const [view, setView] = useState<SiteView | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Второе соревнование в той же рамке: девочки и мальчики с переключателем над табло.
+  const [partner, setPartner] = useState("");
+  const others = competitions.filter((c) => c.id !== competitionId);
+  const embed =
+    view?.embed && partner && others.some((c) => c.id === partner)
+      ? view.embed.replace(`data-ag-results="${competitionId}"`, `data-ag-results="${competitionId},${partner}"`)
+      : view?.embed;
 
   const run = useCallback(
     async (method: "GET" | "POST") => {
@@ -2172,7 +2184,7 @@ export function SitePanel({ competitionId, adminToken, onError }: Omit<Props, "d
   }
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(view.embed!);
+      await navigator.clipboard.writeText(embed!);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -2206,10 +2218,23 @@ export function SitePanel({ competitionId, adminToken, onError }: Omit<Props, "d
           </a>
         )}
       </div>
-      {view.embed && (
+      {embed && others.length > 0 && (
+        <label className="wide site-partner">
+          Показать в той же рамке с переключателем (например, девочки и мальчики)
+          <select value={partner} onChange={(e) => setPartner(e.target.value)}>
+            <option value="">Только это соревнование</option>
+            {others.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.discipline})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {embed && (
         <div className="wide site-embed">
           <span className="muted">Код для страницы сайта (блок «HTML» в Elementor):</span>
-          <textarea readOnly rows={2} value={view.embed} onFocus={(e) => e.target.select()} aria-label="Код для страницы сайта" />
+          <textarea readOnly rows={3} value={embed} onFocus={(e) => e.target.select()} aria-label="Код для страницы сайта" />
           <button type="button" onClick={() => void copy()}>
             {copied ? "Скопировано" : "Скопировать код"}
           </button>

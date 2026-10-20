@@ -114,3 +114,13 @@ describe("мой клуб", () => {
     expect(parseRoute(routeHash({ competitionId: "abc", view: "club", club: "СШ №1" }))).toEqual({ competitionId: "abc", view: "club", club: "СШ №1" });
   });
 });
+
+describe("несколько соревнований в одной рамке", () => {
+  it("читает список и номер показанного и собирает адрес обратно", () => {
+    const route = parseRoute("#c=girls,boys&i=1&embed=1&theme=dark");
+    expect(route).toEqual({ competitionId: "boys", group: ["girls", "boys"], view: "auto", embed: true, theme: "dark" });
+    expect(parseRoute(routeHash(route))).toEqual(route);
+    expect(parseRoute(routeHash({ ...route, competitionId: "girls" })).competitionId).toBe("girls");
+    expect(parseRoute("#c=girls,boys&i=7").competitionId).toBe("girls");
+  });
+});
