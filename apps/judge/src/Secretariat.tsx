@@ -996,7 +996,7 @@ function ManualGymnastForm({
       </label>
       <label>
         Тренер
-        <input name="coach" required maxLength={200} placeholder="Смирнова О. В." />
+        <input name="coach" required maxLength={200} placeholder="напр. Смирнова О. В." />
       </label>
       <label>
         Команда
@@ -1175,7 +1175,8 @@ export function RulesPanel({
                         <td>
                           <input
                             inputMode="decimal"
-                            placeholder="10.000"
+                            placeholder="впишите"
+                            className={draft.base.trim() ? undefined : "missing"}
                             value={draft.base}
                             disabled={c.scored}
                             onChange={(e) => setBase(c.id, (d) => ({ ...d, base: e.target.value }))}
