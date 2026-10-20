@@ -66,7 +66,7 @@ describe("онлайн-заявки клубов", () => {
     expect(view).toMatchObject({ open: true, deadline });
     const { key, call } = published.at(-1)!;
     expect(call).toEqual({ name: "Кубок города", discipline: "WAG", open: true, deadline, categories: ["КМС"] });
-    expect(view.link).toBe(`http://127.0.0.1:${(relay.address() as AddressInfo).port}/site/entry/#c=${competitionId}&k=${key}`);
+    expect(view.link).toBe(`http://127.0.0.1:${(relay.address() as AddressInfo).port}/site/entry/index.html#c=${competitionId}&k=${key}`);
     // Ключ ссылки не уходит в открытые данные соревнования.
     expect(JSON.stringify((await api(app).get(`/competitions/${competitionId}`).expect(200)).body)).not.toContain(key);
 

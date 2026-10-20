@@ -497,7 +497,7 @@ function route(string $path, string $base)
         return;
     }
     if ($path === '' || $path === '/') {
-        header("Location: $base/widget/", true, 302);
+        header("Location: $base/widget/index.html", true, 302);
         return;
     }
     if (strlen($TOKEN) < 16 || strpos($TOKEN, 'ВСТАВЬТЕ') !== false) {

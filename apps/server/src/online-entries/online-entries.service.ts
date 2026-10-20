@@ -61,7 +61,7 @@ export class OnlineEntriesService {
       deadline: competition.entriesDeadline?.toISOString() ?? null,
       link:
         this.enabled && competition.entryKey
-          ? `${this.relayUrl("entry/").toString()}#c=${competitionId}&k=${competition.entryKey}`
+          ? `${this.relayUrl("entry/index.html").toString()}#c=${competitionId}&k=${competition.entryKey}`
           : null,
       syncedAt: competition.entriesSyncedAt?.toISOString() ?? null,
       entries: rows.map((r) => ({

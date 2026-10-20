@@ -288,9 +288,9 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       return json(res, 200, snapshot);
     }
     if (path === "/embed.js") return serveStatic(res, config.publicDir, "embed.js");
-    if (path === "/entry" || path === "/entry/") return serveStatic(res, config.publicDir, "entry.html");
+    if (path === "/entry" || path === "/entry/" || path === "/entry/index.html") return serveStatic(res, config.publicDir, "entry.html");
     if (path === "/" || path === "/widget") {
-      res.writeHead(302, { location: "/widget/" });
+      res.writeHead(302, { location: "/widget/index.html" });
       return res.end();
     }
     if (path.startsWith("/widget/")) {
