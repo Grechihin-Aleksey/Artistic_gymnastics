@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, NotFoundException, Param, ParseUUIDPipe, Post, Put, Res } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Res,
+} from "@nestjs/common";
 import type { Response } from "express";
 import {
   createCompetitionSchema,
@@ -6,17 +18,24 @@ import {
   createJudgeSchema,
   createTeamSchema,
   importGymnastsSchema,
+  parseEntriesSchema,
   setLogoSchema,
+  setRulesSchema,
   type CreateCompetitionInput,
   type CreateGymnastInput,
   type CreateJudgeInput,
   type CreateTeamInput,
   type ImportGymnastsInput,
+  type ParseEntriesInput,
   type SetLogoInput,
+  type SetRulesInput,
 } from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { CompetitionsService, publicCompetition } from "./competitions.service";
+import { entriesTemplate, parseEntries } from "./entries";
+
+const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 @Controller("competitions")
 export class CompetitionsController {
@@ -86,6 +105,46 @@ export class CompetitionsController {
     @Body(new ZodPipe(importGymnastsSchema)) body: ImportGymnastsInput,
   ) {
     return this.competitions.importGymnasts(id, body);
+  }
+
+  /**
+   * Заявка из Excel → текст для поля вставки списка. Ничего не сохраняет:
+   * секретариат проверяет список и загружает его обычным импортом.
+   */
+  @Post(":id/gymnasts/parse-xlsx")
+  @RequireAccess("admin")
+  async parseEntries(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(parseEntriesSchema)) body: ParseEntriesInput,
+  ) {
+    const people = await this.competitions.listGymnasts(id);
+    const nextBib = Math.max(body.nextBib ?? 1, Math.max(0, ...people.map((g) => g.bib)) + 1);
+    try {
+      return await parseEntries(Buffer.from(body.file, "base64"), nextBib);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+  }
+
+  /** Бланк заявки для клубов. */
+  @Get(":id/entries-template.xlsx")
+  async entriesTemplate(@Res() res: Response) {
+    const file = await entriesTemplate();
+    res
+      .status(200)
+      .set({ "Content-Type": XLSX, "Content-Disposition": 'attachment; filename="entries.xlsx"' })
+      .end(file);
+  }
+
+  @Get(":id/rules")
+  getRules(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.getRules(id);
+  }
+
+  @Put(":id/rules")
+  @RequireAccess("admin")
+  setRules(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(setRulesSchema)) body: SetRulesInput) {
+    return this.competitions.setRules(id, body);
   }
 
   @Get(":id/categories")

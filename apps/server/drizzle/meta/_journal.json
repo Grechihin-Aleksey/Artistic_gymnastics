@@ -36,6 +36,13 @@
       "when": 1792473940473,
       "tag": "0004_competition_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792475596279,
+      "tag": "0005_custom_rules",
+      "breakpoints": true
     }
   ]
 }

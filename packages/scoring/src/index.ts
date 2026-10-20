@@ -8,3 +8,4 @@ export * from "./apparatusFinal.js";
 export * from "./allAround.js";
 export * from "./team.js";
 export * from "./rotation.js";
+export * from "./custom.js";

@@ -11,7 +11,7 @@ import {
   shiftApparatus,
   type Apparatus,
 } from "@ag/scoring";
-import { APPARATUS_NAMES, type GymnastView } from "@ag/shared";
+import { APPARATUS_NAMES, scoreLabels, type GymnastView } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   Content,
@@ -33,6 +33,7 @@ import {
 import { ResultsService, type CategoryScope } from "../results/results.service";
 import { renderPdf } from "./pdf";
 import { resultsWorkbook } from "./workbook";
+import { APPARATUS_EVENT, diplomasDocument, type Diploma } from "./diplomas";
 
 const DISCIPLINE_NAMES = { MAG: "мужчины", WAG: "женщины" } as const;
 const fmt = (n: number) => n.toFixed(3);
@@ -106,16 +107,18 @@ export class ProtocolsService {
     const attempts = await this.attempts(competitionId, apparatus, eSeats);
     const teamNames = await this.teamNames(competitionId);
     const isVault = apparatus === "VT";
+    const custom = competition.rules === "CUSTOM";
+    const labels = scoreLabels(competition.rules);
 
     const header: TableCell[] = [
       th("Место"),
       th("№"),
       th("Участник"),
       ...(isVault ? [th("Прыжок")] : []),
-      th("D", "right"),
+      th(labels.d, "right"),
       ...eSeats.map((s) => th(`E${s}`, "right")),
-      th("E", "right"),
-      th("Сб.", "right"),
+      th(labels.e, "right"),
+      th(custom ? "НС" : "Сб.", "right"),
       th("Оценка", "right"),
       ...(isVault ? [th("Итог", "right")] : []),
     ];
@@ -151,7 +154,8 @@ export class ProtocolsService {
             : []),
           { text: fmt(a.d) + (a.dChanged ? " *" : ""), alignment: "right" },
           ...eCells,
-          { text: fmt(a.e), alignment: "right" },
+          // По своим правилам e — средняя сбавка со знаком минус.
+          { text: fmt(Math.abs(a.e)), alignment: "right" },
           {
             text: a.neutral > 0 ? `−${fmt(a.neutral)}` : "",
             alignment: "right",
@@ -176,9 +180,15 @@ export class ProtocolsService {
     const notes: string[] = [
       "В скобках — крайние сбавки судей E, не вошедшие в среднее.",
     ];
+    if (custom)
+      notes.push(
+        "Стоимость — базовая оценка разряда минус сбавки за требования. Сбавка — средняя сбавка судей E. НС — нейтральная сбавка.",
+      );
     if (isVault) notes.push("Итог опорного прыжка — среднее двух прыжков.");
     if (changedNote)
-      notes.push("* Оценка D изменена апелляционным жюри по запросу тренера.");
+      notes.push(
+        `* ${custom ? "Стоимость" : "Оценка D"} изменена апелляционным жюри по запросу тренера.`,
+      );
     return renderPdf(
       this.document(
         competition,
@@ -220,7 +230,10 @@ export class ProtocolsService {
             stack: [
               { text: fmt(s.total), alignment: "right" },
               {
-                text: `D ${fmt(s.d)} · E ${fmt(s.e)}${s.neutral > 0 ? ` · −${fmt(s.neutral)}` : ""}`,
+                text:
+                  competition.rules === "CUSTOM"
+                    ? `${fmt(s.d)} − ${fmt(Math.abs(s.e))}${s.neutral > 0 ? ` − ${fmt(s.neutral)}` : ""}`
+                    : `D ${fmt(s.d)} · E ${fmt(s.e)}${s.neutral > 0 ? ` · −${fmt(s.neutral)}` : ""}`,
                 style: "small",
                 alignment: "right",
               },
@@ -396,6 +409,48 @@ export class ProtocolsService {
     return byGymnast;
   }
 
+  /**
+   * Грамоты призёрам по разрядам: многоборье и команды или отдельные снаряды.
+   * При дележе места грамоту получают все, кто его разделил.
+   */
+  async diplomas(
+    competitionId: string,
+    kind: "all-around" | "apparatus",
+    places: number,
+  ): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const teamNames = await this.teamNames(competitionId);
+    const from = (g: GymnastView) =>
+      [...new Set([g.club, g.teamId ? teamNames.get(g.teamId) : undefined].filter(Boolean))].join(" · ") ||
+      undefined;
+    const list: Diploma[] = [];
+    for (const c of await this.results.categoryList(competitionId)) {
+      const category = c.name || undefined;
+      if (kind === "all-around") {
+        for (const r of await this.results.allAround(competitionId, c.id)) {
+          if (r.rank > places || !r.complete) continue;
+          list.push({ who: fullName(r.gymnast), from: from(r.gymnast), place: r.rank, event: "в многоборье", category, team: false });
+        }
+        const teams = await this.results.teams(competitionId, c.id).catch((e: unknown) => {
+          if (e instanceof UnprocessableEntityException) return [];
+          throw e;
+        });
+        for (const t of teams) {
+          if (t.rank > places) continue;
+          list.push({ who: t.team.name ?? "", place: t.rank, event: "в командном зачёте", category, team: true });
+        }
+      } else {
+        for (const code of apparatusFor(competition.discipline)) {
+          for (const r of await this.results.apparatus(competitionId, code, "average", c.id)) {
+            if (r.rank > places) continue;
+            list.push({ who: fullName(r.gymnast), from: from(r.gymnast), place: r.rank, event: APPARATUS_EVENT[code]!, category, team: false });
+          }
+        }
+      }
+    }
+    return renderPdf(diplomasDocument(competition, list));
+  }
+
   /** Итоги по всем разрядам в Excel. */
   async workbook(competitionId: string): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
@@ -429,6 +484,7 @@ export class ProtocolsService {
       program,
       categories,
       await this.teamNames(competitionId),
+      competition.rules,
     );
   }
 
@@ -553,7 +609,7 @@ export class ProtocolsService {
       th("п/п"),
       th("№"),
       th("Участник"),
-      th("D", "right"),
+      th(competition.rules === "CUSTOM" ? "Треб." : "D", "right"),
       ...Array.from({ length: eCount }, (_, i) => th(`E${i + 1}`, "right")),
       th("НС", "right"),
       th("Итог", "right"),
@@ -565,6 +621,24 @@ export class ProtocolsService {
     };
     for (let i = 0; i < eCount; i++) fixed[4 + i] = 34;
     const blank = Array.from({ length: eCount + 3 }, () => "");
+    // По своим правилам в ведомости видна база разряда на этом снаряде.
+    const bases =
+      competition.rules === "CUSTOM"
+        ? new Map(
+            (
+              await this.db
+                .select()
+                .from(categories)
+                .where(eq(categories.competitionId, competitionId))
+            ).map((c) => [c.id, c.apparatusBase[apparatus] ?? c.base]),
+          )
+        : new Map<string, number | null>();
+    const baseNote = (categoryId: string) => {
+      const base = bases.get(categoryId);
+      return base === null || base === undefined
+        ? ""
+        : ` · база ${fmt(fromPoints(base))}`;
+    };
     const sheet = (list: typeof people) =>
       table(
         [
@@ -578,7 +652,9 @@ export class ProtocolsService {
                 ...(g.categoryId
                   ? [
                       {
-                        text: categoryNames.get(g.categoryId) ?? "",
+                        text:
+                          (categoryNames.get(g.categoryId) ?? "") +
+                          baseNote(g.categoryId),
                         style: "small",
                       },
                     ]
@@ -619,7 +695,13 @@ export class ProtocolsService {
           : sheet([...people].sort((a, b) => a.bib - b.bib)),
       );
     }
-    content.push({ text: "НС — нейтральная сбавка.", style: "note" });
+    content.push({
+      text:
+        competition.rules === "CUSTOM"
+          ? "Треб. — сбавки за невыполненные требования программы. НС — нейтральная сбавка. Итог = база − Треб. − средняя сбавка E − НС."
+          : "НС — нейтральная сбавка.",
+      style: "note",
+    });
     return renderPdf(
       this.document(
         competition,

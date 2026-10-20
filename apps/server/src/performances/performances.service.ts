@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { apparatusFor, fromPoints, scorePerformance, toPoints } from "@ag/scoring";
+import { apparatusFor, fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type ScoreBreakdown } from "@ag/scoring";
 import {
   LIVE_EVENTS,
   type CreatePerformanceInput,
@@ -20,7 +20,7 @@ import { and, asc, eq } from "drizzle-orm";
 import type { JudgeRow, Principal } from "../auth/auth";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { auditLog, gymnasts, judges, marks, performances } from "../db/schema";
+import { auditLog, categories, competitions, gymnasts, judges, marks, performances } from "../db/schema";
 import { LiveGateway } from "../live/live.gateway";
 
 type PerformanceRow = typeof performances.$inferSelect;
@@ -220,9 +220,14 @@ export class PerformancesService {
         .from(judges)
         .where(and(eq(judges.competitionId, perf.competitionId), eq(judges.apparatus, perf.apparatus)))
         .orderBy(asc(judges.seat));
+      const [{ rules } = { rules: "FIG" as const }] = await tx
+        .select({ rules: competitions.rules })
+        .from(competitions)
+        .where(eq(competitions.id, perf.competitionId));
+      // По своим правилам сбавки за требования может ставить сам старший судья.
       const dJudges = panel.filter((j) => j.role === "D");
       const eJudges = panel.filter((j) => j.role === "E");
-      if (dJudges.length === 0 || eJudges.length === 0) {
+      if (eJudges.length === 0 || (dJudges.length === 0 && rules === "FIG")) {
         throw new ConflictException("Заведите судей D и E этого снаряда: их фамилии и оценки идут в протокол");
       }
       if (input.e.length !== eJudges.length) {
@@ -232,7 +237,7 @@ export class PerformancesService {
       await tx.delete(marks).where(eq(marks.performanceId, perf.id));
       const d = toPoints(input.d);
       const rows = [
-        ...dJudges.map((j) => ({ judgeId: j.id, kind: "D" as const, value: d })),
+        ...(dJudges.length > 0 ? dJudges : [tablet]).map((j) => ({ judgeId: j.id, kind: "D" as const, value: d })),
         ...eJudges.map((j, i) => ({ judgeId: j.id, kind: "E" as const, value: toPoints(input.e[i]!) })),
         ...(input.neutral ? [{ judgeId: tablet.id, kind: "NEUTRAL" as const, value: toPoints(input.neutral) }] : []),
       ];
@@ -247,7 +252,7 @@ export class PerformancesService {
     return this.approve(principal, id);
   }
 
-  /** Утверждение оценки: сервер считает итог по правилам FIG и публикует его. */
+  /** Утверждение оценки: сервер считает итог по правилам соревнования и публикует его. */
   async approve(principal: Principal, id: string): Promise<PerformanceView> {
     const competitionId = await this.db.transaction(async (tx) => {
       const [perf] = await tx.select().from(performances).where(eq(performances.id, id)).for("update");
@@ -274,19 +279,28 @@ export class PerformancesService {
       const neutralValues = new Set(markRows.filter((m) => m.kind === "NEUTRAL").map((m) => m.value));
       const eDeductions = markRows.filter((m) => m.kind === "E").map((m) => m.value);
 
-      if (dValues.size === 0) throw new ConflictException("Нет оценки D");
-      if (dValues.size > 1) throw new ConflictException("Оценки D у судей расходятся");
+      const [competition] = await tx.select().from(competitions).where(eq(competitions.id, perf.competitionId));
+      const custom = competition!.rules === "CUSTOM";
+      if (dValues.size === 0 && !custom) throw new ConflictException("Нет оценки D");
+      if (dValues.size > 1) {
+        throw new ConflictException(custom ? "Сбавки за требования у судей расходятся" : "Оценки D у судей расходятся");
+      }
       if (neutralValues.size > 1) throw new ConflictException("Нейтральные сбавки у судей расходятся");
       if (eJudges.length === 0) throw new ConflictException("В бригаде нет судей E");
       if (eDeductions.length < eJudges.length) {
         throw new ConflictException(`Оценки E: ${eDeductions.length} из ${eJudges.length}`);
       }
 
-      const score = scorePerformance({
-        d: [...dValues][0]!,
-        eDeductions,
-        neutral: [...neutralValues][0] ?? 0,
-      });
+      const neutral = [...neutralValues][0] ?? 0;
+      const score: ScoreBreakdown = custom
+        ? scoreCustomPerformance({
+            base: await this.baseValue(tx, perf),
+            // Судья D ставит сумму сбавок за требования; нет оценки — сбавок нет.
+            requirements: [...dValues][0] ?? 0,
+            eDeductions,
+            neutral,
+          })
+        : scorePerformance({ d: [...dValues][0]!, eDeductions, neutral });
       await tx
         .update(performances)
         .set({ status: "APPROVED", ...score, approvedAt: new Date() })
@@ -333,6 +347,24 @@ export class PerformancesService {
     this.live.toCompetition(perf.competitionId, LIVE_EVENTS.reopened, { id, reason });
     this.live.toPanel(perf.competitionId, perf.apparatus, LIVE_EVENTS.marksUpdated, view);
     return view;
+  }
+
+  /** Своих правил: база разряда участника на этом снаряде. */
+  private async baseValue(tx: Pick<Db, "select">, perf: PerformanceRow): Promise<number> {
+    const [row] = await tx
+      .select({ category: categories })
+      .from(gymnasts)
+      .leftJoin(categories, eq(categories.id, gymnasts.categoryId))
+      .where(eq(gymnasts.id, perf.gymnastId));
+    const category = row?.category;
+    if (!category) {
+      throw new ConflictException("У участника не указан разряд, а по своим правилам база задаётся для разряда");
+    }
+    const base = category.apparatusBase[perf.apparatus] ?? category.base;
+    if (base === null || base === undefined) {
+      throw new ConflictException(`Для разряда «${category.name}» не задана базовая оценка`);
+    }
+    return base;
   }
 
   private assertCanApprove(principal: Principal, perf: PerformanceRow): void {

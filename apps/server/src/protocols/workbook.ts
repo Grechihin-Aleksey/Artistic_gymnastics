@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { APPARATUS_NAMES, type AllAroundRow, type ApparatusResultRow, type TeamResultRow } from "@ag/shared";
+import { APPARATUS_NAMES, scoreLabels, type AllAroundRow, type Rules, type ApparatusResultRow, type TeamResultRow } from "@ag/shared";
 
 export interface WorkbookCategory {
   name: string;
@@ -16,7 +16,9 @@ export async function resultsWorkbook(
   program: readonly string[],
   categories: WorkbookCategory[],
   teamNames: Map<string, string>,
+  rules: Rules = "FIG",
 ): Promise<Buffer> {
+  const labels = scoreLabels(rules);
   const book = new ExcelJS.Workbook();
   book.creator = "Artistic gymnastics";
   const used = new Set<string>();
@@ -60,7 +62,7 @@ export async function resultsWorkbook(
     const app = sheet(`${prefix(c)}снаряды`);
     for (const { code, rows } of c.apparatus) {
       app.addRow([APPARATUS_NAMES[code]]).font = { bold: true };
-      header(app, ["Место", "№", "Фамилия", "Имя", "Клуб", "D", "E", "Сбавка", "Итог"]);
+      header(app, ["Место", "№", "Фамилия", "Имя", "Клуб", labels.d, labels.e, rules === "CUSTOM" ? "НС" : "Сбавка", "Итог"]);
       for (const r of rows) {
         app.addRow([
           r.rank,
@@ -69,7 +71,7 @@ export async function resultsWorkbook(
           r.gymnast.firstName,
           r.gymnast.club ?? "",
           r.score.d,
-          r.score.e,
+          Math.abs(r.score.e),
           r.score.neutral || null,
           r.score.total,
         ]);

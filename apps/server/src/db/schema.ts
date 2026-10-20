@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES } from "@ag/shared";
+import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
 export const apparatusEnum = pgEnum("apparatus", APPARATUS);
@@ -17,6 +17,7 @@ export const judgeRoleEnum = pgEnum("judge_role", JUDGE_ROLES);
 export const markKindEnum = pgEnum("mark_kind", MARK_KINDS);
 export const performanceStatusEnum = pgEnum("performance_status", PERFORMANCE_STATUSES);
 export const inquiryStatusEnum = pgEnum("inquiry_status", INQUIRY_STATUSES);
+export const rulesEnum = pgEnum("rules", RULES);
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -32,6 +33,10 @@ export const competitions = pgTable("competitions", {
   rotation: integer("rotation").notNull().default(0),
   /** Логотип для шапки протоколов: data URL картинки PNG или JPEG. */
   logo: text("logo"),
+  /** FIG или свои правила: база по разряду минус сбавки. */
+  rules: rulesEnum("rules").notNull().default("FIG"),
+  /** Своих правил: список сбавок за требования, баллы в тысячных. */
+  deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
   createdAt: createdAt(),
 });
 
@@ -45,6 +50,9 @@ export const categories = pgTable(
       .references(() => competitions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     position: integer("position").notNull(),
+    /** Своих правил: базовая оценка разряда в тысячных и её замены на отдельных снарядах. */
+    base: integer("base"),
+    apparatusBase: jsonb("apparatus_base").$type<Partial<Record<(typeof APPARATUS)[number], number>>>().notNull().default({}),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("categories_name_unique").on(t.competitionId, t.name)],

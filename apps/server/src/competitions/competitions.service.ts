@@ -1,22 +1,36 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { apparatusFor, defaultStart } from "@ag/scoring";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { apparatusFor, defaultStart, fromPoints, toPoints } from "@ag/scoring";
 import type {
   CreateCompetitionInput,
   CreateGymnastInput,
   CreateJudgeInput,
   CreateTeamInput,
   ImportGymnastsInput,
+  RulesView,
+  SetRulesInput,
 } from "@ag/shared";
 import { and, asc, eq, inArray, max } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
-import { categories, competitions, gymnasts, judges, shifts, teams } from "../db/schema";
+import { categories, competitions, gymnasts, judges, performances, shifts, teams } from "../db/schema";
 
 export type CompetitionRow = typeof competitions.$inferSelect;
 
 /** Соревнование для клиентов: сам логотип отдаётся отдельно, он тяжёлый. */
-export function publicCompetition({ logo, ...rest }: CompetitionRow) {
-  return { ...rest, hasLogo: logo !== null };
+export function publicCompetition({ logo, deductions, ...rest }: CompetitionRow) {
+  return {
+    ...rest,
+    deductions: deductions.map((d) => ({ name: d.name, value: fromPoints(d.value) })),
+    hasLogo: logo !== null,
+  };
+}
+
+const toBalls = (record: Partial<Record<string, number>>) =>
+  Object.fromEntries(Object.entries(record).map(([k, v]) => [k, fromPoints(v!)]));
+
+/** Ключи по алфавиту, чтобы сравнение баз не зависело от их порядка. */
+function sortKeys(record: Partial<Record<string, number>>) {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 const PNG = [0x89, 0x50, 0x4e, 0x47];
@@ -40,6 +54,7 @@ export class CompetitionsService {
         teamPerApparatus: format.perApparatus,
         teamCounting: format.counting,
         publishJudgeMarks: input.publishJudgeMarks,
+        rules: input.rules,
       })
       .returning();
     return row!;
@@ -68,6 +83,82 @@ export class CompetitionsService {
     const [row] = await this.db.update(competitions).set({ logo: dataUrl }).where(eq(competitions.id, id)).returning();
     if (!row) throw new NotFoundException("Соревнование не найдено");
     return publicCompetition(row);
+  }
+
+  async getRules(competitionId: string): Promise<RulesView> {
+    const competition = await this.get(competitionId);
+    const rows = await this.db
+      .select()
+      .from(categories)
+      .where(eq(categories.competitionId, competitionId))
+      .orderBy(asc(categories.position));
+    const scored = new Set(
+      (
+        await this.db
+          .selectDistinct({ categoryId: gymnasts.categoryId })
+          .from(performances)
+          .innerJoin(gymnasts, eq(gymnasts.id, performances.gymnastId))
+          .where(eq(performances.competitionId, competitionId))
+      ).map((r) => r.categoryId),
+    );
+    return {
+      rules: competition.rules,
+      deductions: publicCompetition(competition).deductions,
+      categories: rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        base: c.base === null ? null : fromPoints(c.base),
+        apparatus: sortKeys(toBalls(c.apparatusBase)),
+        scored: scored.has(c.id),
+      })),
+      scored: scored.size > 0,
+    };
+  }
+
+  /**
+   * Правила судейства. Пока нет оценок, менять можно всё. Когда оценки появились,
+   * FIG и свои правила уже не переключить, а базу нельзя менять в тех разрядах,
+   * где уже выступали: утверждённые итоги разошлись бы с новой базой.
+   * Список сбавок можно дополнять в любой момент — он только подсказка судье.
+   */
+  async setRules(competitionId: string, input: SetRulesInput): Promise<RulesView> {
+    const current = await this.getRules(competitionId);
+    if (input.rules !== current.rules && current.scored) {
+      throw new ConflictException("Оценки уже ставятся: правила судейства менять нельзя");
+    }
+    const known = new Map(current.categories.map((c) => [c.id, c]));
+    const program = new Set<string>(apparatusFor((await this.get(competitionId)).discipline));
+    for (const b of input.bases) {
+      const category = known.get(b.categoryId);
+      if (!category) throw new BadRequestException("Разряд не найден в этом соревновании");
+      for (const a of Object.keys(b.apparatus)) {
+        if (!program.has(a)) throw new BadRequestException(`Снаряда ${a} нет в программе соревнования`);
+      }
+      const same =
+        category.base === b.base && JSON.stringify(category.apparatus) === JSON.stringify(sortKeys(b.apparatus));
+      if (!same && category.scored) {
+        throw new ConflictException(`В разряде «${category.name}» уже есть оценки: базу менять нельзя`);
+      }
+    }
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(competitions)
+        .set({
+          rules: input.rules,
+          deductions: input.deductions.map((d) => ({ name: d.name, value: toPoints(d.value) })),
+        })
+        .where(eq(competitions.id, competitionId));
+      for (const b of input.bases) {
+        await tx
+          .update(categories)
+          .set({
+            base: b.base === null ? null : toPoints(b.base),
+            apparatusBase: Object.fromEntries(Object.entries(b.apparatus).map(([k, v]) => [k, toPoints(v!)])),
+          })
+          .where(eq(categories.id, b.categoryId));
+      }
+    });
+    return this.getRules(competitionId);
   }
 
   async addTeam(competitionId: string, input: CreateTeamInput) {

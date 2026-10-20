@@ -2,6 +2,7 @@ import { Controller, Get, Param, ParseUUIDPipe, Query, Res } from "@nestjs/commo
 import type { Apparatus } from "@ag/scoring";
 import { apparatusSchema } from "@ag/shared";
 import type { Response } from "express";
+import { z } from "zod";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { categoryQuery } from "../results/results.controller";
@@ -58,6 +59,18 @@ export class ProtocolsController {
     @Res() res: Response,
   ) {
     send(res, await this.protocols.apparatusSheet(id, apparatus), `sheet-${apparatus}.pdf`);
+  }
+
+  /** Грамоты призёрам: ?kind=all-around (многоборье и команды) или apparatus, ?places=3. */
+  @Get("diplomas")
+  async diplomas(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query("kind", new ZodPipe(z.enum(["all-around", "apparatus"]).default("all-around")))
+    kind: "all-around" | "apparatus",
+    @Query("places", new ZodPipe(z.coerce.number().int().min(1).max(10).default(3))) places: number,
+    @Res() res: Response,
+  ) {
+    send(res, await this.protocols.diplomas(id, kind, places), "diplomas.pdf");
   }
 
   @Get("teams")

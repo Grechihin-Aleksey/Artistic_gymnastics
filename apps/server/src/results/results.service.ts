@@ -283,7 +283,12 @@ export class ResultsService {
       categoryList.map((c) => this.categoryResults(competitionId, c, apparatusList)),
     );
     return {
-      competition: { id: competition.id, name: competition.name, discipline: competition.discipline },
+      competition: {
+        id: competition.id,
+        name: competition.name,
+        discipline: competition.discipline,
+        rules: competition.rules,
+      },
       live,
       categories: results,
       generatedAt: new Date().toISOString(),

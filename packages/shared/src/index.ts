@@ -6,6 +6,9 @@ export const JUDGE_ROLES = ["D", "E", "SUPERVISOR"] as const;
 export const MARK_KINDS = ["D", "E", "NEUTRAL"] as const;
 export const PERFORMANCE_STATUSES = ["SCORING", "APPROVED"] as const;
 export const INQUIRY_STATUSES = ["PENDING", "ACCEPTED", "REJECTED"] as const;
+/** Правила судейства: FIG или свои (база по разряду минус сбавки). */
+export const RULES = ["FIG", "CUSTOM"] as const;
+export type Rules = (typeof RULES)[number];
 
 export const disciplineSchema = z.enum(DISCIPLINES);
 export const apparatusSchema = z.enum(APPARATUS);
@@ -31,6 +34,7 @@ export const createCompetitionSchema = z.object({
     .optional(),
   /** Публиковать ли на сайте сбавки каждого судьи E. */
   publishJudgeMarks: z.boolean().default(false),
+  rules: z.enum(RULES).default("FIG"),
 });
 
 export const createTeamSchema = z.object({
@@ -112,6 +116,35 @@ export const setLogoSchema = z.object({
     .regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+=*$/, "Нужна картинка PNG или JPEG"),
 });
 
+/**
+ * Правила судейства. При своих правилах у каждого разряда базовая оценка
+ * (одна на все снаряды, при необходимости своя на отдельных снарядах),
+ * а судья D или старший судья ставит сбавки за требования из списка.
+ */
+export const setRulesSchema = z.object({
+  rules: z.enum(RULES),
+  deductions: z
+    .array(z.object({ name: z.string().trim().min(1).max(100), value: score.max(10).positive() }))
+    .max(40)
+    .default([]),
+  bases: z
+    .array(
+      z.object({
+        categoryId: z.uuid(),
+        base: score.nullable(),
+        apparatus: z.partialRecord(apparatusSchema, score).default({}),
+      }),
+    )
+    .default([]),
+});
+
+/** Файл заявки Excel (.xlsx) в base64. */
+export const parseEntriesSchema = z.object({
+  file: z.string().min(1).max(6_000_000).regex(/^[A-Za-z0-9+/]+=*$/, "Нужен файл в base64"),
+  /** С какого номера раздавать стартовые номера: после уже вставленных в поле списка. */
+  nextBib: z.number().int().min(1).max(1_000_000).optional(),
+});
+
 export const setShiftStartSchema = z.object({ startApparatus: apparatusSchema });
 
 export const setRotationSchema = z.object({ rotation: z.number().int().min(0).max(20) });
@@ -140,11 +173,36 @@ export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
+export type SetRulesInput = z.infer<typeof setRulesSchema>;
+export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
+
+export interface RulesView {
+  rules: Rules;
+  deductions: { name: string; value: number }[];
+  categories: {
+    id: string;
+    name: string;
+    base: number | null;
+    apparatus: Partial<Record<(typeof APPARATUS)[number], number>>;
+    /** В разряде уже есть оценки: базу менять нельзя. */
+    scored: boolean;
+  }[];
+  /** Оценки уже есть: правила не переключить. */
+  scored: boolean;
+}
+
+/**
+ * Подписи колонок оценки. По своим правилам d — стоимость упражнения
+ * (база − требования), e — средняя сбавка E со знаком минус: показываем её модулем.
+ */
+export function scoreLabels(rules: Rules | undefined): { d: string; e: string } {
+  return rules === "CUSTOM" ? { d: "Стоимость", e: "Сбавка" } : { d: "D", e: "E" };
+}
 
 /** Оценка за выступление в баллах (не в тысячных). */
 export interface ScoreView {
@@ -260,7 +318,7 @@ export interface LiveApparatus {
  * в облачный ретранслятор, а тот раздаёт сайту.
  */
 export interface BoardSnapshot {
-  competition: { id: string; name: string; discipline: (typeof DISCIPLINES)[number] };
+  competition: { id: string; name: string; discipline: (typeof DISCIPLINES)[number]; rules?: Rules };
   live: LiveApparatus[];
   /** Таблицы по разрядам. Если разрядов нет — одна запись с id null и пустым именем. */
   categories: CategoryResults[];

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   APPARATUS_NAMES,
+  scoreLabels,
   type AllAroundRow,
   type ApparatusResultRow,
   type GymnastView,
   type LiveApparatus,
   type PerformanceView,
+  type Rules,
   type TeamResultRow,
 } from "@ag/shared";
 import { routeHash, type Route } from "./route";
@@ -169,7 +171,8 @@ function kindFromView(view: string): SlideKind {
 }
 
 function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
-  if (slide.kind === "now") return <NowView live={data.live} categories={data.categories} />;
+  const rules = data.competition.rules;
+  if (slide.kind === "now") return <NowView live={data.live} categories={data.categories} rules={rules} />;
   const category = data.categories[slide.category] ?? data.categories[0]!;
   const pageNote =
     (category.name ? ` · ${category.name}` : "") + (slide.pages > 1 ? ` · ${slide.page + 1}/${slide.pages}` : "");
@@ -199,13 +202,23 @@ function SlideView({ data, slide }: { data: BoardData; slide: Slide }) {
   return (
     <ApparatusTable
       code={code}
+      rules={rules}
       rows={slide.pages > 1 ? pageRows(rows, slide.page) : rows}
       note={pageNote}
     />
   );
 }
 
-function NowView({ live, categories }: { live: LiveApparatus[]; categories: BoardData["categories"] }) {
+function NowView({
+  live,
+  categories,
+  rules,
+}: {
+  live: LiveApparatus[];
+  categories: BoardData["categories"];
+  rules: Rules | undefined;
+}) {
+  const labels = scoreLabels(rules);
   const categoryName = (g: GymnastView) =>
     categories.length > 1 ? categories.find((c) => c.id === g.categoryId)?.name : undefined;
   return (
@@ -241,7 +254,7 @@ function NowView({ live, categories }: { live: LiveApparatus[]; categories: Boar
                 </div>
                 <div className="score">{fmt(a.last.score.total)}</div>
                 <div className="parts">
-                  D {fmt(a.last.score.d)} · E {fmt(a.last.score.e)}
+                  {labels.d} {fmt(a.last.score.d)} · {labels.e} {fmt(Math.abs(a.last.score.e))}
                   {a.last.score.neutral > 0 &&
                     ` · −${fmt(a.last.score.neutral)}`}
                 </div>
@@ -267,13 +280,16 @@ function Empty() {
 
 function ApparatusTable({
   code,
+  rules,
   rows,
   note,
 }: {
   code: string;
+  rules: Rules | undefined;
   rows: ApparatusResultRow[];
   note: string;
 }) {
+  const labels = scoreLabels(rules);
   return (
     <section>
       <h1>
@@ -290,9 +306,9 @@ function ApparatusTable({
                 <th>Место</th>
                 <th>№</th>
                 <th className="name-col">Участник</th>
-                <th className="num">D</th>
-                <th className="num">E</th>
-                <th className="num">Сбавки</th>
+                <th className="num">{labels.d}</th>
+                <th className="num">{labels.e}</th>
+                <th className="num">{rules === "CUSTOM" ? "НС" : "Сбавки"}</th>
                 <th className="num">Итог</th>
               </tr>
             </thead>
@@ -306,7 +322,7 @@ function ApparatusTable({
                     <span className="muted">{r.gymnast.club}</span>
                   </td>
                   <td className="num">{fmt(r.score.d)}</td>
-                  <td className="num">{fmt(r.score.e)}</td>
+                  <td className="num">{fmt(Math.abs(r.score.e))}</td>
                   <td className="num">
                     {r.score.neutral > 0 ? `−${fmt(r.score.neutral)}` : ""}
                   </td>
