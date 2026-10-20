@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
-import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
+import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
@@ -831,33 +831,36 @@ export function RosterPanel({
         }}
         onError={onError}
       />
-      <label className="wide">
-        Или вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
-        Тренер · Отчество. Обязательны первые три столбца. Порядок строк в смене — порядок выхода.
-        <textarea
-          rows={6}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={"Например:\n12\tИванова\tАнна\tСШОР №1\tСШОР №1\t1 юношеский\t1\t15.03.2014\tТверь\tСмирнова О. В.\n13\tПетрова\tМария\tСШОР №1\tСШОР №1\t1 юношеский\t1\t2014\tТверь"}
-        />
-      </label>
-      {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
-      {!text.trim() && (
-        <p className="muted wide">Кнопка «Добавить из списка» включится, когда в поле появятся строки из таблицы.</p>
-      )}
-      {warnings.map((w) => (
-        <div key={w} className="warning wide">
-          {w}
-        </div>
-      ))}
-      <button
-        type="button"
-        className="primary"
-        disabled={parsed.rows.length === 0 || parsed.errors.length > 0}
-        onClick={() => void upload()}
-      >
-        Добавить из списка {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
-      </button>
+      <details className="wide paste-roster" open={text.trim() !== "" || undefined}>
+        <summary>Вставить список из таблицы или проверить загруженную заявку Excel</summary>
+        <label className="wide">
+          Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
+          Тренер · Отчество. Обязательны первые три столбца. Порядок строк в смене — порядок выхода.
+          <textarea
+            rows={6}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={"Например:\n12\tИванова\tАнна\tСШОР №1\tСШОР №1\t1 юношеский\t1\t15.03.2014\tТверь\tСмирнова О. В.\n13\tПетрова\tМария\tСШОР №1\tСШОР №1\t1 юношеский\t1\t2014\tТверь"}
+          />
+        </label>
+        {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
+        {!text.trim() && (
+          <p className="muted wide">Кнопка «Добавить из списка» включится, когда в поле появятся строки из таблицы.</p>
+        )}
+        {warnings.map((w) => (
+          <div key={w} className="warning wide">
+            {w}
+          </div>
+        ))}
+        <button
+          type="button"
+          className="primary"
+          disabled={parsed.rows.length === 0 || parsed.errors.length > 0}
+          onClick={() => void upload()}
+        >
+          Добавить из списка {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
+        </button>
+      </details>
       <datalist id="category-names">
         {[...categories.values()].map((c) => (
           <option key={c} value={c} />
@@ -3068,6 +3071,226 @@ export function TransferPanel({
         </button>
         <p className="muted">Перед удалением выгрузите турнир в файл, если он ещё понадобится.</p>
       </div>
+    </section>
+  );
+}
+
+type ProgressView = "AA" | Apparatus;
+
+/**
+ * Ход соревнования для секретаря: кто сейчас на снарядах и таблицы по разрядам —
+ * все участники разряда, а не только выступившие, с оценками по снарядам и местами.
+ * Пока экран открыт, данные обновляются каждые 5 секунд.
+ */
+export function ProgressPanel({
+  competitionId,
+  discipline,
+  active,
+  onError,
+}: {
+  competitionId: string;
+  discipline: Discipline;
+  active: boolean;
+  onError: (message: string | null) => void;
+}) {
+  const [snap, setSnap] = useState<BoardSnapshot | null>(null);
+  const [people, setPeople] = useState<RosterGymnast[]>([]);
+  const [category, setCategory] = useState("all");
+  const [shift, setShift] = useState("all");
+  const [view, setView] = useState<ProgressView>("AA");
+  const [updated, setUpdated] = useState<Date | null>(null);
+  const program = apparatusFor(discipline);
+
+  const load = useCallback(async () => {
+    try {
+      const [next, list] = await Promise.all([
+        apiRequest<BoardSnapshot>(`/competitions/${competitionId}/results/snapshot`),
+        apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+      ]);
+      setSnap(next);
+      setPeople(list);
+      setUpdated(new Date());
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, onError]);
+
+  useEffect(() => {
+    if (!active) return;
+    void load();
+    const timer = setInterval(() => void load(), 5000);
+    return () => clearInterval(timer);
+  }, [active, load]);
+
+  if (!snap) return null;
+  const labels = scoreLabels(snap.competition.rules);
+  const shifts = [...new Set(people.map((g) => g.shift).filter((n): n is number => n !== null))].sort((a, b) => a - b);
+  const onApparatus = new Map(
+    snap.live.flatMap((l) => (l.current ? [[l.current.gymnast.id, l.apparatus] as const] : [])),
+  );
+  const categories = snap.categories.filter((c) => category === "all" || (c.id ?? "none") === category);
+
+  return (
+    <section className="panel no-print progress">
+      <h2>Ход соревнования</h2>
+      <div className="wide progress-live">
+        {snap.live
+          .filter((l) => program.includes(l.apparatus))
+          .map((l) => (
+            <div key={l.apparatus} className="progress-card">
+              <div className="progress-card-title">{APPARATUS_NAMES[l.apparatus]}</div>
+              <div>
+                <span className="muted">Выступает: </span>
+                {l.current ? `№${l.current.gymnast.bib} ${l.current.gymnast.lastName} ${l.current.gymnast.firstName}` : "—"}
+              </div>
+              <div>
+                <span className="muted">Последняя оценка: </span>
+                {l.last ? (
+                  <>
+                    №{l.last.gymnast.bib} {l.last.gymnast.lastName} — <strong>{fmt(l.last.score.total)}</strong>
+                  </>
+                ) : (
+                  "—"
+                )}
+              </div>
+            </div>
+          ))}
+      </div>
+      <label>
+        Разряд
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="all">Все разряды</option>
+          {snap.categories.map((c) => (
+            <option key={c.id ?? "none"} value={c.id ?? "none"}>
+              {c.name || "Без разряда"}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Смена
+        <select value={shift} onChange={(e) => setShift(e.target.value)}>
+          <option value="all">Все смены</option>
+          {shifts.map((n) => (
+            <option key={n} value={String(n)}>
+              Смена {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="wide progress-views">
+        {(["AA", ...program] as ProgressView[]).map((v) => (
+          <button key={v} type="button" className={view === v ? "active" : undefined} onClick={() => setView(v)}>
+            {v === "AA" ? "Многоборье" : APPARATUS_NAMES[v]}
+          </button>
+        ))}
+      </div>
+      {updated && <p className="muted wide">Обновлено в {updated.toLocaleTimeString("ru-RU")}, обновляется само каждые 5 секунд.</p>}
+
+      {categories.map((c) => {
+        const inCategory = people.filter((g) => (g.categoryId ?? null) === c.id);
+        const shown = inCategory.filter((g) => shift === "all" || String(g.shift) === shift);
+        const aa = new Map(c.allAround.map((r) => [r.gymnast.id, r]));
+        const app = view === "AA" ? new Map() : new Map((c.apparatus[view] ?? []).map((r) => [r.gymnast.id, r]));
+        const rankOf = (id: string) => (view === "AA" ? aa.get(id)?.rank : app.get(id)?.rank);
+        const rows = [...shown].sort((a, b) => {
+          const ra = rankOf(a.id) ?? Infinity;
+          const rb = rankOf(b.id) ?? Infinity;
+          return ra - rb || (a.shift ?? 99) - (b.shift ?? 99) || a.bib - b.bib;
+        });
+        const done =
+          view === "AA"
+            ? inCategory.filter((g) => aa.get(g.id)?.complete).length
+            : inCategory.filter((g) => app.has(g.id)).length;
+        return (
+          <div key={c.id ?? "none"} className="wide">
+            <h3>
+              {c.name || "Без разряда"}{" "}
+              <span className="muted">
+                · {view === "AA" ? "все снаряды прошли" : "выступили"}: {done} из {inCategory.length}
+              </span>
+            </h3>
+            <div className="table-scroll">
+              <table className="draw-table progress-table">
+                <thead>
+                  <tr>
+                    <th>Место</th>
+                    <th>№</th>
+                    <th>Участник</th>
+                    <th>Клуб</th>
+                    <th>Смена</th>
+                    {view === "AA" ? (
+                      <>
+                        {program.map((a) => (
+                          <th key={a} className="num">
+                            {APPARATUS_NAMES[a]}
+                          </th>
+                        ))}
+                        <th className="num">Сумма</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="num">{labels.d}</th>
+                        <th className="num">{labels.e}</th>
+                        <th className="num">Сбавки</th>
+                        <th className="num">Итог</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((g) => {
+                    const r = aa.get(g.id);
+                    const s = view === "AA" ? undefined : app.get(g.id)?.score;
+                    const now = onApparatus.get(g.id);
+                    const out = g.status !== "ACTIVE";
+                    return (
+                      <tr key={g.id} className={now ? "now" : out ? "out" : undefined}>
+                        <td>{out ? GYMNAST_STATUS_NAMES[g.status] : (rankOf(g.id) ?? "")}</td>
+                        <td>{g.bib}</td>
+                        <td>
+                          {g.lastName} {g.firstName}
+                          {now && <span className="badge">сейчас: {APPARATUS_NAMES[now]}</span>}
+                        </td>
+                        <td>{g.club ?? ""}</td>
+                        <td>{g.shift ?? ""}</td>
+                        {view === "AA" ? (
+                          <>
+                            {program.map((a) => (
+                              <td key={a} className="num">
+                                {r?.apparatus[a] ? fmt(r.apparatus[a]!.total) : "—"}
+                              </td>
+                            ))}
+                            <td className="num">
+                              <strong>{r ? fmt(r.total) : "—"}</strong>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="num">{s ? fmt(s.d) : "—"}</td>
+                            <td className="num">{s ? fmt(s.e) : "—"}</td>
+                            <td className="num">{s && s.neutral > 0 ? fmt(s.neutral) : "—"}</td>
+                            <td className="num">
+                              <strong>{s ? fmt(s.total) : "—"}</strong>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={view === "AA" ? 6 + program.length : 9} className="muted">
+                        Нет участников
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
