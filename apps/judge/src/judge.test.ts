@@ -1,6 +1,6 @@
 import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
-import { parsePoints, parseScore } from "./labels";
+import { addDeduction, expandScore, parsePoints, parseScore } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
@@ -170,5 +170,31 @@ describe("очки общекомандного зачёта", () => {
     expect(parsePoints("10 -1")).toBeNull();
     expect(parsePoints("1,25")).toBeNull();
     expect(parsePoints("десять")).toBeNull();
+  });
+});
+
+describe("быстрый ввод оценки", () => {
+  it("без точки первая цифра — целые, остальные — сотые", () => {
+    expect(expandScore("9")).toBe("9.00");
+    expect(expandScore("95")).toBe("9.50");
+    expect(expandScore("955")).toBe("9.55");
+    expect(expandScore("9555")).toBe("9.555");
+    expect(expandScore("05")).toBe("0.50");
+    expect(expandScore(" 3 ")).toBe("3.00");
+  });
+
+  it("с точкой или запятой оставляет число как есть", () => {
+    expect(expandScore("10.")).toBe("10.00");
+    expect(expandScore("10,5")).toBe("10.50");
+    expect(expandScore("8.123")).toBe("8.123");
+    expect(expandScore("")).toBe("");
+    expect(expandScore("95555")).toBe("95555");
+  });
+
+  it("развёрнутая оценка проходит проверку, сбавки прибавляются к ней", () => {
+    expect(parseScore(expandScore("95"), "E")).toBe(9.5);
+    expect(parseScore(expandScore("10."), "E")).toBe(10);
+    expect(parseScore(expandScore("95555"), "E")).toBeNull();
+    expect(addDeduction("05", 0.3)).toBe("0.8");
   });
 });
