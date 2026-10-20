@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
@@ -24,6 +24,45 @@ interface RosterGymnast extends Gymnast {
   birthDate: string | null;
   city: string | null;
   coach: string | null;
+}
+
+/**
+ * Кнопка «Сохранить» помнит, что сохранено: после сохранения она зелёная с надписью «Сохранено»,
+ * а любая правка в блоке (ввод в поле или другая кнопка) возвращает её к «Сохранить».
+ */
+function useSaved() {
+  const [saved, setSaved] = useState(false);
+  const reset = () => setSaved(false);
+  return {
+    saved,
+    markSaved: () => setSaved(true),
+    /** Разложить на блок с полями. */
+    watch: {
+      onInputCapture: reset,
+      onClickCapture: (e: MouseEvent) => {
+        const button = (e.target as HTMLElement).closest("button");
+        if (button && !button.hasAttribute("data-save")) reset();
+      },
+    },
+  };
+}
+
+function SaveButton({
+  saved,
+  disabled,
+  onClick,
+  children,
+}: {
+  saved: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" data-save className={saved ? "primary saved" : "primary"} disabled={disabled} onClick={onClick}>
+      {saved ? "✓ Сохранено" : children}
+    </button>
+  );
 }
 
 interface Props {
@@ -803,6 +842,9 @@ export function RosterPanel({
         />
       </label>
       {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
+      {!text.trim() && (
+        <p className="muted wide">Кнопка «Добавить из списка» включится, когда в поле появятся строки из таблицы.</p>
+      )}
       {warnings.map((w) => (
         <div key={w} className="warning wide">
           {w}
@@ -1053,7 +1095,7 @@ export function RulesPanel({
   const [rules, setRules] = useState<Rules>("FIG");
   const [deductions, setDeductions] = useState<{ name: string; value: string }[]>([]);
   const [bases, setBases] = useState<Record<string, BaseDraft>>({});
-  const [saved, setSaved] = useState(false);
+  const { saved, markSaved, watch } = useSaved();
   const program = apparatusFor(discipline);
 
   const apply = useCallback((v: RulesView) => {
@@ -1126,8 +1168,7 @@ export function RulesPanel({
       apply(result);
       onSaved(result.rules);
       onError(null);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      markSaved();
     } catch (e) {
       onError((e as Error).message);
     }
@@ -1138,7 +1179,7 @@ export function RulesPanel({
 
   if (!view) return null;
   return (
-    <section className="panel no-print rules">
+    <section className="panel no-print rules" {...watch}>
       <h2>Правила судейства</h2>
       <label className="wide">
         <select value={rules} disabled={view.scored} onChange={(e) => setRules(e.target.value as Rules)}>
@@ -1258,9 +1299,9 @@ export function RulesPanel({
       )}
 
       {problems.length > 0 && <div className="alert wide">{problems.join("; ")}</div>}
-      <button type="button" className="primary" disabled={problems.length > 0} onClick={() => void save()}>
-        {saved ? "Сохранено" : "Сохранить правила"}
-      </button>
+      <SaveButton saved={saved} disabled={problems.length > 0} onClick={() => void save()}>
+        Сохранить правила
+      </SaveButton>
     </section>
   );
 }
@@ -2137,6 +2178,7 @@ export function CeremonyPanel({ competitionId, discipline, adminToken, onError }
  */
 export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
   const [view, setView] = useState<ClubStandingView | null>(null);
+  const clubSaved = useSaved();
   const [draft, setDraft] = useState({ allAround: "", apparatus: "", teams: "", best: "" });
   const [busy, setBusy] = useState(false);
 
@@ -2175,6 +2217,7 @@ export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<P
       await apiRequest(`/competitions/${competitionId}/club-standing`, { token: adminToken, method: "PUT", body: parsed });
       onError(null);
       await load();
+      clubSaved.markSaved();
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -2195,7 +2238,7 @@ export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<P
   );
 
   return (
-    <section className="panel no-print club-standing">
+    <section className="panel no-print club-standing" {...clubSaved.watch}>
       <h2>Общекомандный зачёт</h2>
       <p className="muted wide">
         Очки клубу за 1-е, 2-е, 3-е… места его участников через пробел, как в положении; дальше списка — 0. Пустое поле —
@@ -2209,9 +2252,9 @@ export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<P
         Лучших результатов клуба в многоборье в разряде
         <input inputMode="numeric" placeholder="все" value={draft.best} onChange={(e) => setDraft({ ...draft, best: e.target.value.trim() })} />
       </label>
-      <button type="button" className="primary" disabled={busy || !valid} onClick={() => void save()}>
+      <SaveButton saved={clubSaved.saved} disabled={busy || !valid} onClick={() => void save()}>
         Сохранить и пересчитать
-      </button>
+      </SaveButton>
       {view.rows.length > 0 && (
         <table className="draw-table wide">
           <thead>
@@ -2278,6 +2321,7 @@ export function OfficialsPanel({
 }) {
   const [judge, setJudge] = useState(officialDraft(officials?.chiefJudge));
   const [secretary, setSecretary] = useState(officialDraft(officials?.chiefSecretary));
+  const officialsSaved = useSaved();
   const [busy, setBusy] = useState(false);
   const row = (title: string, d: OfficialDraft, set: (d: OfficialDraft) => void) => (
     <div className="wide normatives-row">
@@ -2303,6 +2347,7 @@ export function OfficialsPanel({
         body: { chiefJudge: officialBody(judge), chiefSecretary: officialBody(secretary) },
       });
       onError(null);
+      officialsSaved.markSaved();
       onSaved();
     } catch (e) {
       onError((e as Error).message);
@@ -2311,7 +2356,7 @@ export function OfficialsPanel({
     }
   };
   return (
-    <section className="panel no-print officials">
+    <section className="panel no-print officials" {...officialsSaved.watch}>
       <h2>Главная судейская коллегия</h2>
       <p className="muted wide">Печатается в подписях под протоколами и на грамотах.</p>
       {row("Главный судья", judge, setJudge)}
@@ -2321,9 +2366,9 @@ export function OfficialsPanel({
           <option key={c} value={c} />
         ))}
       </datalist>
-      <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
+      <SaveButton saved={officialsSaved.saved} disabled={busy} onClick={() => void save()}>
         Сохранить
-      </button>
+      </SaveButton>
     </section>
   );
 }
@@ -2339,6 +2384,7 @@ interface LevelDraft {
  */
 export function NormativesPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
   const [view, setView] = useState<NormativesView | null>(null);
+  const normativesSaved = useSaved();
   const [drafts, setDrafts] = useState<Record<string, LevelDraft[]>>({});
   const [busy, setBusy] = useState(false);
 
@@ -2386,6 +2432,7 @@ export function NormativesPanel({ competitionId, adminToken, onError }: Omit<Pro
       };
       apply(await apiRequest<NormativesView>(`/competitions/${competitionId}/normatives`, { token: adminToken, method: "PUT", body }));
       onError(null);
+      normativesSaved.markSaved();
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -2394,7 +2441,7 @@ export function NormativesPanel({ competitionId, adminToken, onError }: Omit<Pro
   };
 
   return (
-    <section className="panel no-print normatives">
+    <section className="panel no-print normatives" {...normativesSaved.watch}>
       <h2>Нормативы разрядов</h2>
       <p className="muted wide">
         Минимальная сумма многоборья для выполнения разряда. Разряд выполняет тот, кто выступил на всех снарядах и
@@ -2440,9 +2487,9 @@ export function NormativesPanel({ competitionId, adminToken, onError }: Omit<Pro
           </div>
         );
       })}
-      <button type="button" className="primary" disabled={busy || invalid} onClick={() => void save()}>
+      <SaveButton saved={normativesSaved.saved} disabled={busy || invalid} onClick={() => void save()}>
         Сохранить нормативы
-      </button>
+      </SaveButton>
     </section>
   );
 }

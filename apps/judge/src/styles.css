@@ -938,3 +938,8 @@ select {
 .admin input.missing:not(:disabled) {
   border-color: var(--warn, #f5b942);
 }
+
+/* Сохранённые настройки: зелёная кнопка «Сохранено» до следующей правки. */
+.primary.saved {
+  background: var(--ok);
+}
