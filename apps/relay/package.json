@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:php": "node scripts/build-php.mjs"
   },
   "dependencies": {
     "@ag/shared": "workspace:*",

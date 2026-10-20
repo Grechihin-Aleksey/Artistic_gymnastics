@@ -3,6 +3,9 @@ import { io } from "socket.io-client";
 import { LIVE_EVENTS, RELAY_EVENTS, type BoardSnapshot, type PerformanceView } from "@ag/shared";
 import { isRelay } from "./route";
 
+/** Сколько ждать переподключения к ретранслятору, прежде чем показать «Нет связи». */
+const LOST_MS = 15_000;
+
 export type BoardData = BoardSnapshot;
 
 /** Снимок старого вида (до разрядов) мог остаться у ретранслятора: приводим к новому. */
@@ -93,18 +96,26 @@ function useRelayBoard(competitionId: string, onApproved: (p: PerformanceView) =
   useEffect(() => {
     // Адрес относительный: ретранслятор может стоять не в корне сайта.
     const events = new EventSource(`../api/competitions/${encodeURIComponent(competitionId)}/events`);
+    let lost: ReturnType<typeof setTimeout> | undefined;
     events.onopen = () => {
+      clearTimeout(lost);
+      lost = undefined;
       setConnected(true);
       setError(null);
     };
-    // Браузер сам переподключается и получает свежий снимок.
-    events.onerror = () => setConnected(false);
+    // Браузер сам переподключается и получает свежий снимок. PHP-ретранслятор
+    // закрывает ответ после каждого опроса, поэтому «нет связи» — только если
+    // переподключиться не удалось за LOST_MS.
+    events.onerror = () => {
+      lost ??= setTimeout(() => setConnected(false), LOST_MS);
+    };
     events.addEventListener(RELAY_EVENTS.snapshot, (e) => setData(normalizeSnapshot(JSON.parse(e.data) as BoardSnapshot)));
     events.addEventListener(RELAY_EVENTS.approved, (e) => onApproved(JSON.parse(e.data) as PerformanceView));
     // Если зал ещё ничего не прислал, через пару секунд говорим об этом.
     const empty = setTimeout(() => setError("Результаты появятся, когда начнутся выступления"), 3000);
     return () => {
       clearTimeout(empty);
+      clearTimeout(lost);
       events.close();
     };
   }, [competitionId, onApproved]);

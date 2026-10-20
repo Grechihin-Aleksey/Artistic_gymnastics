@@ -8,3 +8,4 @@ coverage/
 .DS_Store
 apps/relay/data/
 backups/
+apps/relay/dist-php/

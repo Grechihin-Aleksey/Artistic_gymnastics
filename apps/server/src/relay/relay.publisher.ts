@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import type { PerformanceView, RelayIngest } from "@ag/shared";
-import { APP_CONFIG, type AppConfig } from "../config";
+import { APP_CONFIG, relayHeaders, type AppConfig } from "../config";
 import { ResultsService } from "../results/results.service";
 
 /** Пачка событий подряд (вызов, утверждение) уходит одной отправкой. */
@@ -121,7 +121,7 @@ export class RelayPublisher implements OnModuleDestroy {
     const url = new URL(`ingest/${competitionId}`, this.config.relayUrl!.replace(/\/?$/, "/"));
     const response = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.config.relayToken}` },
+      headers: relayHeaders(this.config),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

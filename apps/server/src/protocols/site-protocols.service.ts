@@ -3,7 +3,7 @@ import { apparatusFor } from "@ag/scoring";
 import { APPARATUS_NAMES, type ProtocolsIndex, type RelayProtocols } from "@ag/shared";
 import { eq } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
-import { APP_CONFIG, type AppConfig } from "../config";
+import { APP_CONFIG, relayHeaders, type AppConfig } from "../config";
 import { DB, type Db } from "../db/db.module";
 import { auditLog, competitions } from "../db/schema";
 import { ResultsService } from "../results/results.service";
@@ -115,7 +115,7 @@ export class SiteProtocolsService {
     try {
       response = await fetch(this.relayUrl(`protocols/${competitionId}`), {
         method,
-        headers: { "content-type": "application/json", authorization: `Bearer ${this.config.relayToken}` },
+        headers: relayHeaders(this.config),
         ...(body ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
