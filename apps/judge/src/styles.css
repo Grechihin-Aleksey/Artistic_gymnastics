@@ -943,3 +943,127 @@ select {
 .primary.saved {
   background: var(--ok);
 }
+
+/* Экраны секретариата: кнопки переключения прилипают к верху страницы. */
+.admin-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 16px 0;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.admin-tabs button,
+.progress-views button {
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.admin-tabs button.active,
+.progress-views button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.admin-pane[hidden] {
+  display: none;
+}
+
+.progress-live {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.progress-card {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.progress-card-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.progress-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.progress h3 {
+  margin: 12px 0 6px;
+}
+
+.progress .table-scroll {
+  overflow-x: auto;
+}
+
+.progress-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.progress-table th,
+.progress-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px 6px 0;
+}
+
+.progress-table .num {
+  text-align: right;
+}
+
+.progress-table tr.now td {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.progress-table tr.out td {
+  opacity: 0.55;
+}
+
+.progress-table .badge {
+  margin-left: 8px;
+  background: var(--accent);
+  font-size: 12px;
+}
+
+/* Главная кнопка блока — своей строкой и по ширине надписи, без переноса слов. */
+.admin .panel > button.primary {
+  grid-column: 1 / -1;
+  justify-self: start;
+  width: auto;
+  min-width: 200px;
+  padding: 0 24px;
+  white-space: nowrap;
+}
+
+.admin .paste-roster > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.admin .paste-roster {
+  display: grid;
+  gap: 12px;
+}
+
+.admin .paste-roster > button.primary {
+  justify-self: start;
+  width: auto;
+  padding: 0 24px;
+}

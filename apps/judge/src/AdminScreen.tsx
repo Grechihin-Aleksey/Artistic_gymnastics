@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
@@ -15,6 +15,7 @@ import {
   SeriesPanel,
   SiteProtocolsPanel,
   OfficialsPanel,
+  ProgressPanel,
   InquiriesPanel,
   NewCompetitionForm,
   ImportCompetitionForm,
@@ -54,6 +55,22 @@ interface IssuedJudge extends Judge {
 
 const ADMIN_KEY = "admin-token";
 
+/** Экраны секретариата; выбранный экран виден в адресе (#/admin/roster) и переживает обновление страницы. */
+const TABS = [
+  { id: "competition", title: "Соревнование" },
+  { id: "roster", title: "Участники" },
+  { id: "judges", title: "Судьи" },
+  { id: "progress", title: "Ход соревнования" },
+  { id: "finals", title: "Финалы и награждение" },
+  { id: "protocols", title: "Протоколы" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
+
+function tabFromHash(): Tab | null {
+  const id = location.hash.replace(/^#\/admin\/?/, "");
+  return TABS.find((t) => t.id === id)?.id ?? null;
+}
+
 function loginUrl(token: string): string {
   return `${location.origin}/judge/#token=${encodeURIComponent(token)}`;
 }
@@ -66,6 +83,7 @@ export function AdminScreen() {
   const [judges, setJudges] = useState<Judge[]>([]);
   const [issued, setIssued] = useState<IssuedJudge[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(() => tabFromHash() ?? "competition");
   // Растёт после загрузки участников: в правилах появляются новые разряды.
   const [rosterVersion, setRosterVersion] = useState(0);
   // Растёт после жеребьёвки: списку участников и сменам нужны новые номера.
@@ -101,6 +119,30 @@ export function AdminScreen() {
   useEffect(() => {
     void loadJudges();
   }, [loadJudges]);
+
+  // Если экран не выбран, а соревнование уже есть, при открытии начинаем с хода соревнования.
+  const defaultTab = useRef(tabFromHash() === null);
+  useEffect(() => {
+    if (defaultTab.current && competitions.length > 0) {
+      defaultTab.current = false;
+      setTab("progress");
+    }
+  }, [competitions.length]);
+  useEffect(() => {
+    const onHash = () => {
+      const next = tabFromHash();
+      if (next) setTab(next);
+    };
+    addEventListener("hashchange", onHash);
+    return () => removeEventListener("hashchange", onHash);
+  }, []);
+  const openTab = (id: Tab) => {
+    defaultTab.current = false;
+    setTab(id);
+    setError(null);
+    history.replaceState(null, "", `#/admin/${id}`);
+    scrollTo({ top: 0 });
+  };
 
   const remember = (token: string) => {
     setAdminToken(token);
@@ -144,6 +186,9 @@ export function AdminScreen() {
     }
   };
 
+  const ready = Boolean(competition && adminToken);
+  const pane = (id: Tab) => ({ hidden: tab !== id, className: "admin-pane" });
+
   return (
     <div className="screen admin">
       <header className="bar no-print">
@@ -166,251 +211,278 @@ export function AdminScreen() {
         </label>
       </section>
 
-      {error && <div className="alert no-print">{error}</div>}
-
-      {adminToken && (
-        <details className="no-print new-competition" open={competitions.length === 0}>
-          <summary>Новое соревнование</summary>
-          <NewCompetitionForm
-            adminToken={adminToken}
-            onError={setError}
-            onCreated={(id) => {
-              setIssued([]);
-              void loadCompetitions(id);
-            }}
-          />
-        </details>
-      )}
-
-      {adminToken && (
-        <details className="no-print new-competition">
-          <summary>Загрузить турнир из файла</summary>
-          <ImportCompetitionForm
-            adminToken={adminToken}
-            onError={setError}
-            onImported={(id) => {
-              setIssued([]);
-              void loadCompetitions(id);
-            }}
-          />
-        </details>
-      )}
-
-      {competition && adminToken && (
-        <OnlineEntriesPanel
-          key={`online-${competition.id}`}
-          competitionId={competition.id}
-          adminToken={adminToken}
-          onError={setError}
-          onAccepted={() => {
-            setDrawVersion((v) => v + 1);
-            setRosterVersion((v) => v + 1);
-          }}
-        />
-      )}
-
-      {competition && adminToken && (
-        <RosterPanel
-          key={`${competition.id}-${drawVersion}`}
-          competitionId={competition.id}
-          teamFormat={{
-            roster: competition.teamRoster,
-            perApparatus: competition.teamPerApparatus,
-            counting: competition.teamCounting,
-          }}
-          adminToken={adminToken}
-          onError={setError}
-          onImported={() => setRosterVersion((v) => v + 1)}
-        />
-      )}
-
-      {competition && adminToken && (
-        <RulesPanel
-          key={`rules-${competition.id}-${rosterVersion}`}
-          competitionId={competition.id}
-          discipline={competition.discipline}
-          adminToken={adminToken}
-          onError={setError}
-          onSaved={() => void loadCompetitions(competition.id)}
-        />
-      )}
-
-      {competition && adminToken && (
-        <NormativesPanel
-          key={`normatives-${competition.id}-${rosterVersion}`}
-          competitionId={competition.id}
-          adminToken={adminToken}
-          onError={setError}
-        />
-      )}
-
-      {competition && adminToken && (
-        <DrawPanel
-          key={`draw-${competition.id}-${rosterVersion}`}
-          competitionId={competition.id}
-          adminToken={adminToken}
-          onError={setError}
-          onDrawn={() => setDrawVersion((v) => v + 1)}
-        />
-      )}
-
-      {competition && adminToken && (
-        <RotationPanel
-          key={`rotation-${competition.id}-${drawVersion}`}
-          competitionId={competition.id}
-          discipline={competition.discipline}
-          adminToken={adminToken}
-          onError={setError}
-        />
-      )}
-
-      {competition && adminToken && (
-        <form
-          className="panel no-print"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void addJudge(new FormData(e.currentTarget));
-            e.currentTarget.reset();
-          }}
-        >
-          <h2>Судьи и QR-коды</h2>
-          <label>
-            ФИО судьи
-            <input name="name" required />
-          </label>
-          <label>
-            Категория
-            <input name="category" list="judge-categories" placeholder="ВК, 1К, 2К, 3К, ЮС" />
-          </label>
-          <datalist id="judge-categories">
-            {JUDGE_CATEGORIES.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-          <label>
-            Снаряд
-            <select name="apparatus">
-              {apparatusFor(competition.discipline).map((a) => (
-                <option key={a} value={a}>
-                  {APPARATUS_NAMES[a]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Роль
-            <select name="role">
-              {(Object.keys(ROLE_NAMES) as JudgeRole[]).map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_NAMES[r]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Место в бригаде
-            <input name="seat" type="number" min={1} max={10} defaultValue={1} required />
-          </label>
-          <label className="check wide">
-            <input name="enterAllMarks" type="checkbox" />
-            Один планшет на снаряд: старший судья вводит оценки всей бригады (судьям D и E QR-коды не нужны)
-          </label>
-          <button type="submit" className="primary">
-            Добавить судью
+      <nav className="admin-tabs no-print" aria-label="Экраны секретариата">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={tab === t.id ? "active" : undefined}
+            aria-current={tab === t.id ? "page" : undefined}
+            onClick={() => openTab(t.id)}
+          >
+            {t.title}
           </button>
-        </form>
-      )}
+        ))}
+      </nav>
 
-      {judges.length > 0 && (
-        <table className="panel no-print">
-          <tbody>
-            {judges.map((j) => (
-              <tr key={j.id}>
-                <td>{APPARATUS_NAMES[j.apparatus]}</td>
-                <td>
-                  {judgeLabel(j.role, j.seat)}
-                  {j.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
-                </td>
-                <td>
-                  {j.name}
-                  {j.category && <span className="muted"> · {j.category}</span>}
-                </td>
-                <td>
-                  <button type="button" className="link" onClick={() => void reissue(j)}>
-                    Новый QR-код
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      {error && <div className="alert no-print">{error}</div>}
+      {!adminToken && <div className="alert no-print">Введите токен секретариата: он показан в окне запуска сервера.</div>}
 
-      {competition && adminToken && (
-        <>
-          <OfficialsPanel
-            key={`officials-${competition.id}`}
-            competitionId={competition.id}
-            officials={competition.officials}
-            adminToken={adminToken}
-            onError={setError}
-            onSaved={() => void loadCompetitions(competition.id)}
-          />
-          <ClubStandingPanel key={`clubs-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
-          <ProtocolsPanel
-            competitionId={competition.id}
-            discipline={competition.discipline}
-            adminToken={adminToken}
-            onError={setError}
-          />
-          <SiteProtocolsPanel key={`site-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
-          <CeremonyPanel
-            key={`ceremony-${competition.id}`}
-            competitionId={competition.id}
-            discipline={competition.discipline}
-            adminToken={adminToken}
-            onError={setError}
-          />
-          <FinalsPanel key={`finals-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
-          <InquiriesPanel
-            key={competition.id}
-            competitionId={competition.id}
-            discipline={competition.discipline}
-            rules={competition.rules}
-            adminToken={adminToken}
-            onError={setError}
-          />
-          <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+      <div {...pane("competition")}>
+        {adminToken && (
+          <details className="no-print new-competition" open={competitions.length === 0}>
+            <summary>Новое соревнование</summary>
+            <NewCompetitionForm
+              adminToken={adminToken}
+              onError={setError}
+              onCreated={(id) => {
+                setIssued([]);
+                void loadCompetitions(id);
+              }}
+            />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
+            <summary>Загрузить турнир из файла</summary>
+            <ImportCompetitionForm
+              adminToken={adminToken}
+              onError={setError}
+              onImported={(id) => {
+                setIssued([]);
+                void loadCompetitions(id);
+              }}
+            />
+          </details>
+        )}
+        {ready && competition && (
+          <>
+            <RulesPanel
+              key={`rules-${competition.id}-${rosterVersion}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+              onSaved={() => void loadCompetitions(competition.id)}
+            />
+            <NormativesPanel
+              key={`normatives-${competition.id}-${rosterVersion}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+            />
+            <OfficialsPanel
+              key={`officials-${competition.id}`}
+              competitionId={competition.id}
+              officials={competition.officials}
+              adminToken={adminToken}
+              onError={setError}
+              onSaved={() => void loadCompetitions(competition.id)}
+            />
+            <TransferPanel
+              key={`transfer-${competition.id}`}
+              competitionId={competition.id}
+              name={competition.name}
+              adminToken={adminToken}
+              onError={setError}
+              onDeleted={() => {
+                setIssued([]);
+                setCompetitionId("");
+                void loadCompetitions();
+              }}
+            />
+          </>
+        )}
+        {adminToken && (
           <SeriesPanel key={`series-${competitions.length}`} competitions={competitions} adminToken={adminToken} onError={setError} />
-          <TransferPanel
-            key={`transfer-${competition.id}`}
-            competitionId={competition.id}
-            name={competition.name}
-            adminToken={adminToken}
-            onError={setError}
-            onDeleted={() => {
-              setIssued([]);
-              setCompetitionId("");
-              void loadCompetitions();
-            }}
-          />
+        )}
+      </div>
+
+      {ready && competition && (
+        <>
+          <div {...pane("roster")}>
+            <OnlineEntriesPanel
+              key={`online-${competition.id}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+              onAccepted={() => {
+                setDrawVersion((v) => v + 1);
+                setRosterVersion((v) => v + 1);
+              }}
+            />
+            <RosterPanel
+              key={`${competition.id}-${drawVersion}`}
+              competitionId={competition.id}
+              teamFormat={{
+                roster: competition.teamRoster,
+                perApparatus: competition.teamPerApparatus,
+                counting: competition.teamCounting,
+              }}
+              adminToken={adminToken}
+              onError={setError}
+              onImported={() => setRosterVersion((v) => v + 1)}
+            />
+            <DrawPanel
+              key={`draw-${competition.id}-${rosterVersion}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+              onDrawn={() => setDrawVersion((v) => v + 1)}
+            />
+          </div>
+
+          <div {...pane("judges")}>
+            {competition && adminToken && (
+              <form
+                className="panel no-print"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void addJudge(new FormData(e.currentTarget));
+                  e.currentTarget.reset();
+                }}
+              >
+                <h2>Судьи и QR-коды</h2>
+                <label>
+                  ФИО судьи
+                  <input name="name" required />
+                </label>
+                <label>
+                  Категория
+                  <input name="category" list="judge-categories" placeholder="ВК, 1К, 2К, 3К, ЮС" />
+                </label>
+                <datalist id="judge-categories">
+                  {JUDGE_CATEGORIES.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+                <label>
+                  Снаряд
+                  <select name="apparatus">
+                    {apparatusFor(competition.discipline).map((a) => (
+                      <option key={a} value={a}>
+                        {APPARATUS_NAMES[a]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Роль
+                  <select name="role">
+                    {(Object.keys(ROLE_NAMES) as JudgeRole[]).map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_NAMES[r]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Место в бригаде
+                  <input name="seat" type="number" min={1} max={10} defaultValue={1} required />
+                </label>
+                <label className="check wide">
+                  <input name="enterAllMarks" type="checkbox" />
+                  Один планшет на снаряд: старший судья вводит оценки всей бригады (судьям D и E QR-коды не нужны)
+                </label>
+                <button type="submit" className="primary">
+                  Добавить судью
+                </button>
+              </form>
+            )}
+
+            {judges.length > 0 && (
+              <table className="panel no-print">
+                <tbody>
+                  {judges.map((j) => (
+                    <tr key={j.id}>
+                      <td>{APPARATUS_NAMES[j.apparatus]}</td>
+                      <td>
+                        {judgeLabel(j.role, j.seat)}
+                        {j.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
+                      </td>
+                      <td>
+                        {j.name}
+                        {j.category && <span className="muted"> · {j.category}</span>}
+                      </td>
+                      <td>
+                        <button type="button" className="link" onClick={() => void reissue(j)}>
+                          Новый QR-код
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {issued.length > 0 && (
+              <>
+                <div className="no-print">
+                  <button type="button" className="primary" onClick={() => print()}>
+                    Печать QR-кодов
+                  </button>
+                  <p className="muted">Код показывается один раз. Если планшет потерян, выдайте новый код.</p>
+                </div>
+                <div className="qr-grid">
+                  {issued.map((j) => (
+                    <QrCard key={j.id + j.token} judge={j} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div {...pane("progress")}>
+            <RotationPanel
+              key={`rotation-${competition.id}-${drawVersion}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+            />
+            <ProgressPanel
+              key={`progress-${competition.id}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              active={tab === "progress"}
+              onError={setError}
+            />
+          </div>
+
+          <div {...pane("finals")}>
+            <FinalsPanel key={`finals-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+            <InquiriesPanel
+              key={competition.id}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              rules={competition.rules}
+              adminToken={adminToken}
+              onError={setError}
+            />
+            <CeremonyPanel
+              key={`ceremony-${competition.id}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+            />
+            <ClubStandingPanel key={`clubs-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+          </div>
+
+          <div {...pane("protocols")}>
+            <ProtocolsPanel
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+            />
+            <SiteProtocolsPanel key={`site-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+            <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+          </div>
         </>
       )}
-
-      {issued.length > 0 && (
-        <>
-          <div className="no-print">
-            <button type="button" className="primary" onClick={() => print()}>
-              Печать QR-кодов
-            </button>
-            <p className="muted">Код показывается один раз. Если планшет потерян, выдайте новый код.</p>
-          </div>
-          <div className="qr-grid">
-            {issued.map((j) => (
-              <QrCard key={j.id + j.token} judge={j} />
-            ))}
-          </div>
-        </>
+      {adminToken && !competition && tab !== "competition" && (
+        <p className="panel no-print muted">Сначала создайте соревнование или загрузите его из файла на экране «Соревнование».</p>
       )}
     </div>
   );
