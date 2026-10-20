@@ -225,6 +225,8 @@ export function describe(
         text: action === "judge.added" ? `Заведён судья: ${who}` : `Выдан новый QR-код: ${who}, прежний больше не действует`,
       };
     }
+    case "competition.imported":
+      return { group: "setup", text: `Турнир загружен из файла, выгруженного ${new Date(String(d.exportedAt)).toLocaleString("ru-RU")}` };
     default:
       return { group: "setup", text: action };
   }

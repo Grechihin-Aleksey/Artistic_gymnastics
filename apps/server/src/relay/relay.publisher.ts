@@ -56,6 +56,12 @@ export class RelayPublisher implements OnModuleDestroy {
     if (this.failures === 0) this.schedule(DEBOUNCE_MS);
   }
 
+  /** Соревнование удалено: больше не отправлять и не пересылать его на сайт. */
+  forget(competitionId: string): void {
+    this.pending.delete(competitionId);
+    this.known.delete(competitionId);
+  }
+
   onModuleDestroy(): void {
     if (this.timer) clearTimeout(this.timer);
     if (this.resync) clearInterval(this.resync);

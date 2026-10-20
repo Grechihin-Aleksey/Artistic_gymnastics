@@ -767,6 +767,10 @@ select {
   flex-wrap: wrap;
 }
 
+.primary.danger {
+  background: var(--bad);
+}
+
 .link.danger {
   color: var(--bad);
 }

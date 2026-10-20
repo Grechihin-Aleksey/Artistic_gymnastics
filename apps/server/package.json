@@ -20,6 +20,7 @@
     "@nestjs/websockets": "^11.1.6",
     "drizzle-orm": "^0.44.7",
     "exceljs": "4.4.0",
+    "express": "5.2.1",
     "pdfmake": "^0.2.23",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",

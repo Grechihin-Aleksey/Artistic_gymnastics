@@ -17,6 +17,8 @@ import {
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
+  ImportCompetitionForm,
+  TransferPanel,
   ProtocolsPanel,
   RosterPanel,
   RotationPanel,
@@ -173,6 +175,20 @@ export function AdminScreen() {
             adminToken={adminToken}
             onError={setError}
             onCreated={(id) => {
+              setIssued([]);
+              void loadCompetitions(id);
+            }}
+          />
+        </details>
+      )}
+
+      {adminToken && (
+        <details className="no-print new-competition">
+          <summary>Загрузить турнир из файла</summary>
+          <ImportCompetitionForm
+            adminToken={adminToken}
+            onError={setError}
+            onImported={(id) => {
               setIssued([]);
               void loadCompetitions(id);
             }}
@@ -365,7 +381,19 @@ export function AdminScreen() {
             onError={setError}
           />
           <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
-          <SeriesPanel competitions={competitions} adminToken={adminToken} onError={setError} />
+          <SeriesPanel key={`series-${competitions.length}`} competitions={competitions} adminToken={adminToken} onError={setError} />
+          <TransferPanel
+            key={`transfer-${competition.id}`}
+            competitionId={competition.id}
+            name={competition.name}
+            adminToken={adminToken}
+            onError={setError}
+            onDeleted={() => {
+              setIssued([]);
+              setCompetitionId("");
+              void loadCompetitions();
+            }}
+          />
         </>
       )}
 

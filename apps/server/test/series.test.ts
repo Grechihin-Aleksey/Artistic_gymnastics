@@ -83,7 +83,9 @@ describe("кубок из нескольких этапов", () => {
   });
 
   it("удалённый этап просто выпадает, кубок можно удалить", async () => {
-    await admin.delete(`/competitions/${stages[2]}`).expect((r) => expect([200, 404]).toContain(r.status));
+    await admin.delete(`/competitions/${stages[2]}`).expect(204);
+    const standings = (await api(app).get(`/series/${id}/standings`).expect(200)).body as SeriesStandings;
+    expect(standings.stages.map((s) => s.name)).toEqual(["1 этап", "2 этап"]);
     await admin.delete(`/series/${id}`).expect(200);
     await api(app).get(`/series/${id}/standings`).expect(404);
   });
