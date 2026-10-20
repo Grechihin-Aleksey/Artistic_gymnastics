@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заявка на соревнования</title>
+<style>
+  :root {
+    --bg: #f4f6fa; --surface: #ffffff; --line: #dde2ec; --text: #121826; --muted: #5d6b85;
+    --accent: #1f6feb; --bad: #d64545; --ok: #2f9e44;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b1020; --surface: #141b30; --line: #26304d; --text: #f1f4fb; --muted: #8f9bb8;
+      --accent: #5b9bff; --bad: #ff6b6b; --ok: #3fb950;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 40px; width: 100%; }
+  textarea { min-height: 90px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); padding: 8px 14px; min-height: 44px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.link { border: none; background: none; color: var(--accent); padding: 4px; min-height: 0; }
+  .row { border-top: 1px solid var(--line); padding: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; align-items: end; }
+  .row:first-of-type { border-top: none; }
+  .num { grid-column: 1 / -1; font-weight: 700; color: var(--muted); }
+  .num::before { content: "Участник "; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .error { color: var(--bad); font-weight: 600; }
+  .done { border-color: var(--ok); }
+  .done h2 { color: var(--ok); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <p id="loading" class="muted">Загрузка…</p>
+  <p id="fatal" class="error" hidden></p>
+  <div id="app" hidden>
+    <h1 id="name"></h1>
+    <p id="status" class="muted"></p>
+
+    <form id="form" novalidate>
+      <section>
+        <h2>Клуб</h2>
+        <div class="grid">
+          <label>Клуб, школа *<input name="club" required maxlength="200" autocomplete="organization"></label>
+          <label>Город<input name="city" maxlength="200" autocomplete="address-level2"></label>
+          <label>Контакт: ФИО, телефон или почта *<input name="contact" required maxlength="300"></label>
+        </div>
+      </section>
+
+      <section>
+        <h2>Участники</h2>
+        <p class="muted">Можно заполнить строки по одной или вставить список из Excel: столбцы Фамилия, Имя, Отчество, Дата рождения, Разряд, Тренер, Команда.</p>
+        <div id="rows"></div>
+        <div class="actions">
+          <button type="button" id="add">+ участник</button>
+          <button type="button" id="paste-toggle">Вставить из таблицы</button>
+        </div>
+        <div id="paste" hidden>
+          <label>Скопируйте строки из Excel и вставьте сюда<textarea id="paste-text"></textarea></label>
+          <div class="actions"><button type="button" id="paste-apply">Добавить строки</button></div>
+        </div>
+      </section>
+
+      <section>
+        <label>Комментарий для организаторов<textarea name="comment" maxlength="1000"></textarea></label>
+        <div class="actions">
+          <button type="submit" class="primary" id="submit">Отправить заявку</button>
+        </div>
+        <p id="error" class="error" role="alert" hidden></p>
+      </section>
+    </form>
+
+    <section id="done" class="done" hidden>
+      <h2>Заявка отправлена</h2>
+      <p id="done-text"></p>
+      <button type="button" id="again">Подать ещё одну заявку</button>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const id = params.get("c") || "";
+  const key = params.get("k") || "";
+  const api = `../api/entries/${encodeURIComponent(id)}?k=${encodeURIComponent(key)}`;
+  const $ = (sel) => document.querySelector(sel);
+  const rowsBox = $("#rows");
+  const FIELDS = [
+    ["lastName", "Фамилия *"],
+    ["firstName", "Имя *"],
+    ["middleName", "Отчество"],
+    ["birthDate", "Дата рождения"],
+    ["category", "Разряд"],
+    ["coach", "Тренер"],
+    ["team", "Команда"],
+  ];
+  let call = null;
+
+  function el(tag, props = {}, children = []) {
+    const node = Object.assign(document.createElement(tag), props);
+    for (const c of children) node.append(c);
+    return node;
+  }
+
+  function renumber() {
+    rowsBox.querySelectorAll(".row").forEach((row, i) => (row.querySelector(".num").textContent = String(i + 1)));
+  }
+
+  function addRow(values = {}) {
+    const row = el("div", { className: "row" }, [el("span", { className: "num" })]);
+    for (const [field, title] of FIELDS) {
+      let input;
+      if (field === "category" && call.categories.length > 0) {
+        input = el("select", { name: field }, [el("option", { value: "", textContent: "—" }), ...call.categories.map((c) => el("option", { value: c, textContent: c }))]);
+        const match = call.categories.find((c) => c.toLowerCase() === String(values[field] || "").trim().toLowerCase());
+        input.value = match || "";
+      } else {
+        input = el("input", { name: field, value: values[field] || "", maxLength: field === "team" ? 200 : 100 });
+        if (field === "birthDate") input.placeholder = "15.03.2014 или 2014";
+      }
+      row.append(el("label", {}, [title, input]));
+    }
+    const remove = el("button", { type: "button", className: "link", textContent: "Убрать участника" });
+    remove.addEventListener("click", () => {
+      row.remove();
+      if (!rowsBox.children.length) addRow();
+      renumber();
+    });
+    row.append(remove);
+    rowsBox.append(row);
+    renumber();
+  }
+
+  function collect() {
+    const form = $("#form");
+    const text = (name) => form.elements[name].value.trim();
+    const rows = [...rowsBox.querySelectorAll(".row")]
+      .map((row) => {
+        const r = {};
+        for (const [field] of FIELDS) {
+          const v = row.querySelector(`[name="${field}"]`).value.trim();
+          if (v) r[field] = v;
+        }
+        return r;
+      })
+      .filter((r) => Object.keys(r).length > 0);
+    const entry = { club: text("club"), contact: text("contact"), rows };
+    if (text("city")) entry.city = text("city");
+    if (text("comment")) entry.comment = text("comment");
+    return entry;
+  }
+
+  function showStatus() {
+    const deadline = call.deadline ? new Date(call.deadline) : null;
+    const closed = !call.open || (deadline && deadline.getTime() < Date.now());
+    $("#status").textContent = closed
+      ? "Приём заявок закрыт."
+      : deadline
+        ? `Заявки принимаются до ${deadline.toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" })}.`
+        : "Заявки принимаются.";
+    $("#form").hidden = Boolean(closed);
+  }
+
+  $("#add").addEventListener("click", () => addRow());
+  $("#paste-toggle").addEventListener("click", () => ($("#paste").hidden = !$("#paste").hidden));
+  $("#paste-apply").addEventListener("click", () => {
+    const lines = $("#paste-text").value.split(/\r?\n/).filter((l) => l.trim());
+    if (!lines.length) return;
+    // Пустые строки, оставленные по умолчанию, заменяем вставленными.
+    rowsBox.querySelectorAll(".row").forEach((row) => {
+      if ([...row.querySelectorAll("input,select")].every((i) => !i.value.trim())) row.remove();
+    });
+    for (const line of lines) {
+      const cells = line.split("\t");
+      addRow(Object.fromEntries(FIELDS.map(([field], i) => [field, (cells[i] || "").trim()])));
+    }
+    $("#paste-text").value = "";
+    $("#paste").hidden = true;
+  });
+
+  $("#form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const error = $("#error");
+    error.hidden = true;
+    const button = $("#submit");
+    button.disabled = true;
+    try {
+      const response = await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(collect()) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `Ошибка ${response.status}`);
+      const at = new Date(data.receivedAt).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
+      $("#done-text").textContent = `Заявка получена ${at}, номер ${data.id.slice(0, 8)}. Секретариат рассмотрит её и включит участников в список; при вопросах с вами свяжутся по указанному контакту.`;
+      $("#form").hidden = true;
+      $("#done").hidden = false;
+      scrollTo(0, 0);
+    } catch (err) {
+      error.textContent = err instanceof TypeError ? "Нет связи с сервером. Проверьте интернет и попробуйте ещё раз." : err.message;
+      error.hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("#again").addEventListener("click", () => {
+    $("#form").reset();
+    rowsBox.textContent = "";
+    addRow();
+    $("#done").hidden = true;
+    showStatus();
+  });
+
+  fetch(api)
+    .then(async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Ссылка на заявку недействительна");
+      call = data;
+      document.title = `Заявка: ${call.name}`;
+      $("#name").textContent = call.name;
+      addRow();
+      showStatus();
+      $("#app").hidden = false;
+    })
+    .catch((err) => {
+      $("#fatal").textContent = err instanceof TypeError ? "Нет связи с сервером." : err.message;
+      $("#fatal").hidden = false;
+    })
+    .finally(() => ($("#loading").hidden = true));
+})();
+</script>
+</body>
+</html>

@@ -181,6 +181,17 @@ export function describe(
       const parts = Object.entries(changes).map(([field, c]) => `${FIELD_NAMES[field] ?? field}: ${value(field, c.from)} → ${value(field, c.to)}`);
       return { group: "roster", text: `Изменены данные участника: ${parts.join("; ")}` };
     }
+    case "entries.opened":
+      return {
+        group: "setup",
+        text: `Открыт приём онлайн-заявок${typeof d.deadline === "string" ? ` до ${new Date(d.deadline).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}` : ""}`,
+      };
+    case "entries.closed":
+      return { group: "setup", text: "Приём онлайн-заявок закрыт" };
+    case "entries.accepted":
+      return { group: "roster", text: `Принята онлайн-заявка клуба «${String(d.club)}»: ${String(d.count)} чел. добавлено в список` };
+    case "entries.rejected":
+      return { group: "roster", text: `Отклонена онлайн-заявка клуба «${String(d.club)}»${d.note ? `: ${String(d.note)}` : ""}` };
     case "finals.created":
       return {
         group: "setup",

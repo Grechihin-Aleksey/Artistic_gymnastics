@@ -25,7 +25,7 @@ export type CompetitionRow = typeof competitions.$inferSelect;
 const gymnastNote = (g: typeof gymnasts.$inferSelect) => ({ gymnastId: g.id, bib: g.bib, name: `${g.lastName} ${g.firstName}` });
 
 /** Соревнование для клиентов: сам логотип отдаётся отдельно, он тяжёлый. */
-export function publicCompetition({ logo, deductions, ...rest }: CompetitionRow) {
+export function publicCompetition({ logo, deductions, entryKey: _key, ...rest }: CompetitionRow) {
   return {
     ...rest,
     deductions: deductions.map((d) => ({ name: d.name, value: fromPoints(d.value) })),

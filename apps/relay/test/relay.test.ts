@@ -131,4 +131,47 @@ describe("ретранслятор", () => {
     expect(await embed.text()).toContain("data-ag-results");
     expect((await fetch(`${base}/widget/..%2f..%2fpackage.json`)).status).toBe(404);
   });
+
+  it("принимает онлайн-заявки клубов по ссылке с ключом и отдаёт их залу", async () => {
+    const KEY = "entry-key-0123456789abcdef";
+    const call = { name: "Кубок города", discipline: "WAG", open: true, deadline: null, categories: ["КМС", "1 разряд"] };
+    const publish = (body: unknown, token = TOKEN) =>
+      fetch(`${base}/entries/${ID}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    const club = (body: unknown, key = KEY) =>
+      fetch(`${base}/api/entries/${ID}?k=${key}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const entry = { club: "Олимп", contact: "Иванова И. И., +7 900 000-00-00", rows: [{ lastName: "Абрамова", firstName: "Анна", category: "КМС" }] };
+
+    expect((await publish({ key: KEY, call }, "wrong-token")).status).toBe(401);
+    expect((await fetch(`${base}/api/entries/${ID}?k=${KEY}`)).status).toBe(404);
+    expect((await publish({ key: KEY, call })).status).toBe(200);
+    expect(await (await fetch(`${base}/api/entries/${ID}?k=${KEY}`)).json()).toEqual(call);
+    expect((await fetch(`${base}/api/entries/${ID}?k=wrong-key-0123456789abc`)).status).toBe(404);
+
+    const bad = await club({ ...entry, rows: [{ lastName: "Белова", firstName: "" }] });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { message: string }).message).toBe("Участник 1: Укажите имя");
+    const unknown = await club({ ...entry, rows: [{ lastName: "Белова", firstName: "Бэлла", category: "МС" }] });
+    expect(((await unknown.json()) as { message: string }).message).toBe("Разряда «МС» нет в соревновании");
+    const sent = await club(entry);
+    expect(sent.status).toBe(201);
+    const { id } = (await sent.json()) as { id: string };
+
+    const hall = (token = TOKEN) => fetch(`${base}/entries/${ID}`, { headers: { authorization: `Bearer ${token}` } });
+    expect((await hall("wrong-token")).status).toBe(401);
+    expect(await (await hall()).json()).toEqual({ entries: [expect.objectContaining({ ...entry, id })] });
+
+    // После перезапуска заявки на месте, а закрытый приём новых не берёт.
+    await relay.close();
+    await start();
+    expect((await publish({ key: KEY, call: { ...call, open: false } })).status).toBe(200);
+    expect(((await (await hall()).json()) as { entries: unknown[] }).entries).toHaveLength(1);
+    expect((await club(entry)).status).toBe(409);
+    expect((await publish({ key: KEY, call: { ...call, deadline: "2020-01-01T00:00:00Z" } })).status).toBe(200);
+    expect((await club(entry)).status).toBe(409);
+    expect((await fetch(`${base}/entry/`)).status).toBe(200);
+  });
 });

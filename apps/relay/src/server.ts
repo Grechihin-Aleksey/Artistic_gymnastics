@@ -3,9 +3,10 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, sep } from "node:path";
-import { RELAY_EVENTS, type BoardSnapshot, type PerformanceView } from "@ag/shared";
+import { DISCIPLINES, onlineEntrySchema, RELAY_EVENTS, type BoardSnapshot, type PerformanceView } from "@ag/shared";
 import { z } from "zod";
 import type { RelayConfig } from "./config.js";
+import { EntryStore, MAX_ENTRIES } from "./entries.js";
 import { SnapshotStore } from "./store.js";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -22,6 +23,20 @@ const ingestSchema = z.object({
   }),
   approved: z.array(z.looseObject({ id: z.string() })).default([]),
 });
+
+const publishEntriesSchema = z.object({
+  key: z.string().min(16).max(200),
+  call: z.object({
+    name: z.string().min(1).max(300),
+    discipline: z.enum(DISCIPLINES),
+    open: z.boolean(),
+    deadline: z.string().nullable(),
+    categories: z.array(z.string().max(100)).max(100),
+  }),
+});
+
+/** Заявка клуба невелика: 100 участников укладываются с запасом. */
+const MAX_ENTRY_BYTES = 200 * 1024;
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -46,6 +61,7 @@ class HttpError extends Error {
 export interface Relay {
   server: Server;
   store: SnapshotStore;
+  entries: EntryStore;
   close(): Promise<void>;
 }
 
@@ -56,6 +72,8 @@ export interface Relay {
 export async function createRelay(config: RelayConfig): Promise<Relay> {
   const store = new SnapshotStore(config.dataDir);
   await store.load();
+  const entries = new EntryStore(config.dataDir);
+  await entries.load();
   const viewers = new Map<string, Set<ServerResponse>>();
   const expectedAuth = Buffer.from(`Bearer ${config.token}`);
 
@@ -91,6 +109,37 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       broadcast(id, RELAY_EVENTS.approved, view);
     }
     json(res, 200, { ok: true });
+  }
+
+  /** Зал публикует приём заявок (PUT) и забирает присланные (GET). */
+  async function hallEntries(req: IncomingMessage, res: ServerResponse, id: string) {
+    if (!authorized(req)) throw new HttpError(401, "Неверный токен");
+    if (req.method === "GET") return json(res, 200, { entries: entries.entries(id) });
+    const parsed = publishEntriesSchema.safeParse(JSON.parse(await readBody(req)));
+    if (!parsed.success) throw new HttpError(400, "Неверный формат приёма заявок");
+    await entries.publish(id, parsed.data.call, parsed.data.key);
+    json(res, 200, { ok: true });
+  }
+
+  /** Клуб открывает ссылку (GET) и отправляет заявку (POST). */
+  async function clubEntry(req: IncomingMessage, res: ServerResponse, id: string, key: string) {
+    const call = entries.call(id, key);
+    if (!call) throw new HttpError(404, "Ссылка на заявку недействительна: уточните её у организаторов");
+    if (req.method !== "POST") return json(res, 200, call);
+    if (!call.open || (call.deadline && Date.parse(call.deadline) < Date.now())) {
+      throw new HttpError(409, "Приём заявок закрыт");
+    }
+    if (entries.entries(id).length >= MAX_ENTRIES) throw new HttpError(409, "Заявок слишком много: свяжитесь с организаторами");
+    const parsed = onlineEntrySchema.safeParse(JSON.parse(await readBody(req, MAX_ENTRY_BYTES)));
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]!;
+      const row = issue.path[0] === "rows" && typeof issue.path[1] === "number" ? `Участник ${issue.path[1] + 1}: ` : "";
+      throw new HttpError(400, `${row}${issue.message}`);
+    }
+    const unknown = parsed.data.rows.find((r) => r.category && call.categories.length > 0 && !call.categories.includes(r.category));
+    if (unknown) throw new HttpError(400, `Разряда «${unknown.category}» нет в соревновании`);
+    const received = await entries.add(id, parsed.data);
+    json(res, 201, { id: received.id, receivedAt: received.receivedAt });
   }
 
   function stream(req: IncomingMessage, res: ServerResponse, id: string) {
@@ -153,6 +202,14 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
       return ingest(req, res, m[1]!.toLowerCase());
     }
+    if ((m = path.match(/^\/entries\/([^/]+)$/)) && (req.method === "GET" || req.method === "PUT")) {
+      if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
+      return hallEntries(req, res, m[1]!.toLowerCase());
+    }
+    if ((m = path.match(/^\/api\/entries\/([^/]+)$/)) && (req.method === "GET" || req.method === "POST")) {
+      if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
+      return clubEntry(req, res, m[1]!.toLowerCase(), url.searchParams.get("k") ?? "");
+    }
     if (req.method !== "GET" && req.method !== "HEAD") throw new HttpError(405, "Метод не поддерживается");
 
     if (path === "/health") return json(res, 200, { ok: true });
@@ -166,6 +223,7 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       return json(res, 200, snapshot);
     }
     if (path === "/embed.js") return serveStatic(res, config.publicDir, "embed.js");
+    if (path === "/entry" || path === "/entry/") return serveStatic(res, config.publicDir, "entry.html");
     if (path === "/" || path === "/widget") {
       res.writeHead(302, { location: "/widget/" });
       return res.end();
@@ -188,6 +246,7 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
   return {
     server,
     store,
+    entries,
     async close() {
       clearInterval(heartbeat);
       for (const set of viewers.values()) for (const res of set) res.end();
@@ -205,14 +264,14 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new HttpError(413, "Слишком большой снимок"));
+      if (size > limit) {
+        reject(new HttpError(413, "Слишком большой запрос"));
         req.destroy();
         return;
       }

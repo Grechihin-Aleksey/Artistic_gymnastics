@@ -15,6 +15,8 @@ import { FinalsService } from "./finals/finals.service";
 import { InquiriesController } from "./inquiries/inquiries.controller";
 import { InquiriesService } from "./inquiries/inquiries.service";
 import { LiveGateway } from "./live/live.gateway";
+import { OnlineEntriesController } from "./online-entries/online-entries.controller";
+import { OnlineEntriesService } from "./online-entries/online-entries.service";
 import { PerformancesController } from "./performances/performances.controller";
 import { PerformancesService } from "./performances/performances.service";
 import { ProtocolsController } from "./protocols/protocols.controller";
@@ -49,6 +51,7 @@ export class AppModule {
         ProtocolsController,
         CeremonyController,
         AuditController,
+        OnlineEntriesController,
       ],
       providers: [
         AuthService,
@@ -61,6 +64,7 @@ export class AppModule {
         InquiriesService,
         ProtocolsService,
         AuditService,
+        OnlineEntriesService,
         LiveGateway,
         RelayPublisher,
       ],

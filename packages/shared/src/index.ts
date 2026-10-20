@@ -162,6 +162,67 @@ export const importGymnastsSchema = z.object({
     .max(1000),
 });
 
+/** Строка онлайн-заявки клуба: участник без номера, номер даст секретариат. */
+export const onlineEntryRowSchema = z.object({
+  lastName: z.string().trim().min(1, "Укажите фамилию").max(100),
+  firstName: z.string().trim().min(1, "Укажите имя").max(100),
+  /** Разряд или возрастная группа из списка соревнования. */
+  category: z.string().trim().max(100).optional(),
+  team: z.string().trim().max(200).optional(),
+  ...gymnastDetails,
+});
+
+/** Онлайн-заявка клуба с сайта соревнования. */
+export const onlineEntrySchema = z.object({
+  club: z.string().trim().min(1, "Укажите клуб").max(200),
+  city: z.string().trim().max(200).optional(),
+  /** Кто подаёт заявку и как с ним связаться. */
+  contact: z.string().trim().min(3, "Укажите контакт: ФИО и телефон или почту").max(300),
+  comment: z.string().trim().max(1000).optional(),
+  rows: z.array(onlineEntryRowSchema).min(1, "Добавьте хотя бы одного участника").max(100),
+});
+
+/** Приём онлайн-заявок, который зал публикует на ретрансляторе. */
+export interface OnlineEntryCall {
+  name: string;
+  discipline: (typeof DISCIPLINES)[number];
+  open: boolean;
+  /** ISO-время окончания приёма или null. */
+  deadline: string | null;
+  /** Разряды соревнования для выбора в заявке. */
+  categories: string[];
+}
+
+/** Заявка, принятая ретранслятором: id и время получения ставит он. */
+export type OnlineEntry = z.infer<typeof onlineEntrySchema>;
+export interface ReceivedOnlineEntry extends OnlineEntry {
+  id: string;
+  receivedAt: string;
+}
+
+export const ONLINE_ENTRY_STATUSES = ["NEW", "ACCEPTED", "REJECTED"] as const;
+export type OnlineEntryStatus = (typeof ONLINE_ENTRY_STATUSES)[number];
+
+/** Онлайн-заявки в секретариате. */
+export interface OnlineEntriesView {
+  /** Ретранслятор настроен (RELAY_URL и RELAY_TOKEN): без него онлайн-заявок нет. */
+  enabled: boolean;
+  open: boolean;
+  deadline: string | null;
+  /** Ссылка для клубов. */
+  link: string | null;
+  /** Когда последний раз забирали заявки с ретранслятора. */
+  syncedAt: string | null;
+  entries: (ReceivedOnlineEntry & { status: OnlineEntryStatus; note: string | null; decidedAt: string | null })[];
+}
+
+export const setOnlineEntriesSchema = z.object({
+  open: z.boolean(),
+  deadline: z.iso.datetime({ offset: true }).nullable().default(null),
+});
+
+export const rejectOnlineEntrySchema = z.object({ note: z.string().trim().max(500).optional() });
+
 /**
  * Правка участника. Разряд, команда и смена — по названию (номеру), как при импорте;
  * пустая строка или null убирает. Не переданные поля не меняются.
@@ -344,6 +405,8 @@ export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type SetNormativesInput = z.infer<typeof setNormativesSchema>;
+export type SetOnlineEntriesInput = z.infer<typeof setOnlineEntriesSchema>;
+export type RejectOnlineEntryInput = z.infer<typeof rejectOnlineEntrySchema>;
 export type ClubStandingSettings = z.infer<typeof setClubStandingSchema>;
 export type Ceremony = z.infer<typeof ceremonySchema>;
 export type SetCeremonyInput = z.infer<typeof setCeremonySchema>;

@@ -364,6 +364,7 @@ select {
 }
 
 .admin .protocols .buttons,
+.admin .online-entries .buttons,
 .admin .audit .buttons {
   grid-column: 1 / -1;
   display: flex;
@@ -373,6 +374,7 @@ select {
 
 .admin .protocols button,
 .admin .audit .buttons button,
+.admin .online-entries button,
 .admin .ceremony-panel button,
 .admin .rules button:not(.link):not(.primary),
 .admin .actions button,
@@ -512,8 +514,11 @@ select {
   justify-content: flex-end;
 }
 
-.admin .rotation .buttons .primary {
+.admin .rotation .buttons .primary,
+.admin .online-entries .buttons .primary,
+.admin .ceremony-panel .primary {
   width: auto;
+  min-height: 44px;
   font-size: 16px;
   padding: 6px 20px;
 }
@@ -824,4 +829,54 @@ select {
 
 .audit-table td:first-child {
   white-space: nowrap;
+}
+
+.online-entries .entry-link {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.online-entries .entry-link input {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.entry-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.entry-card p {
+  margin: 0;
+}
+
+.entry-card.status-accepted,
+.entry-card.status-rejected {
+  opacity: 0.75;
+}
+
+.entry-card .entry-status {
+  margin-left: 8px;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.entry-card .entry-status.new {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.entry-card .entry-status.rejected {
+  color: var(--bad);
+}
+
+.entry-card .table-scroll {
+  overflow-x: auto;
 }
