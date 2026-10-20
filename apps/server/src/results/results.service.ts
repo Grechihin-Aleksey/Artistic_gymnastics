@@ -173,10 +173,12 @@ export class ResultsService {
 
   async allAround(competitionId: string, scope: CategoryScope = undefined) {
     const competition = await this.competitions.get(competitionId);
-    const [scores, people] = await Promise.all([
+    const [scores, people, categoryRows] = await Promise.all([
       this.approvedScores(competitionId),
       this.gymnastsById(competitionId),
+      this.db.select().from(categories).where(eq(categories.competitionId, competitionId)),
     ]);
+    const normatives = new Map(categoryRows.map((c) => [c.id, c.normatives]));
     // Снявшиеся в многоборье не ранжируются; их оценки на снарядах остаются.
     const entries = [...scores]
       .filter(([gymnastId]) => {
@@ -195,6 +197,10 @@ export class ResultsService {
       gymnast: gymnastView(people.get(item.id)!),
       total: fromPoints(item.total),
       complete: item.complete,
+      // Разряд выполняет только тот, кто выступил на всех снарядах программы.
+      earned: item.complete
+        ? ((normatives.get(people.get(item.id)!.categoryId ?? "") ?? []).find((l) => item.total >= l.min)?.name ?? null)
+        : null,
       apparatus: Object.fromEntries(
         Object.entries(byId.get(item.id)!.scores).map(([a, s]) => [a, toView(s)]),
       ),

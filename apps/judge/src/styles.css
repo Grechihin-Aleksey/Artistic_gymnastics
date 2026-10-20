@@ -770,3 +770,36 @@ select {
 .finals h3 {
   margin: 8px 0 4px;
 }
+
+.normatives-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.normatives-row > strong {
+  min-width: 9em;
+}
+
+.normatives-level {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.normatives-level input {
+  width: 11em;
+}
+
+.normatives-level input.narrow {
+  width: 6em;
+}
+
+.normatives-row > input {
+  width: 14em;
+}
+
+.normatives-row > input.narrow {
+  width: 7em;
+}

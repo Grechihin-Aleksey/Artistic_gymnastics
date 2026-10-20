@@ -76,6 +76,26 @@ export class ProtocolsController {
     send(res, await this.protocols.diplomas(id, kind, places), "diplomas.pdf");
   }
 
+  @Get("bibs")
+  async bibs(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    send(res, await this.protocols.bibs(id), "bibs.pdf");
+  }
+
+  @Get("report")
+  async report(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    send(res, await this.protocols.report(id), "report.pdf");
+  }
+
+  @Get("officials")
+  async officials(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    send(res, await this.protocols.officials(id), "officials.pdf");
+  }
+
+  @Get("earned")
+  async earned(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    send(res, await this.protocols.earned(id), "earned.pdf");
+  }
+
   @Get("teams")
   async teams(
     @Param("id", ParseUUIDPipe) id: string,

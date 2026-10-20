@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { Official } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -41,6 +42,8 @@ export const competitions = pgTable("competitions", {
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
   /** Идёт квалификация или финалы на снарядах: новые выступления получают этот этап. */
   phase: stageEnum("phase").notNull().default("QUAL"),
+  /** Главный судья и главный секретарь: их ФИО и категории печатаются в протоколах. */
+  officials: jsonb("officials").$type<{ chiefJudge: Official | null; chiefSecretary: Official | null }>().notNull().default({ chiefJudge: null, chiefSecretary: null }),
   /** Параметры отбора в финалы, с которыми их сформировали последний раз. */
   finalSize: integer("final_size").notNull().default(8),
   finalReserves: integer("final_reserves").notNull().default(2),
@@ -61,6 +64,8 @@ export const categories = pgTable(
     /** Своих правил: базовая оценка разряда в тысячных и её замены на отдельных снарядах. */
     base: integer("base"),
     apparatusBase: jsonb("apparatus_base").$type<Partial<Record<(typeof APPARATUS)[number], number>>>().notNull().default({}),
+    /** Нормативы разрядов: минимальная сумма многоборья в тысячных, от высшего уровня к низшему. */
+    normatives: jsonb("normatives").$type<{ name: string; min: number }[]>().notNull().default([]),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("categories_name_unique").on(t.competitionId, t.name)],
@@ -128,6 +133,8 @@ export const judges = pgTable(
       .notNull()
       .references(() => competitions.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /** Судейская категория: ВК, 1К, 2К, 3К, ЮС. */
+    category: text("category"),
     apparatus: apparatusEnum("apparatus").notNull(),
     role: judgeRoleEnum("role").notNull(),
     seat: integer("seat").notNull(),

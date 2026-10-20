@@ -1,4 +1,5 @@
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
+import type { Official } from "@ag/shared";
 
 export interface Diploma {
   /** Кого награждают: участник или команда. */
@@ -27,8 +28,16 @@ export const APPARATUS_EVENT: Readonly<Record<string, string>> = {
 };
 
 /** Грамоты победителям и призёрам: по странице A4 на каждого. */
+/** На грамоте под подписью — только ФИО, без категории. */
+const signName = (o: Official | null | undefined) => (o ? `\n${o.name}` : "");
+
 export function diplomasDocument(
-  competition: { name: string; discipline: "MAG" | "WAG"; logo?: string | null },
+  competition: {
+    name: string;
+    discipline: "MAG" | "WAG";
+    logo?: string | null;
+    officials?: { chiefJudge: Official | null; chiefSecretary: Official | null };
+  },
   diplomas: Diploma[],
 ): TDocumentDefinitions {
   const date = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
@@ -53,8 +62,12 @@ export function diplomasDocument(
       {
         absolutePosition: { x: 70, y: 700 },
         columns: [
-          { text: "Главный судья\n\n______________________", width: "*" },
-          { text: "Главный секретарь\n\n______________________", width: "*", alignment: "right" },
+          { text: `Главный судья\n\n______________________${signName(competition.officials?.chiefJudge)}`, width: "*" },
+          {
+            text: `Главный секретарь\n\n______________________${signName(competition.officials?.chiefSecretary)}`,
+            width: "*",
+            alignment: "right",
+          },
         ],
         width: 455,
       } as Content,

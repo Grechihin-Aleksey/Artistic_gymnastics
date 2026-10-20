@@ -6,7 +6,10 @@ import type {
   CreateJudgeInput,
   CreateTeamInput,
   ImportGymnastsInput,
+  NormativesView,
   RulesView,
+  SetNormativesInput,
+  SetOfficialsInput,
   SetRulesInput,
   UpdateGymnastInput,
 } from "@ag/shared";
@@ -160,6 +163,51 @@ export class CompetitionsService {
       }
     });
     return this.getRules(competitionId);
+  }
+
+  async setOfficials(competitionId: string, input: SetOfficialsInput) {
+    await this.get(competitionId);
+    const [row] = await this.db
+      .update(competitions)
+      .set({ officials: input })
+      .where(eq(competitions.id, competitionId))
+      .returning();
+    return publicCompetition(row!);
+  }
+
+  async getNormatives(competitionId: string): Promise<NormativesView> {
+    await this.get(competitionId);
+    const rows = await this.db
+      .select()
+      .from(categories)
+      .where(eq(categories.competitionId, competitionId))
+      .orderBy(asc(categories.position));
+    return {
+      categories: rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        levels: c.normatives.map((l) => ({ name: l.name, min: fromPoints(l.min) })),
+      })),
+    };
+  }
+
+  /** Нормативы можно менять в любой момент: выполнение считается по ним заново. */
+  async setNormatives(competitionId: string, input: SetNormativesInput): Promise<NormativesView> {
+    const known = new Set((await this.getNormatives(competitionId)).categories.map((c) => c.id));
+    for (const c of input.categories) {
+      if (!known.has(c.categoryId)) throw new BadRequestException("Разряд не найден в этом соревновании");
+      const names = c.levels.map((l) => l.name.toLowerCase());
+      if (new Set(names).size !== names.length) throw new BadRequestException("Уровни разряда повторяются");
+    }
+    await this.db.transaction(async (tx) => {
+      for (const c of input.categories) {
+        const levels = c.levels
+          .map((l) => ({ name: l.name, min: toPoints(l.min) }))
+          .sort((a, b) => b.min - a.min);
+        await tx.update(categories).set({ normatives: levels }).where(eq(categories.id, c.categoryId));
+      }
+    });
+    return this.getNormatives(competitionId);
   }
 
   async addTeam(competitionId: string, input: CreateTeamInput) {

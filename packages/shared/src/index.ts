@@ -79,8 +79,31 @@ export const createGymnastSchema = z.object({
   ...gymnastDetails,
 });
 
+/** Судейские категории: всероссийская, первая, вторая, третья, юный судья. */
+export const JUDGE_CATEGORIES = ["ВК", "1К", "2К", "3К", "ЮС"] as const;
+
+/** Главный судья или главный секретарь: ФИО, судейская категория, город. */
+export const officialSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  category: z.string().trim().max(40).optional(),
+  city: z.string().trim().max(100).optional(),
+});
+
+export const setOfficialsSchema = z.object({
+  chiefJudge: officialSchema.nullable(),
+  chiefSecretary: officialSchema.nullable(),
+});
+
+/** «Иванова А. А. (ВК, Тверь)» — для подписей в протоколах. */
+export function officialLabel(o: { name: string; category?: string | null; city?: string | null }): string {
+  const extra = [o.category, o.city].filter(Boolean).join(", ");
+  return extra ? `${o.name} (${extra})` : o.name;
+}
+
 export const createJudgeSchema = z.object({
   name: z.string().min(1).max(200),
+  /** Судейская категория: ВК, 1К, 2К, 3К, ЮС или своя запись. */
+  category: z.string().trim().max(40).optional(),
   apparatus: apparatusSchema,
   role: judgeRoleSchema,
   /** Номер места в бригаде: D1, D2, E1…E7. */
@@ -188,6 +211,29 @@ export const setRulesSchema = z.object({
     .default([]),
 });
 
+/**
+ * Нормативы разрядов: в каждом разряде соревнований — уровни с минимальной суммой
+ * многоборья, например «1 юношеский» от 48.000, «2 юношеский» от 44.000.
+ * Участник, выступивший на всех снарядах, выполняет высший уровень, до которого набрал.
+ */
+export const setNormativesSchema = z.object({
+  categories: z
+    .array(
+      z.object({
+        categoryId: z.uuid(),
+        levels: z
+          .array(
+            z.object({
+              name: z.string().trim().min(1).max(60),
+              min: z.number().positive().max(200).multipleOf(0.001),
+            }),
+          )
+          .max(6),
+      }),
+    )
+    .max(50),
+});
+
 /** Файл заявки Excel (.xlsx) в base64. */
 export const parseEntriesSchema = z.object({
   file: z.string().min(1).max(6_000_000).regex(/^[A-Za-z0-9+/]+=*$/, "Нужен файл в base64"),
@@ -261,6 +307,9 @@ export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
+export type SetNormativesInput = z.infer<typeof setNormativesSchema>;
+export type Official = z.infer<typeof officialSchema>;
+export type SetOfficialsInput = z.infer<typeof setOfficialsSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
 export type UpdateGymnastInput = z.infer<typeof updateGymnastSchema>;
 export type CreateFinalsInput = z.infer<typeof createFinalsSchema>;
@@ -302,6 +351,11 @@ export interface DrawView {
   started: boolean;
   /** Последняя жеребьёвка: случайная или ручная, когда (ISO). */
   last: { mode: "random" | "manual"; at: string } | null;
+}
+
+export interface NormativesView {
+  /** Уровни каждого разряда — от высшего к низшему. */
+  categories: { id: string; name: string; levels: { name: string; min: number }[] }[];
 }
 
 export interface RulesView {
@@ -416,6 +470,8 @@ export interface AllAroundRow {
   total: number;
   complete: boolean;
   apparatus: Partial<Record<(typeof APPARATUS)[number], ScoreView>>;
+  /** Выполненный разряд по нормативам разряда соревнований, если он задан и выполнен. */
+  earned?: string | null;
 }
 
 export interface TeamResultRow {

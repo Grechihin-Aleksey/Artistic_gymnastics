@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
-import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, type GymnastStatus } from "@ag/shared";
-import type { DrawView, FinalsView, InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
+import type { DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -222,6 +222,12 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         <button type="button" onClick={() => void open("start-list", "start-list.pdf", false)}>
           Стартовый протокол
         </button>
+        <button type="button" onClick={() => void open("bibs", "bibs.pdf", false)}>
+          Нагрудные номера
+        </button>
+        <button type="button" onClick={() => void open("officials", "officials.pdf", false)}>
+          Судейская коллегия
+        </button>
         {apparatusFor(discipline).map((a) => (
           <button key={a} type="button" onClick={() => void open(`sheet/${a}`, `sheet-${a}.pdf`, false)}>
             Ведомость: {APPARATUS_NAMES[a]}
@@ -256,6 +262,12 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         </button>
         <button type="button" onClick={() => void open("results.xlsx", "results.xlsx", false)}>
           Все итоги в Excel
+        </button>
+        <button type="button" onClick={() => void open("earned", "earned.pdf", false)}>
+          Выполнили разряды
+        </button>
+        <button type="button" onClick={() => void open("report", "report.pdf", false)}>
+          Итоговый отчёт
         </button>
       </div>
       <h2>Финалы на снарядах</h2>
@@ -1406,6 +1418,205 @@ export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, 
           </div>
         );
       })}
+    </section>
+  );
+}
+
+type OfficialDraft = { name: string; category: string; city: string };
+
+const officialDraft = (o: Official | null | undefined): OfficialDraft => ({
+  name: o?.name ?? "",
+  category: o?.category ?? "",
+  city: o?.city ?? "",
+});
+
+const officialBody = (d: OfficialDraft): Official | null =>
+  d.name.trim()
+    ? {
+        name: d.name.trim(),
+        ...(d.category.trim() ? { category: d.category.trim() } : {}),
+        ...(d.city.trim() ? { city: d.city.trim() } : {}),
+      }
+    : null;
+
+/** Главный судья и главный секретарь: их ФИО и категории печатаются под протоколами. */
+export function OfficialsPanel({
+  competitionId,
+  officials,
+  adminToken,
+  onError,
+  onSaved,
+}: Omit<Props, "discipline"> & {
+  officials: { chiefJudge: Official | null; chiefSecretary: Official | null } | undefined;
+  onSaved: () => void;
+}) {
+  const [judge, setJudge] = useState(officialDraft(officials?.chiefJudge));
+  const [secretary, setSecretary] = useState(officialDraft(officials?.chiefSecretary));
+  const [busy, setBusy] = useState(false);
+  const row = (title: string, d: OfficialDraft, set: (d: OfficialDraft) => void) => (
+    <div className="wide normatives-row">
+      <strong>{title}</strong>
+      <input aria-label={`${title}: ФИО`} placeholder="Фамилия И. О." value={d.name} onChange={(e) => set({ ...d, name: e.target.value })} />
+      <input
+        aria-label={`${title}: категория`}
+        placeholder="Категория"
+        list="official-categories"
+        className="narrow"
+        value={d.category}
+        onChange={(e) => set({ ...d, category: e.target.value })}
+      />
+      <input aria-label={`${title}: город`} placeholder="Город" value={d.city} onChange={(e) => set({ ...d, city: e.target.value })} />
+    </div>
+  );
+  const save = async () => {
+    setBusy(true);
+    try {
+      await apiRequest(`/competitions/${competitionId}/officials`, {
+        token: adminToken,
+        method: "PUT",
+        body: { chiefJudge: officialBody(judge), chiefSecretary: officialBody(secretary) },
+      });
+      onError(null);
+      onSaved();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="panel no-print officials">
+      <h2>Главная судейская коллегия</h2>
+      <p className="muted wide">Печатается в подписях под протоколами и на грамотах.</p>
+      {row("Главный судья", judge, setJudge)}
+      {row("Главный секретарь", secretary, setSecretary)}
+      <datalist id="official-categories">
+        {JUDGE_CATEGORIES.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
+        Сохранить
+      </button>
+    </section>
+  );
+}
+
+interface LevelDraft {
+  name: string;
+  min: string;
+}
+
+/**
+ * Нормативы разрядов: в каждом разряде соревнований — уровни с минимальной суммой
+ * многоборья. Протокол многоборья отмечает, кто какой разряд выполнил.
+ */
+export function NormativesPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<NormativesView | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, LevelDraft[]>>({});
+  const [busy, setBusy] = useState(false);
+
+  const apply = (next: NormativesView) => {
+    setView(next);
+    setDrafts(
+      Object.fromEntries(
+        next.categories.map((c) => [c.id, c.levels.map((l) => ({ name: l.name, min: l.min.toFixed(3) }))]),
+      ),
+    );
+  };
+
+  useEffect(() => {
+    apiRequest<NormativesView>(`/competitions/${competitionId}/normatives`)
+      .then(apply)
+      .catch((e: Error) => onError(e.message));
+  }, [competitionId, onError]);
+
+  if (!view || view.categories.length === 0) return null;
+
+  // Сумма многоборья: до трёх знаков после точки, запятая тоже подойдёт.
+  const parse = (l: LevelDraft) => {
+    const text = l.min.trim().replace(",", ".");
+    return { name: l.name.trim(), min: /^\d{1,3}(\.\d{1,3})?$/.test(text) ? Number(text) : null };
+  };
+  const invalid = Object.values(drafts)
+    .flat()
+    .some((l) => {
+      const p = parse(l);
+      return !p.name || p.min === null || p.min <= 0 || p.min > 200;
+    });
+  const setLevels = (id: string, levels: LevelDraft[]) => setDrafts((all) => ({ ...all, [id]: levels }));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body = {
+        categories: view.categories.map((c) => ({
+          categoryId: c.id,
+          levels: (drafts[c.id] ?? []).map((l) => {
+            const p = parse(l);
+            return { name: p.name, min: p.min! };
+          }),
+        })),
+      };
+      apply(await apiRequest<NormativesView>(`/competitions/${competitionId}/normatives`, { token: adminToken, method: "PUT", body }));
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel no-print normatives">
+      <h2>Нормативы разрядов</h2>
+      <p className="muted wide">
+        Минимальная сумма многоборья для выполнения разряда. Разряд выполняет тот, кто выступил на всех снарядах и
+        набрал не меньше норматива; если уровней несколько, засчитывается высший. Нормативы можно поправить в любой
+        момент, протоколы пересчитаются.
+      </p>
+      {view.categories.map((c) => {
+        const levels = drafts[c.id] ?? [];
+        return (
+          <div key={c.id} className="wide normatives-row">
+            <strong>{c.name}</strong>
+            {levels.map((l, i) => (
+              <span key={i} className="normatives-level">
+                <input
+                  aria-label={`Разряд ${c.name}: название уровня`}
+                  placeholder="Разряд"
+                  value={l.name}
+                  onChange={(e) => setLevels(c.id, levels.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                />
+                <span className="muted">от</span>
+                <input
+                  aria-label={`Разряд ${c.name}: сумма`}
+                  inputMode="decimal"
+                  placeholder="48.000"
+                  className="narrow"
+                  value={l.min}
+                  onChange={(e) => setLevels(c.id, levels.map((x, j) => (j === i ? { ...x, min: e.target.value } : x)))}
+                />
+                <button type="button" className="link danger" onClick={() => setLevels(c.id, levels.filter((_, j) => j !== i))}>
+                  убрать
+                </button>
+              </span>
+            ))}
+            {levels.length < 6 && (
+              <button
+                type="button"
+                className="link"
+                onClick={() => setLevels(c.id, [...levels, { name: levels.length === 0 ? c.name : "", min: "" }])}
+              >
+                + уровень
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" className="primary" disabled={busy || invalid} onClick={() => void save()}>
+        Сохранить нормативы
+      </button>
     </section>
   );
 }

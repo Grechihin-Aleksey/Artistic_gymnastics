@@ -21,6 +21,8 @@ import {
   importGymnastsSchema,
   parseEntriesSchema,
   setLogoSchema,
+  setNormativesSchema,
+  setOfficialsSchema,
   setRulesSchema,
   updateGymnastSchema,
   type CreateCompetitionInput,
@@ -30,6 +32,8 @@ import {
   type ImportGymnastsInput,
   type ParseEntriesInput,
   type SetLogoInput,
+  type SetNormativesInput,
+  type SetOfficialsInput,
   type SetRulesInput,
   type UpdateGymnastInput,
 } from "@ag/shared";
@@ -164,6 +168,27 @@ export class CompetitionsController {
   @RequireAccess("admin")
   setRules(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(setRulesSchema)) body: SetRulesInput) {
     return this.competitions.setRules(id, body);
+  }
+
+  /** Главный судья и главный секретарь для подписей в протоколах. */
+  @Put(":id/officials")
+  @RequireAccess("admin")
+  setOfficials(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(setOfficialsSchema)) body: SetOfficialsInput) {
+    return this.competitions.setOfficials(id, body);
+  }
+
+  @Get(":id/normatives")
+  getNormatives(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.getNormatives(id);
+  }
+
+  @Put(":id/normatives")
+  @RequireAccess("admin")
+  setNormatives(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(setNormativesSchema)) body: SetNormativesInput,
+  ) {
+    return this.competitions.setNormatives(id, body);
   }
 
   @Get(":id/categories")
