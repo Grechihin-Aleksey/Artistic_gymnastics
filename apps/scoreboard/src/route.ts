@@ -10,12 +10,22 @@ export interface Route {
   theme?: "light" | "dark";
   /** Вид club: клуб, участников которого показать. */
   club?: string | undefined;
+  /** Несколько соревнований в одной рамке (девочки и мальчики): переключатель над табло. */
+  group?: string[];
 }
 
-/** Адрес табло: #c=<id соревнования>&view=auto|now|aa|teams|docs|club|BB…[&cat=1][&club=Олимп][&embed=1&theme=light] */
+/**
+ * Адрес табло: #c=<id соревнования>&view=auto|now|aa|teams|docs|club|BB…[&cat=1][&club=Олимп][&embed=1&theme=light].
+ * В c можно перечислить несколько соревнований через запятую, i — номер показанного (с нуля).
+ */
 export function parseRoute(hash: string): Route {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
-  const route: Route = { competitionId: params.get("c"), view: params.get("view") ?? "auto" };
+  const ids = (params.get("c") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  const route: Route = { competitionId: ids[0] ?? null, view: params.get("view") ?? "auto" };
+  if (ids.length > 1) {
+    route.group = ids;
+    route.competitionId = ids[Number(params.get("i"))] ?? ids[0]!;
+  }
   const category = Number(params.get("cat"));
   if (Number.isInteger(category) && category > 0) route.category = category;
   if (params.get("embed") === "1") route.embed = true;
@@ -28,7 +38,11 @@ export function parseRoute(hash: string): Route {
 
 export function routeHash(route: Route): string {
   const params = new URLSearchParams();
-  if (route.competitionId) params.set("c", route.competitionId);
+  if (route.group) {
+    params.set("c", route.group.join(","));
+    const index = route.competitionId ? route.group.indexOf(route.competitionId) : -1;
+    if (index > 0) params.set("i", String(index));
+  } else if (route.competitionId) params.set("c", route.competitionId);
   if (route.view !== "auto") params.set("view", route.view);
   if (route.category) params.set("cat", String(route.category));
   if (route.embed) params.set("embed", "1");

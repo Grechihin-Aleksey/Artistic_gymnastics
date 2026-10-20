@@ -274,7 +274,13 @@ export function AdminScreen() {
         )}
         {ready && competition && (
           <>
-            <SitePanel key={`site-now-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+            <SitePanel
+              key={`site-now-${competition.id}`}
+              competitionId={competition.id}
+              competitions={competitions}
+              adminToken={adminToken}
+              onError={setError}
+            />
             <RulesPanel
               key={`rules-${competition.id}-${rosterVersion}`}
               competitionId={competition.id}
