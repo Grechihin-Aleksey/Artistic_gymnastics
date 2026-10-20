@@ -12,6 +12,7 @@ import {
   type Rules,
   type TeamResultRow,
 } from "@ag/shared";
+import { clubList, clubResults } from "./club";
 import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
 import { useBoard, type BoardData } from "./useBoard";
@@ -120,11 +121,12 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
               a.apparatus,
               SHORT[a.apparatus] ?? a.apparatus,
             ]),
+            ["club", "Мой клуб"],
             ...(protocols && protocols.files.length > 0 ? [["docs", "Протоколы"]] : []),
           ].map(([view, label]) => (
             <a
               key={view}
-              href={routeHash({ ...route, view: view! })}
+              href={routeHash(view === "club" ? { ...route, view: view! } : { ...route, view: view!, club: undefined })}
               className={route.view === view ? "active" : ""}
             >
               {label}
@@ -136,7 +138,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
           title={connected ? "На связи" : "Нет связи"}
         />
       </header>
-      {categories.length > 0 && route.view !== "auto" && route.view !== "now" && route.view !== "docs" && (
+      {categories.length > 0 && route.view !== "auto" && route.view !== "now" && route.view !== "docs" && route.view !== "club" && (
         <nav className="categories">
           {categories.map((c, i) => (
             <a
@@ -163,7 +165,9 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
       )}
 
       <main className="content">
-        {route.view === "docs" ? (
+        {route.view === "club" ? (
+          <ClubView data={data} route={route} />
+        ) : route.view === "docs" ? (
           <ProtocolsList competitionId={route.competitionId} index={protocols} />
         ) : data.ceremony && route.view === "auto" ? (
           <Podium ceremony={data.ceremony} />
@@ -172,6 +176,77 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
         )}
       </main>
     </div>
+  );
+}
+
+/**
+ * Мой клуб: тренер открывает ссылку с телефона и видит своих участников —
+ * места в многоборье и на снарядах, кто выступает прямо сейчас.
+ */
+function ClubView({ data, route }: { data: BoardData; route: Route & { competitionId: string } }) {
+  if (!route.club) {
+    const clubs = clubList(data);
+    return (
+      <section>
+        <h1>Выберите клуб</h1>
+        {clubs.length === 0 ? (
+          <Empty />
+        ) : (
+          <ul className="club-list">
+            {clubs.map((c) => (
+              <li key={c}>
+                <a href={routeHash({ ...route, club: c })}>{c}</a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  }
+  const people = clubResults(data, route.club);
+  const final = data.competition.phase === "FINAL";
+  return (
+    <section className="club">
+      <h1>{route.club}</h1>
+      <p className="muted">
+        <a href={routeHash({ ...route, club: undefined })}>Другой клуб</a> · места обновляются сами
+        {final && " · на снарядах — места в финале"}
+      </p>
+      {people.length === 0 ? (
+        <p className="muted center-text">У участников клуба пока нет оценок</p>
+      ) : (
+        <div className="club-grid">
+          {people.map((p) => (
+            <article key={p.gymnast.id} className="club-card">
+              <header>
+                <span className="bib">№{p.gymnast.bib}</span> <strong>{fullName(p.gymnast)}</strong>
+                {p.category && <span className="muted"> · {p.category}</span>}
+              </header>
+              {p.now && <div className="now-badge">Выступает: {APPARATUS_NAMES[p.now]}</div>}
+              {p.allAround && (
+                <div className="club-aa">
+                  Многоборье: <strong>{p.allAround.complete ? `${p.allAround.rank} место` : "идёт"}</strong>
+                  <span className="club-aa-total"> {fmt(p.allAround.total)}</span>
+                </div>
+              )}
+              {p.apparatus.length > 0 && (
+                <table>
+                  <tbody>
+                    {p.apparatus.map((a) => (
+                      <tr key={a.apparatus}>
+                        <td>{APPARATUS_NAMES[a.apparatus]}</td>
+                        <td className="num">{a.rank} место</td>
+                        <td className="num total">{fmt(a.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

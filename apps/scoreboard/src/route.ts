@@ -8,9 +8,11 @@ export interface Route {
   /** Табло встроено в страницу сайта. */
   embed?: boolean;
   theme?: "light" | "dark";
+  /** Вид club: клуб, участников которого показать. */
+  club?: string | undefined;
 }
 
-/** Адрес табло: #c=<id соревнования>&view=auto|now|aa|teams|BB…[&cat=1][&embed=1&theme=light] */
+/** Адрес табло: #c=<id соревнования>&view=auto|now|aa|teams|docs|club|BB…[&cat=1][&club=Олимп][&embed=1&theme=light] */
 export function parseRoute(hash: string): Route {
   const params = new URLSearchParams(hash.replace(/^#/, ""));
   const route: Route = { competitionId: params.get("c"), view: params.get("view") ?? "auto" };
@@ -19,6 +21,8 @@ export function parseRoute(hash: string): Route {
   if (params.get("embed") === "1") route.embed = true;
   const theme = params.get("theme");
   if (theme === "light" || theme === "dark") route.theme = theme;
+  const club = params.get("club")?.trim();
+  if (club) route.club = club;
   return route;
 }
 
@@ -29,6 +33,7 @@ export function routeHash(route: Route): string {
   if (route.category) params.set("cat", String(route.category));
   if (route.embed) params.set("embed", "1");
   if (route.theme) params.set("theme", route.theme);
+  if (route.club) params.set("club", route.club);
   return `#${params.toString()}`;
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isRelay, parseRoute, routeHash } from "./route";
 import { buildSlides, pageCount, pageRows } from "./slides";
+import { clubList, clubResults } from "./club";
 
 describe("адрес табло", () => {
   it("читает соревнование и вид, по умолчанию авто", () => {
@@ -59,5 +60,57 @@ describe("слайды большого экрана", () => {
     expect(pageCount(10)).toBe(1);
     expect(pageCount(11)).toBe(2);
     expect(pageRows([1, 2, 3, 4, 5], 1, 2)).toEqual([3, 4]);
+  });
+});
+
+describe("мой клуб", () => {
+  const g = (id: string, bib: number, lastName: string, club: string | null, categoryId: string | null = "k") => ({
+    id,
+    bib,
+    lastName,
+    firstName: "А",
+    club,
+    teamId: null,
+    categoryId,
+  });
+  const score = (total: number) => ({ d: 4, e: 8, neutral: 0, total });
+  const data = {
+    competition: { id: "c", name: "Кубок", discipline: "WAG" as const },
+    live: [
+      { apparatus: "BB" as const, current: { performanceId: "p", attempt: 1, gymnast: g("3", 3, "Волкова", "Олимп ") }, last: null },
+      { apparatus: "FX" as const, current: null, last: null },
+    ],
+    categories: [
+      {
+        id: "k",
+        name: "КМС",
+        allAround: [
+          { rank: 1, gymnast: g("2", 2, "Белова", "олимп"), total: 25, complete: true, apparatus: {} },
+          { rank: 2, gymnast: g("1", 1, "Абрамова", "Старт"), total: 24, complete: true, apparatus: {} },
+        ],
+        teams: [],
+        apparatus: {
+          BB: [{ rank: 1, gymnast: g("2", 2, "Белова", "олимп"), score: score(13) }],
+          FX: [{ rank: 2, gymnast: g("2", 2, "Белова", "олимп"), score: score(12) }],
+        },
+      },
+    ],
+    generatedAt: "2030-01-01T00:00:00Z",
+  };
+
+  it("находит клубы без учёта регистра и пробелов", () => {
+    expect(clubList(data)).toEqual(["олимп", "Старт"]);
+  });
+
+  it("собирает места участников клуба и кто сейчас на снаряде", () => {
+    const people = clubResults(data, "ОЛИМП");
+    expect(people.map((p) => [p.gymnast.lastName, p.allAround?.rank ?? null, p.apparatus.map((a) => `${a.apparatus}:${a.rank}`), p.now])).toEqual([
+      ["Белова", 1, ["BB:1", "FX:2"], null],
+      ["Волкова", null, [], "BB"],
+    ]);
+  });
+
+  it("клуб попадает в адрес", () => {
+    expect(parseRoute(routeHash({ competitionId: "abc", view: "club", club: "СШ №1" }))).toEqual({ competitionId: "abc", view: "club", club: "СШ №1" });
   });
 });

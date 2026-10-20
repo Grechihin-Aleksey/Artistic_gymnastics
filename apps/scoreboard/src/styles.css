@@ -422,3 +422,61 @@ nav.categories {
   color: var(--text);
   font-weight: 600;
 }
+
+/* Мой клуб: карточки участников, на телефоне — в одну колонку. */
+.club-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.5rem;
+}
+.club-list a {
+  display: block;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.club a {
+  color: var(--accent);
+}
+.club-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.club-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  min-width: 0;
+}
+.club-card table {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.club-card td {
+  padding: 0.25rem 0;
+}
+.club-aa {
+  margin-top: 0.4rem;
+}
+.club-aa-total {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.now-badge {
+  display: inline-block;
+  margin-top: 0.4rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+}
