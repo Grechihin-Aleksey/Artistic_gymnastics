@@ -36,9 +36,16 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | | | | Протоколы выше принимают `?category=<id>` (или `none` — участники без разряда) |
 | GET | `/competitions/:id/protocols/start-list` | секретариат | Стартовый протокол в PDF: порядок ротаций и смены в порядке выхода |
 | GET | `/competitions/:id/protocols/sheet/:apparatus` | секретариат | Судейская ведомость снаряда в PDF: участники по ротациям и пустые графы для оценок; `?stage=final` — финалисты в порядке выступления и запасные |
+| GET | `/competitions/:id/protocols/earned` | секретариат | Выполнившие разряды в PDF: по уровням, с датой рождения, клубом, тренером |
+| GET | `/competitions/:id/protocols/bibs` | секретариат | Нагрудные номера в PDF, по два на лист A4 |
+| GET | `/competitions/:id/protocols/officials` | секретариат | Состав судейской коллегии в PDF |
+| GET | `/competitions/:id/protocols/report` | секретариат | Итоговый отчёт в PDF: участники, клубы, призёры, разряды, судьи |
 | GET | `/competitions/:id/protocols/results.xlsx` | секретариат | Итоги в Excel: по каждому разряду многоборье, снаряды и команды |
 | GET | `/competitions/:id/protocols/diplomas` | секретариат | Грамоты призёрам в PDF: `?kind=all-around` (многоборье и команды) или `apparatus`, `?places=3` |
 | PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, фамилия, имя, отчество, дата рождения, клуб, город, тренер, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
+| GET | `/competitions/:id/normatives` | все | Нормативы разрядов: уровни и минимальная сумма многоборья по каждому разряду |
+| PUT | `/competitions/:id/normatives` | секретариат | Задать нормативы: `{ categories: [{ categoryId, levels: [{ name, min }] }] }` |
+| PUT | `/competitions/:id/officials` | секретариат | Главный судья и главный секретарь: `{ chiefJudge, chiefSecretary }`, у каждого `{ name, category?, city? }` или `null` |
 | GET | `/competitions/:id/finals` | все | Финалы на снарядах: этап (`QUAL`/`FINAL`), параметры отбора, финалисты по снарядам и разрядам в порядке выступления, запасные |
 | POST | `/competitions/:id/finals` | секретариат | Сформировать финалы по квалификации: `{ size, reserves, perClub }`; пока нет финальных оценок, можно пересобрать |
 | POST | `/competitions/:id/finals/phase` | секретариат | Переключить этап: `{ phase: "QUAL" \| "FINAL" }`; в финалах вызывают только финалистов |

@@ -11,7 +11,16 @@ import {
   shiftApparatus,
   type Apparatus,
 } from "@ag/scoring";
-import { APPARATUS_NAMES, GYMNAST_STATUS_NAMES, birthYear, scoreLabels, type GymnastView, type Stage } from "@ag/shared";
+import {
+  APPARATUS_NAMES,
+  GYMNAST_STATUS_NAMES,
+  birthYear,
+  officialLabel,
+  scoreLabels,
+  type GymnastView,
+  type Official,
+  type Stage,
+} from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   Content,
@@ -189,6 +198,8 @@ export class ProtocolsService {
         "Стоимость — базовая оценка разряда минус сбавки за требования. Сбавка — средняя сбавка судей E. НС — нейтральная сбавка.",
       );
     if (isVault) notes.push("Итог опорного прыжка — среднее двух прыжков.");
+    const panel = await this.panel(competitionId, apparatus);
+    if (panel) notes.push(`Судейская бригада: ${panel}.`);
     if (changedNote)
       notes.push(
         `* ${custom ? "Стоимость" : "Оценка D"} изменена апелляционным жюри по запросу тренера.`,
@@ -213,6 +224,10 @@ export class ProtocolsService {
     const rows = await this.results.allAround(competitionId, scope);
     const program = apparatusFor(competition.discipline);
     const teamNames = await this.teamNames(competitionId);
+    // Столбец выполненного разряда — если в разряде заданы нормативы.
+    const withNormatives = (
+      await this.db.select().from(categories).where(eq(categories.competitionId, competitionId))
+    ).some((c) => c.normatives.length > 0 && (scope === undefined || c.id === scope));
     const body: TableCell[][] = [
       [
         th("Место"),
@@ -220,6 +235,7 @@ export class ProtocolsService {
         th("Участник"),
         ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")),
         th("Сумма", "right"),
+        ...(withNormatives ? [th("Вып. разряд")] : []),
       ],
     ];
     for (const row of rows) {
@@ -249,6 +265,7 @@ export class ProtocolsService {
           alignment: "right",
           bold: true,
         },
+        ...(withNormatives ? [{ text: row.earned ?? "", style: "small" } as TableCell] : []),
       ]);
     }
     const notes = ["Опорный прыжок в многоборье — оценка за первый прыжок."];
@@ -287,6 +304,282 @@ export class ProtocolsService {
         ],
       ),
     );
+  }
+
+  /** Бригада снаряда одной строкой: «Старший судья — Иванова А. А. (1К); D1 — …; E1 — …». */
+  private async panel(competitionId: string, apparatus: Apparatus): Promise<string> {
+    const rows = await this.db
+      .select()
+      .from(judges)
+      .where(and(eq(judges.competitionId, competitionId), eq(judges.apparatus, apparatus)))
+      .orderBy(asc(judges.role), asc(judges.seat));
+    const order = { SUPERVISOR: 0, D: 1, E: 2 } as const;
+    return rows
+      .sort((a, b) => order[a.role] - order[b.role] || a.seat - b.seat)
+      .map((j) => `${j.role === "SUPERVISOR" ? "Старший судья" : `${j.role}${j.seat}`} — ${officialLabel(j)}`)
+      .join("; ");
+  }
+
+  /**
+   * Нагрудные номера: по два на лист A4 (каждый — половина листа), крупный номер,
+   * фамилия и имя, клуб и разряд. Не явившихся и снятых не печатаем.
+   */
+  async bibs(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const { people, categoryNames } = await this.roster(competitionId);
+    const list = people.filter((g) => g.status === "ACTIVE").sort((a, b) => a.bib - b.bib);
+    const card = (g: (typeof list)[number]): Content => ({
+      stack: [
+        ...(competition.logo ? [{ image: competition.logo, fit: [60, 60], alignment: "center" } as Content] : []),
+        { text: competition.name, fontSize: 12, alignment: "center", color: "#555" },
+        { text: String(g.bib), fontSize: 150, bold: true, alignment: "center", margin: [0, 6, 0, 0] },
+        { text: `${g.lastName} ${g.firstName}`, fontSize: 22, bold: true, alignment: "center" },
+        {
+          text: [g.club, g.city, g.categoryId ? categoryNames.get(g.categoryId) : null].filter(Boolean).join(" · "),
+          fontSize: 13,
+          alignment: "center",
+          color: "#444",
+        },
+      ],
+    });
+    // Каждый номер — в своей половине листа, на своём месте независимо от длины строк.
+    const placed = (g: (typeof list)[number], half: number): Content => ({
+      table: { widths: [535], body: [[card(g)]] },
+      layout: "noBorders",
+      absolutePosition: { x: 30, y: half === 0 ? 40 : 461 },
+    });
+    const content: Content[] =
+      list.length === 0
+        ? [{ text: "Участников пока нет." }]
+        : list.flatMap((g, i) => [
+            ...(i > 0 && i % 2 === 0 ? [{ text: "", pageBreak: "before" } as Content] : []),
+            placed(g, i % 2),
+          ]);
+    return renderPdf({
+      pageSize: "A4",
+      pageOrientation: "portrait",
+      pageMargins: [30, 30, 30, 30],
+      info: { title: `${competition.name}. Нагрудные номера` },
+      defaultStyle: { font: "Roboto" },
+      // Линия отреза посередине листа.
+      background: () => ({
+        canvas: [{ type: "line", x1: 20, y1: 421, x2: 575, y2: 421, dash: { length: 4 }, lineWidth: 0.5, lineColor: "#999" }],
+      }),
+      content,
+    });
+  }
+
+  /**
+   * Итоговый отчёт для федерации или управления: участники по разрядам и клубам,
+   * призёры, выполнившие разряды, судьи по категориям.
+   */
+  async report(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const { people, teamNames } = await this.roster(competitionId);
+    const categoryList = await this.results.categoryList(competitionId);
+    const judgeRows = await this.db.select().from(judges).where(eq(judges.competitionId, competitionId));
+    const started = people.filter((g) => g.status !== "DNS");
+    const content: Content[] = [];
+
+    const count = (n: number) => String(n);
+    content.push(
+      { text: "Участники", style: "section" },
+      table(
+        [
+          [th("Разряд"), th("Заявлено", "right"), th("Выступили", "right"), th("Неявка", "right"), th("Снятие", "right")],
+          ...categoryList.map((c): TableCell[] => {
+            const list = people.filter((g) => g.categoryId === c.id);
+            return [
+              c.name || "Все",
+              { text: count(list.length), alignment: "right" },
+              { text: count(list.filter((g) => g.status !== "DNS").length), alignment: "right" },
+              { text: count(list.filter((g) => g.status === "DNS").length), alignment: "right" },
+              { text: count(list.filter((g) => g.status === "WITHDRAWN").length), alignment: "right" },
+            ];
+          }),
+          [
+            { text: "Итого", bold: true },
+            { text: count(people.length), alignment: "right", bold: true },
+            { text: count(started.length), alignment: "right", bold: true },
+            { text: count(people.filter((g) => g.status === "DNS").length), alignment: "right", bold: true },
+            { text: count(people.filter((g) => g.status === "WITHDRAWN").length), alignment: "right", bold: true },
+          ],
+        ],
+        0,
+      ),
+    );
+
+    // Клубы и города: сколько выступило от каждого.
+    const clubs = new Map<string, number>();
+    for (const g of started) {
+      const key = [g.club, g.city].filter(Boolean).join(", ") || (g.teamId ? (teamNames.get(g.teamId) ?? "") : "") || "Без клуба";
+      clubs.set(key, (clubs.get(key) ?? 0) + 1);
+    }
+    content.push(
+      { text: `Клубы и организации: ${clubs.size}`, style: "section" },
+      table(
+        [
+          [th("Клуб, город"), th("Участников", "right")],
+          ...[...clubs]
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))
+            .map(([name, n]): TableCell[] => [name, { text: count(n), alignment: "right" }]),
+        ],
+        0,
+      ),
+    );
+
+    // Призёры многоборья и команд по разрядам.
+    const medal: TableCell[][] = [[th("Разряд"), th("Зачёт"), th("Место"), th("Участник или команда"), th("Сумма", "right")]];
+    let earnedTotal = 0;
+    const earnedBy = new Map<string, number>();
+    for (const c of categoryList) {
+      const aa = await this.results.allAround(competitionId, c.id);
+      for (const r of aa) {
+        if (r.earned) {
+          earnedTotal++;
+          earnedBy.set(r.earned, (earnedBy.get(r.earned) ?? 0) + 1);
+        }
+        if (r.rank > 3 || !r.complete) continue;
+        medal.push([c.name, "многоборье", String(r.rank), fullName(r.gymnast), { text: fmt(r.total), alignment: "right" }]);
+      }
+      const teams = await this.results.teams(competitionId, c.id).catch((e: unknown) => {
+        if (e instanceof UnprocessableEntityException) return [];
+        throw e;
+      });
+      for (const t of teams) {
+        if (t.rank > 3) continue;
+        medal.push([c.name, "команды", String(t.rank), t.team.name ?? "", { text: fmt(t.total), alignment: "right" }]);
+      }
+    }
+    content.push({ text: "Призёры", style: "section" }, medal.length > 1 ? table(medal, 3) : emptyNote());
+
+    if (earnedTotal > 0) {
+      content.push(
+        { text: `Выполнили спортивные разряды: ${earnedTotal}`, style: "section" },
+        table(
+          [[th("Разряд"), th("Человек", "right")], ...[...earnedBy].map(([name, n]): TableCell[] => [name, { text: count(n), alignment: "right" }])],
+          0,
+        ),
+      );
+    }
+
+    // Судьи: одного человека в разных бригадах считаем один раз.
+    const judgesByName = new Map<string, string>();
+    for (const j of judgeRows) judgesByName.set(j.name.trim().toLowerCase(), j.category ?? "");
+    for (const o of [competition.officials.chiefJudge, competition.officials.chiefSecretary]) {
+      if (o) judgesByName.set(o.name.trim().toLowerCase(), o.category ?? "");
+    }
+    const byCategory = new Map<string, number>();
+    for (const category of judgesByName.values()) {
+      const key = category || "без категории";
+      byCategory.set(key, (byCategory.get(key) ?? 0) + 1);
+    }
+    content.push(
+      { text: `Судьи: ${judgesByName.size}`, style: "section" },
+      judgesByName.size === 0
+        ? emptyNote()
+        : table(
+            [[th("Категория"), th("Человек", "right")], ...[...byCategory].map(([k, n]): TableCell[] => [k, { text: count(n), alignment: "right" }])],
+            0,
+          ),
+    );
+    return renderPdf(this.document(competition, "Итоговый отчёт", content));
+  }
+
+  /** Состав судейской коллегии: главные судья и секретарь, бригады по снарядам. */
+  async officials(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const rows = await this.db
+      .select()
+      .from(judges)
+      .where(eq(judges.competitionId, competitionId))
+      .orderBy(asc(judges.seat));
+    const order = { SUPERVISOR: 0, D: 1, E: 2 } as const;
+    const line = (role: string, o: { name: string; category?: string | null; city?: string | null }): TableCell[] => [
+      role,
+      { text: o.name, bold: true },
+      o.category ?? "",
+      o.city ?? "",
+    ];
+    const head = (): TableCell[] => [th("Должность"), th("Фамилия, инициалы"), th("Категория"), th("Город")];
+    const content: Content[] = [];
+    const { chiefJudge, chiefSecretary } = competition.officials;
+    if (chiefJudge || chiefSecretary) {
+      content.push(
+        { text: "Главная судейская коллегия", style: "section" },
+        table(
+          [
+            head(),
+            ...(chiefJudge ? [line("Главный судья", chiefJudge)] : []),
+            ...(chiefSecretary ? [line("Главный секретарь", chiefSecretary)] : []),
+          ],
+          1,
+        ),
+      );
+    }
+    for (const apparatus of apparatusFor(competition.discipline)) {
+      const panel = rows
+        .filter((j) => j.apparatus === apparatus)
+        .sort((a, b) => order[a.role] - order[b.role] || a.seat - b.seat);
+      if (panel.length === 0) continue;
+      content.push(
+        { text: APPARATUS_NAMES[apparatus]!, style: "section" },
+        table(
+          [
+            head(),
+            ...panel.map((j) =>
+              line(j.role === "SUPERVISOR" ? "Старший судья" : `Судья ${j.role}${j.seat}`, j),
+            ),
+          ],
+          1,
+        ),
+      );
+    }
+    if (content.length === 0) {
+      content.push({ text: "Судьи ещё не заведены.", style: "note" });
+    }
+    return renderPdf(this.document(competition, "Состав судейской коллегии", content));
+  }
+
+  /**
+   * Выполнившие разряды — список для приказа о присвоении: по уровням,
+   * с датой рождения, клубом, городом и тренером.
+   */
+  async earned(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const { people, categoryNames } = await this.roster(competitionId);
+    const byId = new Map(people.map((g) => [g.id, g]));
+    const rows = (await this.results.allAround(competitionId)).filter((r) => r.earned);
+    const levels = [...new Set(rows.map((r) => r.earned!))];
+    const content: Content[] = [];
+    for (const level of levels) {
+      const list = rows
+        .filter((r) => r.earned === level)
+        .map((r) => ({ row: r, g: byId.get(r.gymnast.id)! }))
+        .sort((a, b) => a.g.lastName.localeCompare(b.g.lastName, "ru") || a.g.firstName.localeCompare(b.g.firstName, "ru"));
+      content.push(
+        { text: `${level} — ${list.length} чел.`, style: "section" },
+        table([
+          [th("п/п"), th("Фамилия, имя, отчество"), th("Дата рожд."), th("Клуб, город"), th("Тренер"), th("Разряд соревнований"), th("Сумма", "right")],
+          ...list.map(({ row, g }, i): TableCell[] => [
+            String(i + 1),
+            { text: [g.lastName, g.firstName, g.middleName].filter(Boolean).join(" "), bold: true },
+            g.birthDate ?? "",
+            [g.club, g.city].filter(Boolean).join(", "),
+            g.coach ?? "",
+            g.categoryId ? (categoryNames.get(g.categoryId) ?? "") : "",
+            { text: fmt(row.total), alignment: "right" },
+          ]),
+        ], 1),
+      );
+    }
+    if (content.length === 0) {
+      content.push({
+        text: "Никто пока не выполнил разряд. Проверьте, что нормативы заданы и многоборье пройдено на всех снарядах.",
+        style: "note",
+      });
+    }
+    return renderPdf(this.document(competition, "Выполнили спортивные разряды", content));
   }
 
   async teams(
@@ -843,10 +1136,13 @@ export class ProtocolsService {
       name: string;
       discipline: keyof typeof DISCIPLINE_NAMES;
       logo?: string | null;
+      officials?: { chiefJudge: Official | null; chiefSecretary: Official | null };
     },
     title: string,
     content: Content[],
   ): TDocumentDefinitions {
+    const sign = (role: string, o: Official | null | undefined) =>
+      `${role} ______________________${o ? ` ${officialLabel(o)}` : ""}`;
     const heading: Content[] = [
       { text: competition.name, style: "competition" },
       {
@@ -884,8 +1180,8 @@ export class ProtocolsService {
         {
           margin: [0, 28, 0, 0],
           columns: [
-            { text: "Главный судья ______________________" },
-            { text: "Главный секретарь ______________________" },
+            { text: sign("Главный судья", competition.officials?.chiefJudge) },
+            { text: sign("Главный секретарь", competition.officials?.chiefSecretary) },
           ],
         },
       ],

@@ -1,0 +1,1 @@
+ALTER TABLE "categories" ADD COLUMN "normatives" jsonb DEFAULT '[]'::jsonb NOT NULL;

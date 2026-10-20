@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
-import type { JudgeRole, Rules } from "@ag/shared";
+import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
 import {
   DrawPanel,
   FinalsPanel,
+  NormativesPanel,
+  OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
   ProtocolsPanel,
@@ -23,6 +25,7 @@ interface Competition {
   teamPerApparatus: number;
   teamCounting: number;
   rules: Rules;
+  officials?: { chiefJudge: Official | null; chiefSecretary: Official | null };
 }
 
 interface Judge {
@@ -31,6 +34,8 @@ interface Judge {
   apparatus: string;
   role: JudgeRole;
   seat: number;
+  /** Судейская категория: ВК, 1К, 2К, 3К, ЮС. */
+  category?: string | null;
   /** Планшет снаряда: старший судья вводит оценки всей бригады. */
   enterAllMarks: boolean;
 }
@@ -101,6 +106,7 @@ export function AdminScreen() {
         method: "POST",
         body: {
           name: String(form.get("name")),
+          ...(String(form.get("category") ?? "").trim() ? { category: String(form.get("category")).trim() } : {}),
           apparatus: String(form.get("apparatus")),
           role: String(form.get("role")),
           seat: Number(form.get("seat")),
@@ -195,6 +201,15 @@ export function AdminScreen() {
       )}
 
       {competition && adminToken && (
+        <NormativesPanel
+          key={`normatives-${competition.id}-${rosterVersion}`}
+          competitionId={competition.id}
+          adminToken={adminToken}
+          onError={setError}
+        />
+      )}
+
+      {competition && adminToken && (
         <DrawPanel
           key={`draw-${competition.id}-${rosterVersion}`}
           competitionId={competition.id}
@@ -228,6 +243,15 @@ export function AdminScreen() {
             ФИО судьи
             <input name="name" required />
           </label>
+          <label>
+            Категория
+            <input name="category" list="judge-categories" placeholder="ВК, 1К, 2К, 3К, ЮС" />
+          </label>
+          <datalist id="judge-categories">
+            {JUDGE_CATEGORIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
           <label>
             Снаряд
             <select name="apparatus">
@@ -272,7 +296,10 @@ export function AdminScreen() {
                   {judgeLabel(j.role, j.seat)}
                   {j.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
                 </td>
-                <td>{j.name}</td>
+                <td>
+                  {j.name}
+                  {j.category && <span className="muted"> · {j.category}</span>}
+                </td>
                 <td>
                   <button type="button" className="link" onClick={() => void reissue(j)}>
                     Новый QR-код
@@ -286,6 +313,14 @@ export function AdminScreen() {
 
       {competition && adminToken && (
         <>
+          <OfficialsPanel
+            key={`officials-${competition.id}`}
+            competitionId={competition.id}
+            officials={competition.officials}
+            adminToken={adminToken}
+            onError={setError}
+            onSaved={() => void loadCompetitions(competition.id)}
+          />
           <ProtocolsPanel
             competitionId={competition.id}
             discipline={competition.discipline}

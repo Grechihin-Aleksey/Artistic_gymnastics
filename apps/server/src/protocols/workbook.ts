@@ -72,7 +72,18 @@ export async function resultsWorkbook(
 
   for (const c of categories) {
     const aa = sheet(`${prefix(c)}многоборье`);
-    header(aa, ["Место", "№", "Фамилия", "Имя", "Клуб", "Команда", ...program.map((a) => APPARATUS_NAMES[a]!), "Сумма"]);
+    const earned = c.allAround.some((r) => r.earned);
+    header(aa, [
+      "Место",
+      "№",
+      "Фамилия",
+      "Имя",
+      "Клуб",
+      "Команда",
+      ...program.map((a) => APPARATUS_NAMES[a]!),
+      "Сумма",
+      ...(earned ? ["Выполнил разряд"] : []),
+    ]);
     for (const r of c.allAround) {
       aa.addRow([
         r.rank,
@@ -83,6 +94,7 @@ export async function resultsWorkbook(
         team(r.gymnast.teamId),
         ...program.map((a) => r.apparatus[a as keyof typeof r.apparatus]?.total ?? null),
         r.total,
+        ...(earned ? [r.earned ?? ""] : []),
       ]);
     }
     for (let i = 7; i <= 7 + program.length; i++) aa.getColumn(i).numFmt = score;
