@@ -19,6 +19,7 @@ import {
   addDeduction,
   judgeLabel,
   kindName,
+  expandScore,
   parseScore,
 } from "./labels";
 import { MarkQueue, type Rejected, type SendOutcome } from "./markQueue";
@@ -330,11 +331,12 @@ function MarkInput({
   onSubmit: (value: number) => void;
 }) {
   const [text, setText] = useState("");
-  const value = parseScore(text, kind);
+  const shown = expandScore(text);
+  const value = parseScore(shown, kind);
   return (
     <section className="mark">
       <h2>{kindName(kind, rules)}</h2>
-      <div className={value === null && text ? "display invalid" : "display"}>{text || "—"}</div>
+      <div className={value === null && text ? "display invalid" : "display"}>{shown || "—"}</div>
       <DeductionChips deductions={deductions} onAdd={(v) => setText((t) => addDeduction(t, v))} />
       <Keypad value={text} onChange={setText} />
       <button
@@ -467,8 +469,8 @@ function TabletScoring({
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // На планшете с русской раскладкой вместо точки часто ставят запятую.
-  const read = (text: string, kind: MarkKind) => parseScore(text.trim().replace(",", "."), kind);
+  // Запятая вместо точки и быстрый ввод без точки: «95» — это 9.50.
+  const read = (text: string, kind: MarkKind) => parseScore(expandScore(text), kind);
   // По своим правилам пустое поле требований — сбавок нет.
   const dValue = custom && !d.trim() ? 0 : read(d, "D");
   const eValues = e.map((x) => read(x, "E"));
@@ -530,6 +532,8 @@ function TabletScoring({
         autoFocus={autoFocus}
         onKeyDown={next}
         onChange={(ev) => onChange(ev.target.value)}
+        // Уходя из поля, судья видит оценку так, как она уйдёт в протокол.
+        onBlur={() => valid && value.trim() && onChange(expandScore(value))}
       />
     </label>
   );
@@ -539,7 +543,7 @@ function TabletScoring({
       <h2>Оценки бригады</h2>
       <div className="tablet-grid">
         {field(
-          custom ? `Требования${dJudge ? ` · ${dJudge.name}` : ""}` : `D · ${dJudge!.name}`,
+          custom ? `Сбавка за требования${dJudge ? ` · ${dJudge.name}` : ""}` : `D · ${dJudge!.name}`,
           d,
           setD,
           dValue !== null,

@@ -21,7 +21,7 @@ export function kindName(kind: MarkKind, rules: Rules | undefined): string {
 
 /** Прибавляет сбавку из списка к набранному значению; результат в формате поля ввода. */
 export function addDeduction(text: string, value: number): string {
-  const current = Number(text.trim().replace(",", ".")) || 0;
+  const current = Number(expandScore(text)) || 0;
   return String(Math.round((current + value) * 1000) / 1000);
 }
 
@@ -33,6 +33,20 @@ export const KINDS_BY_ROLE: Record<JudgeRole, MarkKind[]> = {
 
 export function judgeLabel(role: JudgeRole, seat: number): string {
   return role === "SUPERVISOR" ? "СС" : `${role}${seat}`;
+}
+
+/**
+ * Быстрый ввод без точки: первая цифра — целые, остальные — сотые и тысячные.
+ * «9» → «9.00», «95» → «9.50», «955» → «9.55», «05» → «0.50». С точкой или запятой
+ * число остаётся как набрано, только дополняется до сотых: «10.» → «10.00».
+ */
+export function expandScore(input: string): string {
+  const text = input.trim().replace(",", ".");
+  const short = /^(\d)(\d{0,3})$/.exec(text);
+  if (short) return `${short[1]}.${short[2]!.padEnd(2, "0")}`;
+  const full = /^(\d{1,2})\.(\d{0,3})$/.exec(text);
+  if (full) return `${full[1]}.${full[2]!.padEnd(2, "0")}`;
+  return text;
 }
 
 /** Проверка ввода с клавиатуры: до двух цифр целой части и до трёх после точки. */
