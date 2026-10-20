@@ -160,6 +160,17 @@ describe("ретранслятор", () => {
     expect(sent.status).toBe(201);
     const { id } = (await sent.json()) as { id: string };
 
+    // Клуб видит статус по номеру; решение приходит из зала.
+    const status = async () => (await (await fetch(`${base}/api/entries/${ID}/${id}?k=${KEY}`)).json()) as { status: string; note: string | null };
+    expect(await status()).toMatchObject({ id, club: "Олимп", count: 1, status: "NEW", note: null });
+    expect((await fetch(`${base}/api/entries/${ID}/${id}?k=wrong-key-0123456789abc`)).status).toBe(404);
+    expect((await fetch(`${base}/api/entries/${ID}/0b9b6a52-0000-4f0e-9a4f-2f1d3c4b5a69?k=${KEY}`)).status).toBe(404);
+    await publish({ key: KEY, call, decisions: { [id]: { status: "REJECTED", note: "Нет допуска", decidedAt: "2030-01-01T00:00:00Z" } } });
+    expect(await status()).toMatchObject({ status: "REJECTED", note: "Нет допуска" });
+    // Публикация без решений их не стирает.
+    await publish({ key: KEY, call });
+    expect((await status()).status).toBe("REJECTED");
+
     const hall = (token = TOKEN) => fetch(`${base}/entries/${ID}`, { headers: { authorization: `Bearer ${token}` } });
     expect((await hall("wrong-token")).status).toBe(401);
     expect(await (await hall()).json()).toEqual({ entries: [expect.objectContaining({ ...entry, id })] });

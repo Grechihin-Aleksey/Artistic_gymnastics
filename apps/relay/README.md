@@ -24,7 +24,7 @@ docker run -d --restart unless-stopped -p 8080:8080 \
 | Метод | Путь | Кто | Что делает |
 | --- | --- | --- | --- |
 | POST | `/ingest/:id` | сервер в зале, `Authorization: Bearer <RELAY_TOKEN>` | Принимает снимок `{ snapshot, approved }`. Снимок старше уже сохранённого игнорируется |
-| PUT | `/entries/:id` | сервер в зале | Опубликовать приём онлайн-заявок: `{ key, call: { name, discipline, open, deadline, categories } }` |
+| PUT | `/entries/:id` | сервер в зале | Опубликовать приём онлайн-заявок: `{ key, call: { name, discipline, open, deadline, categories }, decisions? }`; `decisions` — решения по заявкам для клубов |
 | PUT | `/protocols/:id` | сервер в зале | Выложить протоколы `{ files: [{ file, title, group, data }] }` (data в base64), заменив прежние |
 | DELETE | `/protocols/:id` | сервер в зале | Снять протоколы |
 | GET | `/api/competitions/:id/protocols` | все | Список выложенных протоколов |
@@ -32,6 +32,7 @@ docker run -d --restart unless-stopped -p 8080:8080 \
 | GET | `/entries/:id` | сервер в зале | Все присланные заявки |
 | GET | `/api/entries/:id?k=<ключ>` | клуб по ссылке | Сведения о приёме: название, срок, разряды |
 | POST | `/api/entries/:id?k=<ключ>` | клуб по ссылке | Подать заявку: клуб, город, контакт, участники (до 100). Закрытый приём или вышедший срок — 409 |
+| GET | `/api/entries/:id/:entryId?k=<ключ>` | клуб по ссылке | Статус заявки: на рассмотрении, принята или отклонена с причиной |
 | GET | `/entry/` | клубы | Форма заявки; ссылку с ключом выдаёт секретариат |
 | GET | `/api/competitions` | все | Соревнования, по которым есть результаты, свежие сверху |
 | GET | `/api/competitions/:id` | все | Последний снимок результатов |

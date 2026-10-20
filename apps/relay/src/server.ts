@@ -34,6 +34,12 @@ const publishEntriesSchema = z.object({
     deadline: z.string().nullable(),
     categories: z.array(z.string().max(100)).max(100),
   }),
+  decisions: z
+    .record(
+      z.string(),
+      z.object({ status: z.enum(["ACCEPTED", "REJECTED"]), note: z.string().max(500).nullable(), decidedAt: z.string() }),
+    )
+    .optional(),
 });
 
 /** Протоколы соревнования одной отправкой: PDF в base64. */
@@ -137,7 +143,7 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
     if (req.method === "GET") return json(res, 200, { entries: entries.entries(id) });
     const parsed = publishEntriesSchema.safeParse(JSON.parse(await readBody(req)));
     if (!parsed.success) throw new HttpError(400, "Неверный формат приёма заявок");
-    await entries.publish(id, parsed.data.call, parsed.data.key);
+    await entries.publish(id, parsed.data.call, parsed.data.key, parsed.data.decisions);
     json(res, 200, { ok: true });
   }
 
@@ -154,9 +160,15 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
   }
 
   /** Клуб открывает ссылку (GET) и отправляет заявку (POST). */
-  async function clubEntry(req: IncomingMessage, res: ServerResponse, id: string, key: string) {
+  async function clubEntry(req: IncomingMessage, res: ServerResponse, id: string, key: string, entryId?: string) {
     const call = entries.call(id, key);
     if (!call) throw new HttpError(404, "Ссылка на заявку недействительна: уточните её у организаторов");
+    if (entryId) {
+      if (req.method !== "GET") throw new HttpError(405, "Метод не поддерживается");
+      const status = UUID.test(entryId) ? entries.status(id, entryId.toLowerCase()) : undefined;
+      if (!status) throw new HttpError(404, "Заявка с таким номером не найдена");
+      return json(res, 200, status);
+    }
     if (req.method !== "POST") return json(res, 200, call);
     if (!call.open || (call.deadline && Date.parse(call.deadline) < Date.now())) {
       throw new HttpError(409, "Приём заявок закрыт");
@@ -242,9 +254,9 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
       return hallProtocols(req, res, m[1]!.toLowerCase());
     }
-    if ((m = path.match(/^\/api\/entries\/([^/]+)$/)) && (req.method === "GET" || req.method === "POST")) {
+    if ((m = path.match(/^\/api\/entries\/([^/]+)(?:\/([^/]+))?$/)) && (req.method === "GET" || req.method === "POST")) {
       if (!UUID.test(m[1]!)) throw new HttpError(404, "Не найдено");
-      return clubEntry(req, res, m[1]!.toLowerCase(), url.searchParams.get("k") ?? "");
+      return clubEntry(req, res, m[1]!.toLowerCase(), url.searchParams.get("k") ?? "", m[2]);
     }
     if (req.method !== "GET" && req.method !== "HEAD") throw new HttpError(405, "Метод не поддерживается");
 

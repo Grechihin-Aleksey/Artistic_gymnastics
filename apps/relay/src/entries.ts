@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { OnlineEntry, OnlineEntryCall, ReceivedOnlineEntry } from "@ag/shared";
+import type { OnlineEntry, OnlineEntryCall, OnlineEntryDecision, OnlineEntryStatusView, ReceivedOnlineEntry } from "@ag/shared";
 
 /** Больше заявок на одно соревнование не принимаем: защита от засорения. */
 export const MAX_ENTRIES = 500;
@@ -11,6 +11,8 @@ interface Saved {
   call: OnlineEntryCall;
   key: string;
   entries: ReceivedOnlineEntry[];
+  /** Решения зала по заявкам, по id заявки. */
+  decisions?: Record<string, OnlineEntryDecision>;
 }
 
 /**
@@ -40,9 +42,26 @@ export class EntryStore {
     }
   }
 
-  async publish(id: string, call: OnlineEntryCall, key: string): Promise<void> {
+  async publish(id: string, call: OnlineEntryCall, key: string, decisions?: Record<string, OnlineEntryDecision>): Promise<void> {
     const current = this.items.get(id);
-    await this.save({ id, call, key, entries: current?.entries ?? [] });
+    await this.save({ id, call, key, entries: current?.entries ?? [], decisions: decisions ?? current?.decisions ?? {} });
+  }
+
+  /** Состояние заявки для клуба по её номеру. */
+  status(id: string, entryId: string): OnlineEntryStatusView | undefined {
+    const saved = this.items.get(id);
+    const entry = saved?.entries.find((e) => e.id === entryId);
+    if (!entry) return undefined;
+    const decision = saved!.decisions?.[entryId];
+    return {
+      id: entry.id,
+      club: entry.club,
+      count: entry.rows.length,
+      receivedAt: entry.receivedAt,
+      status: decision?.status ?? "NEW",
+      note: decision?.note ?? null,
+      decidedAt: decision?.decidedAt ?? null,
+    };
   }
 
   /** Приём по ссылке: только с верным ключом. */

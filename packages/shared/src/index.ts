@@ -193,6 +193,24 @@ export interface OnlineEntryCall {
   categories: string[];
 }
 
+/** Решение секретариата по заявке: клуб видит его по номеру заявки. */
+export interface OnlineEntryDecision {
+  status: "ACCEPTED" | "REJECTED";
+  note: string | null;
+  decidedAt: string;
+}
+
+/** Что клуб видит по своей заявке. */
+export interface OnlineEntryStatusView {
+  id: string;
+  club: string;
+  count: number;
+  receivedAt: string;
+  status: OnlineEntryStatus;
+  note: string | null;
+  decidedAt: string | null;
+}
+
 /** Заявка, принятая ретранслятором: id и время получения ставит он. */
 export type OnlineEntry = z.infer<typeof onlineEntrySchema>;
 export interface ReceivedOnlineEntry extends OnlineEntry {
