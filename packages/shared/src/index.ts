@@ -104,6 +104,14 @@ export const importGymnastsSchema = z.object({
     .max(1000),
 });
 
+/** Логотип соревнования: картинка PNG или JPEG как data URL, не больше ~1,5 МБ. */
+export const setLogoSchema = z.object({
+  dataUrl: z
+    .string()
+    .max(2_000_000)
+    .regex(/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+=*$/, "Нужна картинка PNG или JPEG"),
+});
+
 export const setShiftStartSchema = z.object({ startApparatus: apparatusSchema });
 
 export const setRotationSchema = z.object({ rotation: z.number().int().min(0).max(20) });
@@ -131,6 +139,7 @@ export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
+export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;

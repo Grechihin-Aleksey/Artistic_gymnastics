@@ -33,6 +33,17 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/competitions/:id/protocols/apparatus/:apparatus` | секретариат | Протокол снаряда в PDF: D, сбавки каждого судьи E (крайние в скобках), E, нейтральные сбавки, итог; у прыжка обе попытки |
 | GET | `/competitions/:id/protocols/all-around` | секретариат | Протокол многоборья в PDF |
 | GET | `/competitions/:id/protocols/teams` | секретариат | Командный протокол в PDF с оценками участников, не вошедшие в зачёт — в скобках |
+| | | | Протоколы выше принимают `?category=<id>` (или `none` — участники без разряда) |
+| GET | `/competitions/:id/protocols/start-list` | секретариат | Стартовый протокол в PDF: порядок ротаций и смены в порядке выхода |
+| GET | `/competitions/:id/protocols/sheet/:apparatus` | секретариат | Судейская ведомость снаряда в PDF: участники по ротациям и пустые графы для оценок |
+| GET | `/competitions/:id/protocols/results.xlsx` | секретариат | Итоги в Excel: по каждому разряду многоборье, снаряды и команды |
+| PUT | `/competitions/:id/logo` | секретариат | Логотип для шапки протоколов: `{ dataUrl }`, PNG или JPEG |
+| DELETE | `/competitions/:id/logo` | секретариат | Убрать логотип |
+| GET | `/competitions/:id/logo` | все | Сам логотип картинкой |
+| GET | `/competitions/:id/rotation` | все | Смены в текущей ротации |
+| POST | `/competitions/:id/rotation` | секретариат | Перевести на ротацию `{ rotation }` (с нуля) |
+| PUT | `/competitions/:id/shifts/:number` | секретариат | Стартовый снаряд смены `{ startApparatus }` |
+| POST | `/performances/:id/tablet-score` | планшет снаряда | Оценки всей бригады `{ d, e[], neutral? }` и утверждение |
 | GET | `/competitions/:id/results/snapshot` | все | Всё для табло одним ответом: «сейчас», многоборье, команды, снаряды. Этот же снимок уходит на сайт |
 | GET | `/competitions/:id/results/apparatus/:apparatus?vault=average` | все | Места на снаряде |
 | GET | `/competitions/:id/results/all-around` | все | Многоборье |

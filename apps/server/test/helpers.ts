@@ -1,10 +1,12 @@
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Client } from "pg";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import type { AppConfig } from "../src/config";
+import { configureApp } from "../src/setup";
 
 export const ADMIN_TOKEN = "test-admin-token-0123456789";
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/ag_test";
@@ -16,10 +18,11 @@ export async function startApp(extra: Partial<AppConfig> = {}): Promise<{ app: I
   await client.query("DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;");
   await client.end();
 
-  const app = await NestFactory.create(
+  const app = await NestFactory.create<NestExpressApplication>(
     AppModule.forConfig({ databaseUrl: DATABASE_URL, adminToken: ADMIN_TOKEN, port: 0, ...extra }),
     { logger: false },
   );
+  configureApp(app);
   await app.listen(0, "127.0.0.1");
   return { app, url: await app.getUrl() };
 }
@@ -31,5 +34,6 @@ export function api(app: INestApplication, token?: string) {
     get: (path: string) => auth(request(server).get(path)),
     post: (path: string, body?: object) => auth(request(server).post(path)).send(body ?? {}),
     put: (path: string, body?: object) => auth(request(server).put(path)).send(body ?? {}),
+    delete: (path: string) => auth(request(server).delete(path)),
   };
 }

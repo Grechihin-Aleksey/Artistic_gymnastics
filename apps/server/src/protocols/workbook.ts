@@ -1,0 +1,99 @@
+import ExcelJS from "exceljs";
+import { APPARATUS_NAMES, type AllAroundRow, type ApparatusResultRow, type TeamResultRow } from "@ag/shared";
+
+export interface WorkbookCategory {
+  name: string;
+  allAround: AllAroundRow[];
+  teams: TeamResultRow[];
+  apparatus: { code: string; rows: ApparatusResultRow[] }[];
+}
+
+const SHEET_FORBIDDEN = /[[\]:*?/\\]/g;
+
+/** Итоги соревнования в Excel: по разряду лист многоборья, лист снарядов и лист команд. */
+export async function resultsWorkbook(
+  competitionName: string,
+  program: readonly string[],
+  categories: WorkbookCategory[],
+  teamNames: Map<string, string>,
+): Promise<Buffer> {
+  const book = new ExcelJS.Workbook();
+  book.creator = "Artistic gymnastics";
+  const used = new Set<string>();
+  const sheet = (title: string) => {
+    let name = title.replace(SHEET_FORBIDDEN, " ").slice(0, 31).trim();
+    for (let i = 2; used.has(name.toLowerCase()); i++) name = `${title.slice(0, 27)} (${i})`;
+    used.add(name.toLowerCase());
+    const ws = book.addWorksheet(name, { views: [{ state: "frozen", ySplit: 2 }] });
+    ws.addRow([`${competitionName}. ${title}`]).font = { bold: true, size: 13 };
+    return ws;
+  };
+  const header = (ws: ExcelJS.Worksheet, cells: string[]) => {
+    const row = ws.addRow(cells);
+    row.font = { bold: true };
+    row.eachCell((c) => {
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEEEEE" } };
+      c.border = { bottom: { style: "thin" } };
+    });
+  };
+  const score = "0.000";
+  const prefix = (c: WorkbookCategory) => (c.name ? `${c.name} — ` : "");
+  const team = (id: string | null) => (id ? (teamNames.get(id) ?? "") : "");
+
+  for (const c of categories) {
+    const aa = sheet(`${prefix(c)}многоборье`);
+    header(aa, ["Место", "№", "Фамилия", "Имя", "Клуб", "Команда", ...program.map((a) => APPARATUS_NAMES[a]!), "Сумма"]);
+    for (const r of c.allAround) {
+      aa.addRow([
+        r.rank,
+        r.gymnast.bib,
+        r.gymnast.lastName,
+        r.gymnast.firstName,
+        r.gymnast.club ?? "",
+        team(r.gymnast.teamId),
+        ...program.map((a) => r.apparatus[a as keyof typeof r.apparatus]?.total ?? null),
+        r.total,
+      ]);
+    }
+    for (let i = 7; i <= 7 + program.length; i++) aa.getColumn(i).numFmt = score;
+
+    const app = sheet(`${prefix(c)}снаряды`);
+    for (const { code, rows } of c.apparatus) {
+      app.addRow([APPARATUS_NAMES[code]]).font = { bold: true };
+      header(app, ["Место", "№", "Фамилия", "Имя", "Клуб", "D", "E", "Сбавка", "Итог"]);
+      for (const r of rows) {
+        app.addRow([
+          r.rank,
+          r.gymnast.bib,
+          r.gymnast.lastName,
+          r.gymnast.firstName,
+          r.gymnast.club ?? "",
+          r.score.d,
+          r.score.e,
+          r.score.neutral || null,
+          r.score.total,
+        ]);
+      }
+      app.addRow([]);
+    }
+    for (let i = 6; i <= 9; i++) app.getColumn(i).numFmt = score;
+
+    if (c.teams.length > 0) {
+      const teams = sheet(`${prefix(c)}команды`);
+      header(teams, ["Место", "Команда", ...c.teams[0]!.apparatus.map((a) => APPARATUS_NAMES[a.apparatus]!), "Сумма"]);
+      for (const t of c.teams) teams.addRow([t.rank, t.team.name ?? "", ...t.apparatus.map((a) => a.total), t.total]);
+      for (let i = 3; i <= 3 + c.teams[0]!.apparatus.length; i++) teams.getColumn(i).numFmt = score;
+    }
+  }
+
+  for (const ws of book.worksheets) {
+    ws.columns.forEach((col, i) => {
+      let width = 6;
+      col.eachCell?.({ includeEmpty: false }, (cell, row) => {
+        if (row > 1) width = Math.max(width, String(cell.value ?? "").length + 2);
+      });
+      col.width = Math.min(i === 2 ? 24 : 30, width);
+    });
+  }
+  return Buffer.from(await book.xlsx.writeBuffer());
+}

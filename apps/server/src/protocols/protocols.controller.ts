@@ -33,6 +33,33 @@ export class ProtocolsController {
     send(res, await this.protocols.allAround(id, category), "protocol-all-around.pdf");
   }
 
+  @Get("results.xlsx")
+  async workbook(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    const xlsx = await this.protocols.workbook(id);
+    res
+      .status(200)
+      .set({
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": 'attachment; filename="results.xlsx"',
+        "Cache-Control": "no-store",
+      })
+      .end(xlsx);
+  }
+
+  @Get("start-list")
+  async startList(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    send(res, await this.protocols.startList(id), "start-list.pdf");
+  }
+
+  @Get("sheet/:apparatus")
+  async sheet(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("apparatus", new ZodPipe(apparatusSchema)) apparatus: Apparatus,
+    @Res() res: Response,
+  ) {
+    send(res, await this.protocols.apparatusSheet(id, apparatus), `sheet-${apparatus}.pdf`);
+  }
+
   @Get("teams")
   async teams(
     @Param("id", ParseUUIDPipe) id: string,

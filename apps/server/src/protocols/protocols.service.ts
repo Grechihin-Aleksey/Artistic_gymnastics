@@ -1,16 +1,43 @@
-import { Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
-import { apparatusFor, defaultDrop, fromPoints, type Apparatus } from "@ag/scoring";
+import {
+  Inject,
+  Injectable,
+  UnprocessableEntityException,
+} from "@nestjs/common";
+import {
+  apparatusFor,
+  defaultDrop,
+  fromPoints,
+  rotationOrder,
+  shiftApparatus,
+  type Apparatus,
+} from "@ag/scoring";
 import { APPARATUS_NAMES, type GymnastView } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
+import type {
+  Content,
+  TableCell,
+  TDocumentDefinitions,
+} from "pdfmake/interfaces";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { categories, inquiries, judges, marks, performances, teams } from "../db/schema";
+import {
+  categories,
+  gymnasts,
+  inquiries,
+  judges,
+  marks,
+  performances,
+  shifts,
+  teams,
+} from "../db/schema";
 import { ResultsService, type CategoryScope } from "../results/results.service";
 import { renderPdf } from "./pdf";
+import { resultsWorkbook } from "./workbook";
 
 const DISCIPLINE_NAMES = { MAG: "мужчины", WAG: "женщины" } as const;
 const fmt = (n: number) => n.toFixed(3);
+const printed = () =>
+  new Date().toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
 const fullName = (g: GymnastView) => `${g.lastName} ${g.firstName}`;
 
 /**
@@ -19,9 +46,15 @@ const fullName = (g: GymnastView) => `${g.lastName} ${g.firstName}`;
  */
 export function droppedDeductions(values: readonly number[]): boolean[] {
   const drop = defaultDrop(values.length);
-  const order = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v || a.i - b.i);
+  const order = values
+    .map((v, i) => ({ v, i }))
+    .sort((a, b) => a.v - b.v || a.i - b.i);
   const dropped = new Array<boolean>(values.length).fill(false);
-  for (const { i } of [...order.slice(0, drop), ...order.slice(order.length - drop)]) dropped[i] = true;
+  for (const { i } of [
+    ...order.slice(0, drop),
+    ...order.slice(order.length - drop),
+  ])
+    dropped[i] = true;
   return dropped;
 }
 
@@ -45,14 +78,29 @@ export class ProtocolsService {
     private readonly results: ResultsService,
   ) {}
 
-  async apparatus(competitionId: string, apparatus: Apparatus, scope: CategoryScope = undefined): Promise<Buffer> {
+  async apparatus(
+    competitionId: string,
+    apparatus: Apparatus,
+    scope: CategoryScope = undefined,
+  ): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
-    const rows = await this.results.apparatus(competitionId, apparatus, "average", scope);
+    const rows = await this.results.apparatus(
+      competitionId,
+      apparatus,
+      "average",
+      scope,
+    );
     const eSeats = (
       await this.db
         .select({ seat: judges.seat })
         .from(judges)
-        .where(and(eq(judges.competitionId, competitionId), eq(judges.apparatus, apparatus), eq(judges.role, "E")))
+        .where(
+          and(
+            eq(judges.competitionId, competitionId),
+            eq(judges.apparatus, apparatus),
+            eq(judges.role, "E"),
+          ),
+        )
         .orderBy(asc(judges.seat))
     ).map((j) => j.seat);
     const attempts = await this.attempts(competitionId, apparatus, eSeats);
@@ -78,49 +126,87 @@ export class ProtocolsService {
       list.forEach((a, index) => {
         const first = index === 0;
         const span = first ? list.length : 1;
-        const dropped = droppedDeductions(a.eMarks.filter((m): m is number => m !== null));
+        const dropped = droppedDeductions(
+          a.eMarks.filter((m): m is number => m !== null),
+        );
         let k = 0;
         const eCells = a.eMarks.map((m): TableCell => {
           if (m === null) return { text: "—", alignment: "right" };
           const isDropped = dropped[k++];
-          return { text: isDropped ? `(${fmt(m)})` : fmt(m), alignment: "right", color: isDropped ? "#777" : undefined };
+          return {
+            text: isDropped ? `(${fmt(m)})` : fmt(m),
+            alignment: "right",
+            color: isDropped ? "#777" : undefined,
+          };
         });
         if (a.dChanged) changedNote = true;
         body.push([
           first ? { text: String(row.rank), bold: true, rowSpan: span } : {},
           first ? { text: String(row.gymnast.bib), rowSpan: span } : {},
-          first ? { stack: gymnastStack(row.gymnast, teamNames), rowSpan: span } : {},
-          ...(isVault ? [{ text: String(a.attempt), alignment: "center" } as TableCell] : []),
+          first
+            ? { stack: gymnastStack(row.gymnast, teamNames), rowSpan: span }
+            : {},
+          ...(isVault
+            ? [{ text: String(a.attempt), alignment: "center" } as TableCell]
+            : []),
           { text: fmt(a.d) + (a.dChanged ? " *" : ""), alignment: "right" },
           ...eCells,
           { text: fmt(a.e), alignment: "right" },
-          { text: a.neutral > 0 ? `−${fmt(a.neutral)}` : "", alignment: "right" },
+          {
+            text: a.neutral > 0 ? `−${fmt(a.neutral)}` : "",
+            alignment: "right",
+          },
           { text: fmt(a.total), alignment: "right", bold: !isVault },
           ...(isVault
-            ? [first ? ({ text: fmt(row.score.total), alignment: "right", bold: true, rowSpan: span } as TableCell) : {}]
+            ? [
+                first
+                  ? ({
+                      text: fmt(row.score.total),
+                      alignment: "right",
+                      bold: true,
+                      rowSpan: span,
+                    } as TableCell)
+                  : {},
+              ]
             : []),
         ]);
       });
     }
 
-    const notes: string[] = ["В скобках — крайние сбавки судей E, не вошедшие в среднее."];
+    const notes: string[] = [
+      "В скобках — крайние сбавки судей E, не вошедшие в среднее.",
+    ];
     if (isVault) notes.push("Итог опорного прыжка — среднее двух прыжков.");
-    if (changedNote) notes.push("* Оценка D изменена апелляционным жюри по запросу тренера.");
+    if (changedNote)
+      notes.push("* Оценка D изменена апелляционным жюри по запросу тренера.");
     return renderPdf(
-      this.document(competition, `Протокол: ${APPARATUS_NAMES[apparatus]}${await this.categoryTitle(competitionId, scope)}`, [
-        rows.length === 0 ? emptyNote() : table(body),
-        ...notes.map((n) => ({ text: n, style: "note" }) as Content),
-      ]),
+      this.document(
+        competition,
+        `Протокол: ${APPARATUS_NAMES[apparatus]}${await this.categoryTitle(competitionId, scope)}`,
+        [
+          rows.length === 0 ? emptyNote() : table(body),
+          ...notes.map((n) => ({ text: n, style: "note" }) as Content),
+        ],
+      ),
     );
   }
 
-  async allAround(competitionId: string, scope: CategoryScope = undefined): Promise<Buffer> {
+  async allAround(
+    competitionId: string,
+    scope: CategoryScope = undefined,
+  ): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
     const rows = await this.results.allAround(competitionId, scope);
     const program = apparatusFor(competition.discipline);
     const teamNames = await this.teamNames(competitionId);
     const body: TableCell[][] = [
-      [th("Место"), th("№"), th("Участник"), ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")), th("Сумма", "right")],
+      [
+        th("Место"),
+        th("№"),
+        th("Участник"),
+        ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")),
+        th("Сумма", "right"),
+      ],
     ];
     for (const row of rows) {
       body.push([
@@ -133,24 +219,40 @@ export class ProtocolsService {
           return {
             stack: [
               { text: fmt(s.total), alignment: "right" },
-              { text: `D ${fmt(s.d)} · E ${fmt(s.e)}${s.neutral > 0 ? ` · −${fmt(s.neutral)}` : ""}`, style: "small", alignment: "right" },
+              {
+                text: `D ${fmt(s.d)} · E ${fmt(s.e)}${s.neutral > 0 ? ` · −${fmt(s.neutral)}` : ""}`,
+                style: "small",
+                alignment: "right",
+              },
             ],
           };
         }),
-        { text: fmt(row.total) + (row.complete ? "" : " ¹"), alignment: "right", bold: true },
+        {
+          text: fmt(row.total) + (row.complete ? "" : " ¹"),
+          alignment: "right",
+          bold: true,
+        },
       ]);
     }
     const notes = ["Опорный прыжок в многоборье — оценка за первый прыжок."];
-    if (rows.some((r) => !r.complete)) notes.push("¹ Выступил(а) не на всех снарядах.");
+    if (rows.some((r) => !r.complete))
+      notes.push("¹ Выступил(а) не на всех снарядах.");
     return renderPdf(
-      this.document(competition, `Протокол: личное многоборье${await this.categoryTitle(competitionId, scope)}`, [
-        rows.length === 0 ? emptyNote() : table(body),
-        ...notes.map((n) => ({ text: n, style: "note" }) as Content),
-      ]),
+      this.document(
+        competition,
+        `Протокол: личное многоборье${await this.categoryTitle(competitionId, scope)}`,
+        [
+          rows.length === 0 ? emptyNote() : table(body),
+          ...notes.map((n) => ({ text: n, style: "note" }) as Content),
+        ],
+      ),
     );
   }
 
-  async teams(competitionId: string, scope: CategoryScope = undefined): Promise<Buffer> {
+  async teams(
+    competitionId: string,
+    scope: CategoryScope = undefined,
+  ): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
     const program = apparatusFor(competition.discipline);
     let ranked;
@@ -158,13 +260,20 @@ export class ProtocolsService {
       ranked = await this.results.teams(competitionId, scope);
     } catch (e) {
       if (e instanceof UnprocessableEntityException) {
-        throw new UnprocessableEntityException(`Командный протокол не собрать: ${e.message}`);
+        throw new UnprocessableEntityException(
+          `Командный протокол не собрать: ${e.message}`,
+        );
       }
       throw e;
     }
     const people = await this.results.allAround(competitionId, scope);
     const body: TableCell[][] = [
-      [th("Место"), th("Команда / участник"), ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")), th("Сумма", "right")],
+      [
+        th("Место"),
+        th("Команда / участник"),
+        ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")),
+        th("Сумма", "right"),
+      ],
     ];
     for (const team of ranked) {
       body.push([
@@ -172,7 +281,11 @@ export class ProtocolsService {
         { text: team.team.name ?? "", bold: true },
         ...program.map((a): TableCell => {
           const t = team.apparatus.find((x) => x.apparatus === a);
-          return { text: t ? fmt(t.total) : "—", alignment: "right", bold: true };
+          return {
+            text: t ? fmt(t.total) : "—",
+            alignment: "right",
+            bold: true,
+          };
         }),
         { text: fmt(team.total), alignment: "right", bold: true },
       ]);
@@ -186,8 +299,15 @@ export class ProtocolsService {
           ...program.map((a): TableCell => {
             const s = m.apparatus[a];
             if (!s) return { text: "", style: "member" };
-            const counted = team.apparatus.find((x) => x.apparatus === a)?.counted.includes(m.gymnast.id);
-            return { text: counted ? fmt(s.total) : `(${fmt(s.total)})`, alignment: "right", style: "member", color: counted ? undefined : "#777" };
+            const counted = team.apparatus
+              .find((x) => x.apparatus === a)
+              ?.counted.includes(m.gymnast.id);
+            return {
+              text: counted ? fmt(s.total) : `(${fmt(s.total)})`,
+              alignment: "right",
+              style: "member",
+              color: counted ? undefined : "#777",
+            };
           }),
           "",
         ]);
@@ -195,16 +315,30 @@ export class ProtocolsService {
     }
     const format = `${competition.teamRoster}-${competition.teamPerApparatus}-${competition.teamCounting}`;
     return renderPdf(
-      this.document(competition, `Протокол: командное первенство${await this.categoryTitle(competitionId, scope)}`, [
-        ranked.length === 0 ? emptyNote() : table(body, 1),
-        { text: `Формат ${format}: в составе до ${competition.teamRoster}, на снаряде выступают до ${competition.teamPerApparatus}, в зачёт идут ${competition.teamCounting} лучших оценки.`, style: "note" },
-        { text: "В скобках — оценки, не вошедшие в зачёт команды.", style: "note" },
-      ]),
+      this.document(
+        competition,
+        `Протокол: командное первенство${await this.categoryTitle(competitionId, scope)}`,
+        [
+          ranked.length === 0 ? emptyNote() : table(body, 1),
+          {
+            text: `Формат ${format}: в составе до ${competition.teamRoster}, на снаряде выступают до ${competition.teamPerApparatus}, в зачёт идут ${competition.teamCounting} лучших оценки.`,
+            style: "note",
+          },
+          {
+            text: "В скобках — оценки, не вошедшие в зачёт команды.",
+            style: "note",
+          },
+        ],
+      ),
     );
   }
 
   /** Утверждённые выступления на снаряде с оценками каждого судьи E. */
-  private async attempts(competitionId: string, apparatus: Apparatus, eSeats: number[]) {
+  private async attempts(
+    competitionId: string,
+    apparatus: Apparatus,
+    eSeats: number[],
+  ) {
     const perfs = await this.db
       .select()
       .from(performances)
@@ -220,14 +354,23 @@ export class ProtocolsService {
     const [markRows, changed] = ids.length
       ? await Promise.all([
           this.db
-            .select({ performanceId: marks.performanceId, value: marks.value, seat: judges.seat })
+            .select({
+              performanceId: marks.performanceId,
+              value: marks.value,
+              seat: judges.seat,
+            })
             .from(marks)
             .innerJoin(judges, eq(judges.id, marks.judgeId))
             .where(and(inArray(marks.performanceId, ids), eq(marks.kind, "E"))),
           this.db
             .select({ performanceId: inquiries.performanceId })
             .from(inquiries)
-            .where(and(inArray(inquiries.performanceId, ids), eq(inquiries.status, "ACCEPTED"))),
+            .where(
+              and(
+                inArray(inquiries.performanceId, ids),
+                eq(inquiries.status, "ACCEPTED"),
+              ),
+            ),
         ])
       : [[], []];
     const changedIds = new Set(changed.map((c) => c.performanceId));
@@ -253,28 +396,310 @@ export class ProtocolsService {
     return byGymnast;
   }
 
+  /** Итоги по всем разрядам в Excel. */
+  async workbook(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const program = apparatusFor(competition.discipline);
+    const list = await this.results.categoryList(competitionId);
+    const categories = await Promise.all(
+      list.map(async (c) => ({
+        name: c.name,
+        allAround: await this.results.allAround(competitionId, c.id),
+        teams: await this.results
+          .teams(competitionId, c.id)
+          .catch((e: unknown) => {
+            if (e instanceof UnprocessableEntityException) return [];
+            throw e;
+          }),
+        apparatus: await Promise.all(
+          program.map(async (code) => ({
+            code,
+            rows: await this.results.apparatus(
+              competitionId,
+              code,
+              "average",
+              c.id,
+            ),
+          })),
+        ),
+      })),
+    );
+    return resultsWorkbook(
+      competition.name,
+      program,
+      categories,
+      await this.teamNames(competitionId),
+    );
+  }
+
+  /**
+   * Стартовый протокол: порядок ротаций и состав смен в порядке выхода.
+   * Без смен — участники по разрядам и номерам.
+   */
+  async startList(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const { people, shiftRows, categoryNames, teamNames } =
+      await this.roster(competitionId);
+    const program = apparatusFor(competition.discipline);
+    const content: Content[] = [];
+    const row = (g: (typeof people)[number], i: number): TableCell[] => [
+      String(i + 1),
+      String(g.bib),
+      { text: `${g.lastName} ${g.firstName}`, bold: true },
+      g.club ?? "",
+      g.teamId ? (teamNames.get(g.teamId) ?? "") : "",
+      g.categoryId ? (categoryNames.get(g.categoryId) ?? "") : "",
+    ];
+    const header = (): TableCell[] => [
+      th("п/п"),
+      th("№"),
+      th("Участник"),
+      th("Клуб"),
+      th("Команда"),
+      th("Разряд"),
+    ];
+
+    if (shiftRows.length > 0) {
+      content.push(
+        { text: "Порядок ротаций", style: "section" },
+        table(
+          [
+            [th("Ротация"), ...shiftRows.map((s) => th(`Смена ${s.number}`))],
+            ...program.map((_, r) => [
+              String(r + 1),
+              ...shiftRows.map(
+                (s) =>
+                  APPARATUS_NAMES[
+                    shiftApparatus(competition.discipline, s.startApparatus, r)
+                  ]!,
+              ),
+            ]),
+          ],
+          -1,
+        ),
+      );
+      for (const s of shiftRows) {
+        const members = people.filter((g) => g.shift === s.number);
+        content.push(
+          {
+            text: `Смена ${s.number} · начинает: ${APPARATUS_NAMES[s.startApparatus]}`,
+            style: "section",
+          },
+          members.length === 0
+            ? emptyList()
+            : table([header(), ...members.map(row)]),
+        );
+      }
+      const unassigned = people.filter((g) => g.shift === null);
+      if (unassigned.length > 0) {
+        content.push(
+          { text: "Без смены", style: "section" },
+          table([header(), ...unassigned.map(row)]),
+        );
+      }
+      content.push({
+        text: "Порядок выхода указан для первой ротации. По правилам FIG после каждой ротации первый участник смены выступает последним.",
+        style: "note",
+      });
+    } else {
+      const groups = new Map<string | null, typeof people>();
+      for (const g of [...people].sort((a, b) => a.bib - b.bib)) {
+        groups.set(g.categoryId, [...(groups.get(g.categoryId) ?? []), g]);
+      }
+      for (const [categoryId, members] of groups) {
+        if (groups.size > 1 || categoryId) {
+          content.push({
+            text: categoryId ? categoryNames.get(categoryId)! : "Без разряда",
+            style: "section",
+          });
+        }
+        content.push(table([header(), ...members.map(row)]));
+      }
+      if (people.length === 0) content.push(emptyList());
+    }
+    return renderPdf(this.document(competition, "Стартовый протокол", content));
+  }
+
+  /**
+   * Судейская ведомость снаряда: участники в порядке выхода по ротациям
+   * и пустые графы для оценок — запасной вариант на бумаге.
+   */
+  async apparatusSheet(
+    competitionId: string,
+    apparatus: Apparatus,
+  ): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    if (!apparatusFor(competition.discipline).includes(apparatus)) {
+      throw new UnprocessableEntityException(
+        `Снаряда ${apparatus} нет в программе ${competition.discipline}`,
+      );
+    }
+    const { people, shiftRows, categoryNames } =
+      await this.roster(competitionId);
+    const eCount =
+      (
+        await this.db
+          .select({ id: judges.id })
+          .from(judges)
+          .where(
+            and(
+              eq(judges.competitionId, competitionId),
+              eq(judges.apparatus, apparatus),
+              eq(judges.role, "E"),
+            ),
+          )
+      ).length || 5;
+    const header = (): TableCell[] => [
+      th("п/п"),
+      th("№"),
+      th("Участник"),
+      th("D", "right"),
+      ...Array.from({ length: eCount }, (_, i) => th(`E${i + 1}`, "right")),
+      th("НС", "right"),
+      th("Итог", "right"),
+    ];
+    const fixed: Record<number, number> = {
+      3: 38,
+      [4 + eCount]: 34,
+      [5 + eCount]: 44,
+    };
+    for (let i = 0; i < eCount; i++) fixed[4 + i] = 34;
+    const blank = Array.from({ length: eCount + 3 }, () => "");
+    const sheet = (list: typeof people) =>
+      table(
+        [
+          header(),
+          ...list.map((g, i): TableCell[] => [
+            String(i + 1),
+            String(g.bib),
+            {
+              stack: [
+                { text: `${g.lastName} ${g.firstName}`, bold: true },
+                ...(g.categoryId
+                  ? [
+                      {
+                        text: categoryNames.get(g.categoryId) ?? "",
+                        style: "small",
+                      },
+                    ]
+                  : []),
+              ],
+            },
+            ...blank,
+          ]),
+        ],
+        2,
+        fixed,
+      );
+
+    const content: Content[] = [];
+    if (shiftRows.length > 0) {
+      apparatusFor(competition.discipline).forEach((_, r) => {
+        for (const s of shiftRows) {
+          if (
+            shiftApparatus(competition.discipline, s.startApparatus, r) !==
+            apparatus
+          )
+            continue;
+          const members = rotationOrder(
+            people.filter((g) => g.shift === s.number),
+            r,
+          );
+          content.push(
+            { text: `Ротация ${r + 1} · смена ${s.number}`, style: "section" },
+            sheet(members),
+          );
+        }
+      });
+      if (content.length === 0) content.push(emptyList());
+    } else {
+      content.push(
+        people.length === 0
+          ? emptyList()
+          : sheet([...people].sort((a, b) => a.bib - b.bib)),
+      );
+    }
+    content.push({ text: "НС — нейтральная сбавка.", style: "note" });
+    return renderPdf(
+      this.document(
+        competition,
+        `Судейская ведомость: ${APPARATUS_NAMES[apparatus]}`,
+        content,
+      ),
+    );
+  }
+
+  /** Участники в порядке выхода, смены, названия разрядов и команд. */
+  private async roster(competitionId: string) {
+    const [people, shiftRows, categoryRows, teamNames] = await Promise.all([
+      this.db
+        .select()
+        .from(gymnasts)
+        .where(eq(gymnasts.competitionId, competitionId))
+        .orderBy(asc(gymnasts.startOrder), asc(gymnasts.bib)),
+      this.db
+        .select()
+        .from(shifts)
+        .where(eq(shifts.competitionId, competitionId))
+        .orderBy(asc(shifts.number)),
+      this.db
+        .select()
+        .from(categories)
+        .where(eq(categories.competitionId, competitionId)),
+      this.teamNames(competitionId),
+    ]);
+    return {
+      people,
+      shiftRows,
+      categoryNames: new Map(categoryRows.map((c) => [c.id, c.name])),
+      teamNames,
+    };
+  }
+
   /** Приписка к заголовку протокола с названием разряда. */
-  private async categoryTitle(competitionId: string, scope: CategoryScope): Promise<string> {
+  private async categoryTitle(
+    competitionId: string,
+    scope: CategoryScope,
+  ): Promise<string> {
     if (scope === undefined) return "";
     if (scope === null) return " · без разряда";
     const [row] = await this.db
       .select({ name: categories.name })
       .from(categories)
-      .where(and(eq(categories.id, scope), eq(categories.competitionId, competitionId)));
+      .where(
+        and(
+          eq(categories.id, scope),
+          eq(categories.competitionId, competitionId),
+        ),
+      );
     return row ? ` · ${row.name}` : "";
   }
 
   private async teamNames(competitionId: string) {
-    const rows = await this.db.select().from(teams).where(eq(teams.competitionId, competitionId));
+    const rows = await this.db
+      .select()
+      .from(teams)
+      .where(eq(teams.competitionId, competitionId));
     return new Map(rows.map((t) => [t.id, t.name]));
   }
 
   private document(
-    competition: { name: string; discipline: keyof typeof DISCIPLINE_NAMES },
+    competition: {
+      name: string;
+      discipline: keyof typeof DISCIPLINE_NAMES;
+      logo?: string | null;
+    },
     title: string,
     content: Content[],
   ): TDocumentDefinitions {
-    const printed = new Date().toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
+    const heading: Content[] = [
+      { text: competition.name, style: "competition" },
+      {
+        text: `${title} · ${DISCIPLINE_NAMES[competition.discipline]}`,
+        style: "title",
+      },
+      { text: `Сформирован ${printed()}`, style: "meta" },
+    ];
     return {
       pageSize: "A4",
       pageOrientation: "landscape",
@@ -289,11 +714,17 @@ export class ProtocolsService {
         small: { fontSize: 7, color: "#555" },
         member: { fontSize: 8 },
         note: { fontSize: 8, color: "#555", margin: [0, 6, 0, 0] },
+        section: { fontSize: 11, bold: true, margin: [0, 12, 0, 4] },
       },
       content: [
-        { text: competition.name, style: "competition" },
-        { text: `${title} · ${DISCIPLINE_NAMES[competition.discipline]}`, style: "title" },
-        { text: `Сформирован ${printed}`, style: "meta" },
+        competition.logo
+          ? {
+              columns: [
+                { image: competition.logo, fit: [64, 64], width: 76 },
+                { stack: heading, width: "*" },
+              ],
+            }
+          : { stack: heading },
         ...content,
         {
           margin: [0, 28, 0, 0],
@@ -318,19 +749,33 @@ function th(text: string, alignment: "left" | "right" = "left"): TableCell {
   return { text, style: "th", alignment };
 }
 
-function gymnastStack(g: GymnastView, teamNames?: Map<string, string>): Content[] {
-  const club = [g.club, g.teamId ? teamNames?.get(g.teamId) : undefined].filter(Boolean);
+function gymnastStack(
+  g: GymnastView,
+  teamNames?: Map<string, string>,
+): Content[] {
+  const club = [g.club, g.teamId ? teamNames?.get(g.teamId) : undefined].filter(
+    Boolean,
+  );
   const unique = [...new Set(club)].join(" · ");
-  return [{ text: fullName(g), bold: true }, ...(unique ? [{ text: unique, style: "small" }] : [])];
+  return [
+    { text: fullName(g), bold: true },
+    ...(unique ? [{ text: unique, style: "small" }] : []),
+  ];
 }
 
 /** nameIndex — колонка с именем: она тянется на свободное место, остальные по содержимому. */
-function table(body: TableCell[][], nameIndex = 2): Content {
+function table(
+  body: TableCell[][],
+  nameIndex = 2,
+  fixed: Record<number, number> = {},
+): Content {
   return {
     table: {
       headerRows: 1,
       dontBreakRows: true,
-      widths: body[0]!.map((_, i) => (i === nameIndex ? "*" : "auto")),
+      widths: body[0]!.map(
+        (_, i) => fixed[i] ?? (i === nameIndex ? "*" : "auto"),
+      ),
       body,
     },
     layout: {
@@ -343,6 +788,14 @@ function table(body: TableCell[][], nameIndex = 2): Content {
   };
 }
 
+function emptyList(): Content {
+  return { text: "Участников нет.", italics: true, margin: [0, 6, 0, 0] };
+}
+
 function emptyNote(): Content {
-  return { text: "Утверждённых оценок пока нет.", italics: true, margin: [0, 10, 0, 0] };
+  return {
+    text: "Утверждённых оценок пока нет.",
+    italics: true,
+    margin: [0, 10, 0, 0],
+  };
 }

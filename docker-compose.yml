@@ -1,5 +1,5 @@
-# Сервер в зале: docker compose up -d
-# Перед запуском задайте ADMIN_TOKEN (не короче 16 символов) в файле .env рядом с этим файлом.
+# Сервер в зале. Проще всего запускать скриптом: scripts/start.sh (Linux, macOS) или scripts\start.ps1 (Windows).
+# Вручную: задайте ADMIN_TOKEN (не короче 16 символов) в файле .env рядом с этим файлом и выполните docker compose up -d.
 services:
   db:
     image: postgres:16-alpine
@@ -34,6 +34,26 @@ services:
       RELAY_TOKEN: ${RELAY_TOKEN:-}
     ports:
       - "3000:3000"
+
+  # Резервные копии базы в папку backups рядом с этим файлом: каждые 5 минут, хранятся последние 288 (сутки).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: gymnastics
+      PGPASSWORD: gymnastics
+      PGDATABASE: gymnastics
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-300}
+      BACKUP_KEEP: ${BACKUP_KEEP:-288}
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup-loop.sh:/backup-loop.sh:ro
+    entrypoint: ["sh", "/backup-loop.sh"]
 
 volumes:
   db-data:

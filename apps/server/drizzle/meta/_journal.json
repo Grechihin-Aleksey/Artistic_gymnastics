@@ -29,6 +29,13 @@
       "when": 1792435894107,
       "tag": "0003_single_tablet",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792473940473,
+      "tag": "0004_competition_logo",
+      "breakpoints": true
     }
   ]
 }

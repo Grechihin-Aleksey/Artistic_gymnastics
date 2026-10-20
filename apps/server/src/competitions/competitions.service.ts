@@ -14,6 +14,14 @@ import { categories, competitions, gymnasts, judges, shifts, teams } from "../db
 
 export type CompetitionRow = typeof competitions.$inferSelect;
 
+/** Соревнование для клиентов: сам логотип отдаётся отдельно, он тяжёлый. */
+export function publicCompetition({ logo, ...rest }: CompetitionRow) {
+  return { ...rest, hasLogo: logo !== null };
+}
+
+const PNG = [0x89, 0x50, 0x4e, 0x47];
+const JPEG = [0xff, 0xd8, 0xff];
+
 @Injectable()
 export class CompetitionsService {
   constructor(@Inject(DB) private readonly db: Db) {}
@@ -45,6 +53,21 @@ export class CompetitionsService {
     const [row] = await this.db.select().from(competitions).where(eq(competitions.id, id));
     if (!row) throw new NotFoundException("Соревнование не найдено");
     return row;
+  }
+
+  /** Сохраняет логотип для шапки протоколов; null — убрать. */
+  async setLogo(id: string, dataUrl: string | null) {
+    if (dataUrl !== null) {
+      const [, type, base64] = /^data:image\/(png|jpeg);base64,(.*)$/.exec(dataUrl) ?? [];
+      const head = [...Buffer.from(base64 ?? "", "base64").subarray(0, 4)];
+      const magic = type === "png" ? PNG : JPEG;
+      if (!magic.every((b, i) => head[i] === b)) {
+        throw new BadRequestException("Файл не похож на картинку PNG или JPEG");
+      }
+    }
+    const [row] = await this.db.update(competitions).set({ logo: dataUrl }).where(eq(competitions.id, id)).returning();
+    if (!row) throw new NotFoundException("Соревнование не найдено");
+    return publicCompetition(row);
   }
 
   async addTeam(competitionId: string, input: CreateTeamInput) {

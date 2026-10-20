@@ -4,10 +4,12 @@ import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { loadConfig } from "./config";
+import { configureApp } from "./setup";
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
   const app = await NestFactory.create<NestExpressApplication>(AppModule.forConfig(config), { cors: true });
+  configureApp(app);
   app.enableShutdownHooks();
   for (const [dist, prefix] of [
     [config.judgeDist, "/judge"],

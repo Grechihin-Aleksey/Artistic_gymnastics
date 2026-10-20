@@ -1,6 +1,6 @@
 import { Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
 import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
-import { CompetitionsService } from "./competitions.service";
+import { CompetitionsService, publicCompetition } from "./competitions.service";
 
 @Controller()
 export class JudgesController {
@@ -14,7 +14,7 @@ export class JudgesController {
     const { tokenHash: _, ...judge } = principal.judge;
     return {
       judge,
-      competition: await this.competitions.get(judge.competitionId),
+      competition: publicCompetition(await this.competitions.get(judge.competitionId)),
       panel: await this.competitions.panel(judge.competitionId, judge.apparatus),
     };
   }
