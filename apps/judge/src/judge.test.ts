@@ -1,6 +1,6 @@
 import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
-import { addDeduction, expandScore, parsePoints, parseScore } from "./labels";
+import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, timeLimit } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
@@ -196,5 +196,30 @@ describe("быстрый ввод оценки", () => {
     expect(parseScore(expandScore("10."), "E")).toBe(10);
     expect(parseScore(expandScore("95555"), "E")).toBeNull();
     expect(addDeduction("05", 0.3)).toBe("0.8");
+  });
+});
+
+describe("расхождение сбавок судей E", () => {
+  it("молчит в пределах допуска и предупреждает сверх него", () => {
+    expect(eSpreadWarning([1.2])).toBeNull();
+    expect(eSpreadWarning([1.2, 1.7])).toBeNull();
+    expect(eSpreadWarning([1.2, 1.4, 1.3])).toBeNull();
+    expect(eSpreadWarning([1.2, 2.0])).toBe("Сбавки судей E расходятся на 0.80 (допуск 0.50). Проверьте перед утверждением");
+  });
+});
+
+describe("секундомер", () => {
+  it("знает предельное время упражнения по правилам FIG", () => {
+    expect(timeLimit("WAG", "FX")).toBe(90);
+    expect(timeLimit("WAG", "BB")).toBe(90);
+    expect(timeLimit("WAG", "VT")).toBeNull();
+    expect(timeLimit("MAG", "FX")).toBe(70);
+    expect(timeLimit("MAG", "PH")).toBeNull();
+  });
+
+  it("показывает минуты, секунды и десятые", () => {
+    expect(formatTime(0)).toBe("0:00.0");
+    expect(formatTime(65_340)).toBe("1:05.3");
+    expect(formatTime(90_000)).toBe("1:30.0");
   });
 });

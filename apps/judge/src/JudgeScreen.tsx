@@ -12,6 +12,7 @@ import type {
 } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { Keypad } from "./Keypad";
+import { Stopwatch } from "./Stopwatch";
 import {
   APPARATUS_NAMES,
   KINDS_BY_ROLE,
@@ -19,7 +20,9 @@ import {
   addDeduction,
   judgeLabel,
   kindName,
+  eSpreadWarning,
   expandScore,
+  timeLimit,
   parseScore,
 } from "./labels";
 import { MarkQueue, type Rejected, type SendOutcome } from "./markQueue";
@@ -168,6 +171,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   const category = rulesView?.categories.find((c) => c.id === currentGymnast?.categoryId);
   const base = category ? (category.apparatus[judge.apparatus as keyof typeof category.apparatus] ?? category.base) : null;
   const scorer = makeScorer(rules, base);
+  const limit = timeLimit(competition.discipline, judge.apparatus);
   const baseNote =
     rules !== "CUSTOM" || !current
       ? null
@@ -218,6 +222,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       {current ? (
         <main className="work">
           <GymnastCard gymnast={currentGymnast} performance={current} note={baseNote} />
+          {judge.role === "SUPERVISOR" && limit !== null && <Stopwatch key={current.id} limit={limit} />}
           {judge.enterAllMarks ? (
             <TabletScoring
               key={current.id}
@@ -268,6 +273,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               gymnasts={gymnasts}
               rotation={rotation}
               finalLists={finalLists}
+              categoryNames={new Map(rulesView?.categories.map((c) => [c.id, c.name]))}
               onDone={refresh}
             />
           )}
@@ -381,6 +387,7 @@ function SupervisorPanel({
   const d = performance.marks.filter((m) => m.kind === "D");
   const e = performance.marks.filter((m) => m.kind === "E");
   const neutral = performance.marks.filter((m) => m.kind === "NEUTRAL");
+  const spread = eSpreadWarning(e.map((m) => m.value));
 
   let preview: string | null = null;
   const dValues = new Set(d.map((m) => m.value));
@@ -430,6 +437,7 @@ function SupervisorPanel({
       {dValues.size > 1 && (
         <div className="alert">{custom ? "Сбавки за требования у судей расходятся" : "Оценки D у судей расходятся"}</div>
       )}
+      {spread && <div className="warning">{spread}</div>}
       {preview && <div className="preview">Предварительно: {preview}</div>}
       {message && <div className="alert">{message}</div>}
       <button type="button" className="primary approve" disabled={busy || !dReady} onClick={approve}>
@@ -477,6 +485,8 @@ function TabletScoring({
   const neutralValue = neutral.trim() ? read(neutral, "NEUTRAL") : 0;
   const complete =
     dValue !== null && eValues.every((v): v is number => v !== null) && neutralValue !== null && eJudges.length > 0;
+
+  const spread = eSpreadWarning(eValues.filter((v): v is number => v !== null && v !== undefined));
 
   let preview: string | null = null;
   if (complete) {
@@ -560,6 +570,7 @@ function TabletScoring({
         {field("Нейтральная сбавка", neutral, setNeutral, neutralValue !== null)}
       </div>
       {custom && <DeductionChips deductions={deductions} onAdd={(v) => setD((t) => addDeduction(t, v))} />}
+      {spread && <div className="warning">{spread}</div>}
       {preview && <div className="preview">Итог: {preview}</div>}
       {message && <div className="alert">{message}</div>}
       <button type="button" className="primary approve" disabled={busy || !complete} onClick={() => void approve()}>
@@ -581,6 +592,7 @@ function CallPanel({
   gymnasts,
   rotation,
   finalLists,
+  categoryNames,
   onDone,
 }: {
   token: string;
@@ -591,6 +603,8 @@ function CallPanel({
   rotation: RotationView | null;
   /** Идут финалы: составы финала на этом снаряде по разрядам, в порядке выступления. */
   finalLists: FinalsView["lists"] | null;
+  /** Названия разрядов: в смене бывают участники разных разрядов. */
+  categoryNames: Map<string, string>;
   onDone: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState("");
@@ -696,7 +710,12 @@ function CallPanel({
                 onClick={() => void call(gymnast, 1)}
               >
                 <strong>№{gymnast.bib}</strong> {gymnast.lastName} {gymnast.firstName}
-                {finalCategory.has(gymnast.id) && <span className="muted"> · {finalCategory.get(gymnast.id)}</span>}
+                {isFinal
+                  ? finalCategory.has(gymnast.id) && <span className="muted"> · {finalCategory.get(gymnast.id)}</span>
+                  : gymnast.categoryId &&
+                    categoryNames.has(gymnast.categoryId) && (
+                      <span className="muted"> · {categoryNames.get(gymnast.categoryId)}</span>
+                    )}
               </button>
             </li>
           ))}
