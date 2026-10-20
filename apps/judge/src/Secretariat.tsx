@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
@@ -390,8 +390,13 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
   const dError = `${dName}: число до 20 с точностью до тысячных, например ${custom ? "9.500" : "5.400"}`;
   const [apparatus, setApparatus] = useState<string>(apparatusFor(discipline)[0]!);
   const [performances, setPerformances] = useState<PerformanceView[]>([]);
+  const [performanceId, setPerformanceId] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
   const [inquiries, setInquiries] = useState<InquiryView[]>([]);
+  // Снаряд последней загрузки: опоздавший ответ по прежнему снаряду не подменяет список.
+  const current = useRef(apparatus);
+  current.current = apparatus;
 
   const load = useCallback(async () => {
     try {
@@ -402,8 +407,13 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
         apiRequest<Gymnast[]>(`/competitions/${competitionId}/gymnasts`),
         apiRequest<InquiryView[]>(`/competitions/${competitionId}/inquiries`, { token: adminToken }),
       ]);
+      if (current.current !== apparatus) return;
       // Свежие оценки сверху: запрос обычно подают на только что показанную.
-      setPerformances(perfs.filter((p) => p.status === "APPROVED").reverse());
+      const approved = perfs.filter((p) => p.status === "APPROVED").reverse();
+      setPerformances(approved);
+      setLoaded(true);
+      // Выбранное выступление пропало из списка — выбор сбрасывается, а не переходит на первое.
+      setPerformanceId((id) => (approved.some((p) => p.id === id) ? id : ""));
       setGymnasts(new Map(people.map((g) => [g.id, g])));
       setInquiries([...list].reverse());
     } catch (e) {
@@ -421,13 +431,15 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
     const claimed = String(form.get("claimedD") ?? "").replace(",", ".").trim();
     const claimedD = claimed ? parseScore(claimed, "D") : undefined;
     if (claimedD === null) return onError(dError);
+    if (!performanceId) return onError("Выберите выступление");
     try {
-      await apiRequest(`/performances/${String(form.get("performanceId"))}/inquiries`, {
+      await apiRequest(`/performances/${performanceId}/inquiries`, {
         token: adminToken,
         method: "POST",
         body: { coach: String(form.get("coach")), ...(claimedD !== undefined ? { claimedD } : {}) },
       });
       onError(null);
+      setPerformanceId("");
       await load();
     } catch (e) {
       onError((e as Error).message);
@@ -475,7 +487,15 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
         <h2>Запрос на пересмотр {custom ? "стоимости" : "D"}</h2>
         <label>
           Снаряд
-          <select value={apparatus} onChange={(e) => setApparatus(e.target.value)}>
+          <select
+            value={apparatus}
+            onChange={(e) => {
+              setApparatus(e.target.value);
+              setPerformances([]);
+              setPerformanceId("");
+              setLoaded(false);
+            }}
+          >
             {apparatusFor(discipline).map((a) => (
               <option key={a} value={a}>
                 {APPARATUS_NAMES[a]}
@@ -485,8 +505,8 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
         </label>
         <label>
           Выступление
-          <select name="performanceId" required>
-            {performances.length === 0 && <option value="">Утверждённых оценок нет</option>}
+          <select name="performanceId" required value={performanceId} onChange={(e) => setPerformanceId(e.target.value)}>
+            <option value="">{!loaded ? "Загрузка…" : performances.length === 0 ? "Утверждённых оценок нет" : "Выберите выступление"}</option>
             {performances.map((p) => (
               <option key={p.id} value={p.id}>
                 {name(p.gymnastId)}
