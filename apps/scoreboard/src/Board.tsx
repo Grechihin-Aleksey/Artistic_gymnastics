@@ -93,13 +93,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
     return () => clearInterval(t);
   }, [route.view, slides.length]);
 
-  if (!data) {
-    return (
-      <div className="center">
-        {error ?? "Загрузка…"}
-      </div>
-    );
-  }
+  if (!data) return <Waiting message={error} />;
 
   const selected = Math.min(route.category ?? 0, data.categories.length - 1);
   const slide: Slide =
@@ -638,5 +632,20 @@ function TeamsTable({ rows, note }: { rows: TeamResultRow[]; note: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** Заставка, пока зал не прислал результаты: значки снарядов и одна строка о том, чего ждём. */
+function Waiting({ message }: { message: string | null }) {
+  return (
+    <div className="center column waiting">
+      <div className="waiting-icons" aria-hidden="true">
+        {["VT", "UB", "BB", "FX"].map((code) => (
+          <ApparatusIcon key={code} code={code} />
+        ))}
+      </div>
+      <div className="waiting-title">Результаты соревнований</div>
+      <div className="waiting-text">{message ?? "Подключаемся к табло…"}</div>
+    </div>
   );
 }
