@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type ScoreBreakdown } from "@ag/scoring";
+import { fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type Discipline, type ScoreBreakdown } from "@ag/scoring";
 import type {
   FinalsView,
   JudgeRole,
@@ -25,6 +25,7 @@ import {
   expandScore,
   timeLimit,
   parseScore,
+  restHint,
 } from "./labels";
 import { MarkQueue, type Rejected, type SendOutcome } from "./markQueue";
 import { useLive } from "./useLive";
@@ -271,6 +272,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               token={token}
               competitionId={competition.id}
               apparatus={judge.apparatus}
+              discipline={competition.discipline as Discipline}
               performances={stagePerformances}
               gymnasts={gymnasts}
               rotation={rotation}
@@ -590,6 +592,7 @@ function CallPanel({
   token,
   competitionId,
   apparatus,
+  discipline,
   performances,
   gymnasts,
   rotation,
@@ -600,6 +603,7 @@ function CallPanel({
   token: string;
   competitionId: string;
   apparatus: string;
+  discipline: Discipline;
   performances: PerformanceView[];
   gymnasts: Map<string, Gymnast>;
   rotation: RotationView | null;
@@ -651,7 +655,7 @@ function CallPanel({
   if (filter) empty = "Никого не найдено";
   else if (isFinal && finalists.length === 0) empty = "Финала на этом снаряде нет";
   else if (isFinal) empty = "Все финалисты выступили";
-  else if (byShift && shiftsHere.length === 0) empty = "В этой ротации на снаряде нет смены";
+  else if (byShift && shiftsHere.length === 0) empty = restHint(rotation!, discipline, apparatus);
   else if (byShift) empty = "Смена выступила на этом снаряде. Ждём перехода на следующую ротацию.";
 
   const call = async (gymnast: Gymnast, attempt: number) => {

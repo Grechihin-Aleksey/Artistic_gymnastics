@@ -14,6 +14,8 @@ import {
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
+  SiteBadge,
+  SitePanel,
   OfficialsPanel,
   ProgressPanel,
   InquiriesPanel,
@@ -194,6 +196,7 @@ export function AdminScreen() {
     <div className="screen admin">
       <header className="bar no-print">
         <div className="apparatus">Секретариат</div>
+        <SiteBadge adminToken={adminToken} />
       </header>
       <section className="panel no-print">
         <label>
@@ -271,6 +274,7 @@ export function AdminScreen() {
         )}
         {ready && competition && (
           <>
+            <SitePanel key={`site-now-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
             <RulesPanel
               key={`rules-${competition.id}-${rosterVersion}`}
               competitionId={competition.id}

@@ -91,4 +91,26 @@ describe("отправка на сайт", () => {
     expect(Object.keys(snapshot.categories[0]!.apparatus)).toHaveLength(6);
     expect(snapshot.categories[0]!.teams).toEqual([]);
   });
+
+  it("секретариат видит связь с сайтом и отправляет турнир сразу, без первой оценки", async () => {
+    const admin = api(app, ADMIN_TOKEN);
+    const competition = (await admin.post("/competitions", { name: "Новый", discipline: "WAG" }).expect(201)).body;
+    const before = (await admin.get(`/competitions/${competition.id}/site`).expect(200)).body;
+    expect(before).toMatchObject({ enabled: true, sentAt: null });
+    expect(before.embed).toContain(`data-ag-results="${competition.id}"`);
+    expect(before.embed).toContain("/embed.js");
+    expect(before.page).toContain(`/widget/index.html#c=${competition.id}`);
+
+    failFirst = 1;
+    const refused = (await admin.post(`/competitions/${competition.id}/site`).expect(502)).body;
+    expect(refused.message).toContain("не вписан токен");
+    expect((await admin.get("/site").expect(200)).body.error).toContain("не вписан токен");
+
+    const after = (await admin.post(`/competitions/${competition.id}/site`).expect(201)).body;
+    expect(after.sentAt).not.toBeNull();
+    expect(after.error).toBeNull();
+    expect(received.some((r) => r.path === `/ingest/${competition.id}` && r.body.snapshot.competition.name === "Новый")).toBe(true);
+    expect((await admin.get("/site").expect(200)).body).toMatchObject({ enabled: true, error: null });
+    await api(app).get(`/competitions/${competition.id}/site`).expect(401);
+  });
 });

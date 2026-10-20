@@ -2085,6 +2085,140 @@ export function SiteProtocolsPanel({ competitionId, adminToken, onError }: Omit<
   );
 }
 
+interface SiteStatus {
+  enabled: boolean;
+  sentAt: string | null;
+  error: string | null;
+}
+
+interface SiteView extends SiteStatus {
+  page: string | null;
+  embed: string | null;
+}
+
+/** «Сайт» в шапке секретариата: зелёный, если результаты доходят до сайта, красный с причиной, если нет. */
+export function SiteBadge({ adminToken }: { adminToken: string }) {
+  const [status, setStatus] = useState<SiteStatus | null>(null);
+  useEffect(() => {
+    if (!adminToken) return;
+    let alive = true;
+    const load = () =>
+      apiRequest<SiteStatus>("/site", { token: adminToken })
+        .then((s) => alive && setStatus(s))
+        .catch(() => alive && setStatus(null));
+    void load();
+    const t = setInterval(load, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [adminToken]);
+
+  if (!status?.enabled) return null;
+  const ok = !status.error;
+  const title = status.error
+    ? `Результаты не доходят до сайта: ${status.error}`
+    : status.sentAt
+      ? `Результаты дошли до сайта ${longTime(status.sentAt)}`
+      : "Сайт подключён. Турнир появится на сайте после первого вызова или кнопки «Отправить на сайт»";
+  return (
+    <div className="status site-badge" title={title}>
+      <span className={ok ? "dot ok" : "dot down"} />
+      {ok ? "Сайт" : "Сайт: нет связи"}
+    </div>
+  );
+}
+
+/**
+ * Результаты на сайте: состояние отправки этого турнира, кнопка «Отправить на сайт сейчас»
+ * и готовый код для вставки на страницу сайта.
+ */
+export function SitePanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<SiteView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const run = useCallback(
+    async (method: "GET" | "POST") => {
+      setBusy(method === "POST");
+      try {
+        setView(await apiRequest<SiteView>(`/competitions/${competitionId}/site`, { token: adminToken, method }));
+        onError(null);
+      } catch (e) {
+        onError((e as Error).message);
+        if (method === "POST") void run("GET");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [competitionId, adminToken, onError],
+  );
+
+  useEffect(() => {
+    void run("GET");
+  }, [run]);
+
+  if (!view) return null;
+  if (!view.enabled) {
+    return (
+      <section className="panel no-print site-panel">
+        <h2>Результаты на сайте</h2>
+        <p className="muted wide">
+          Сайт не подключён. Чтобы результаты шли на сайт, впишите адрес ретранслятора и его токен в файл .env
+          (строки RELAY_URL и RELAY_TOKEN) и перезапустите программу.
+        </p>
+      </section>
+    );
+  }
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(view.embed!);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      onError("Не удалось скопировать: выделите код и скопируйте вручную");
+    }
+  };
+  return (
+    <section className="panel no-print site-panel">
+      <h2>Результаты на сайте</h2>
+      <p className="wide site-state">
+        <span className={view.error ? "dot down" : view.sentAt ? "dot ok" : "dot idle"} />
+        {view.error ? (
+          <strong>Не доходят до сайта: {view.error}.</strong>
+        ) : view.sentAt ? (
+          <span>
+            <strong>Турнир на сайте.</strong> Последняя отправка {longTime(view.sentAt)}.
+          </span>
+        ) : (
+          <span>
+            <strong>Турнира на сайте пока нет.</strong> Он появится после первого вызова участника или по кнопке ниже.
+          </span>
+        )}
+      </p>
+      <div className="buttons">
+        <button type="button" className="primary" disabled={busy} onClick={() => void run("POST")}>
+          {busy ? "Отправляю…" : view.sentAt ? "Отправить ещё раз" : "Отправить на сайт сейчас"}
+        </button>
+        {view.page && (
+          <a className="button-link" href={view.page} target="_blank" rel="noopener">
+            Открыть табло на сайте
+          </a>
+        )}
+      </div>
+      {view.embed && (
+        <div className="wide site-embed">
+          <span className="muted">Код для страницы сайта (блок «HTML» в Elementor):</span>
+          <textarea readOnly rows={2} value={view.embed} onFocus={(e) => e.target.select()} aria-label="Код для страницы сайта" />
+          <button type="button" onClick={() => void copy()}>
+            {copied ? "Скопировано" : "Скопировать код"}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const AUDIT_PAGE = 50;
 
 /** «14:05:31», а для записей не сегодняшнего дня — с датой. */

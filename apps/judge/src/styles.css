@@ -101,6 +101,10 @@ select {
   background: var(--ok);
 }
 
+.dot.idle {
+  background: var(--muted);
+}
+
 .dot.down {
   background: var(--bad);
 }
@@ -366,6 +370,7 @@ select {
 .admin .protocols .buttons,
 .admin .online-entries .buttons,
 .admin .site-protocols .buttons,
+.admin .site-panel .buttons,
 .admin .audit .buttons {
   grid-column: 1 / -1;
   display: flex;
@@ -377,6 +382,7 @@ select {
 .admin .audit .buttons button,
 .admin .online-entries button,
 .admin .site-protocols button,
+.admin .site-panel button,
 .admin .ceremony-panel button,
 .admin .rules button:not(.link):not(.primary),
 .admin .actions button,
@@ -519,6 +525,7 @@ select {
 .admin .rotation .buttons .primary,
 .admin .online-entries .buttons .primary,
 .admin .site-protocols .buttons .primary,
+.admin .site-panel .buttons .primary,
 .admin .ceremony-panel .primary {
   width: auto;
   min-height: 44px;
@@ -1130,4 +1137,45 @@ select {
   vertical-align: -0.2em;
   margin-right: 0.35em;
   flex-shrink: 0;
+}
+
+.site-badge {
+  font-size: 14px;
+}
+
+.site-panel .site-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.site-panel .site-state .dot {
+  flex-shrink: 0;
+}
+
+.site-panel .button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 14px;
+}
+
+.site-panel .site-embed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.site-panel .site-embed .muted {
+  flex: 1 1 100%;
+}
+
+.site-panel .site-embed textarea {
+  flex: 1 1 320px;
+  min-width: 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  resize: vertical;
 }

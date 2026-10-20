@@ -1,4 +1,5 @@
-import type { JudgeRole, MarkKind, Rules } from "@ag/shared";
+import { shiftApparatus, type Discipline } from "@ag/scoring";
+import type { JudgeRole, MarkKind, RotationView, Rules } from "@ag/shared";
 
 export { APPARATUS_NAMES } from "@ag/shared";
 
@@ -92,4 +93,16 @@ export function parsePoints(text: string): number[] | null {
   return values.every((v) => Number.isFinite(v) && v >= 0 && v <= 1000 && Number.isInteger(v * 2)) && values.length <= 60
     ? values
     : null;
+}
+
+/** Подсказка судье на снаряде, где в этой ротации никого нет: когда придёт следующая смена. */
+export function restHint(rotation: RotationView, discipline: Discipline, apparatus: string): string {
+  for (let r = rotation.rotation + 1; r < rotation.rotations; r++) {
+    const next = rotation.shifts.filter((s) => shiftApparatus(discipline, s.startApparatus, r) === apparatus);
+    if (next.length > 0) {
+      const names = next.map((s) => s.number).join(", ");
+      return `В этой ротации на снаряде отдых. Следующая смена ${names} придёт в ротации ${r + 1}, когда секретариат переведёт ротацию.`;
+    }
+  }
+  return "В этой ротации на снаряде отдых, и больше смен на этом снаряде не будет. Участника можно вызвать через «Все участники».";
 }
