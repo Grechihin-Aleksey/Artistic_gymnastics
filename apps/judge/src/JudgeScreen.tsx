@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { fromPoints, scorePerformance, toPoints } from "@ag/scoring";
-import type { JudgeRole, MarkKind, PerformanceView, RotationView, SubmitMarkInput } from "@ag/shared";
+import { fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type ScoreBreakdown } from "@ag/scoring";
+import type {
+  JudgeRole,
+  MarkKind,
+  PerformanceView,
+  RotationView,
+  Rules,
+  RulesView,
+  SubmitMarkInput,
+} from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { Keypad } from "./Keypad";
-import { APPARATUS_NAMES, KIND_NAMES, KINDS_BY_ROLE, ROLE_NAMES, judgeLabel, parseScore } from "./labels";
+import {
+  APPARATUS_NAMES,
+  KINDS_BY_ROLE,
+  ROLE_NAMES,
+  addDeduction,
+  judgeLabel,
+  kindName,
+  parseScore,
+} from "./labels";
 import { MarkQueue, type Rejected, type SendOutcome } from "./markQueue";
 import { useLive } from "./useLive";
 import { uuid } from "./uuid";
@@ -26,8 +42,43 @@ interface Me {
     /** Один планшет на снаряд: старший судья вводит оценки всей бригады. */
     enterAllMarks?: boolean;
   };
-  competition: { id: string; name: string; discipline: string };
+  competition: {
+    id: string;
+    name: string;
+    discipline: string;
+    rules?: Rules;
+    /** Своих правил: сбавки за требования для быстрого ввода. */
+    deductions?: Deduction[];
+  };
   panel?: PanelJudge[];
+}
+
+interface Deduction {
+  name: string;
+  value: number;
+}
+
+/**
+ * Как считается итог на этом снаряде. По своим правилам d — сбавки за
+ * требования, а база берётся по разряду участника; null — базы нет.
+ */
+type Scorer = (d: number, eDeductions: number[], neutral: number) => ScoreBreakdown | null;
+
+function makeScorer(rules: Rules | undefined, base: number | null): Scorer {
+  return (d, eDeductions, neutral) => {
+    const e = eDeductions.map(toPoints);
+    if (rules !== "CUSTOM") return scorePerformance({ d: toPoints(d), eDeductions: e, neutral: toPoints(neutral) });
+    if (base === null) return null;
+    return scoreCustomPerformance({ base: toPoints(base), requirements: toPoints(d), eDeductions: e, neutral: toPoints(neutral) });
+  };
+}
+
+function describeScore(rules: Rules | undefined, score: ScoreBreakdown): string {
+  const f = (p: number) => fromPoints(Math.abs(p)).toFixed(3);
+  const neutral = score.neutral > 0 ? ` − ${f(score.neutral)}` : "";
+  return rules === "CUSTOM"
+    ? `стоимость ${f(score.d)} − сбавка ${f(score.e)}${neutral} = ${f(score.total)}`
+    : `D ${f(score.d)} + E ${f(score.e)}${neutral} = ${f(score.total)}`;
 }
 
 interface Gymnast {
@@ -36,6 +87,7 @@ interface Gymnast {
   firstName: string;
   lastName: string;
   club: string | null;
+  categoryId: string | null;
 }
 
 export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
@@ -43,7 +95,10 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   const [performances, setPerformances] = useState<PerformanceView[]>([]);
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
   const [rotation, setRotation] = useState<RotationView | null>(null);
+  const [rulesView, setRulesView] = useState<RulesView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const rules = rulesView?.rules ?? competition.rules;
+  const deductions = rulesView?.deductions ?? competition.deductions ?? [];
 
   const queue = useMemo(
     () =>
@@ -67,13 +122,15 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
 
   const refresh = useCallback(async () => {
     try {
-      const [list, people, rotationView] = await Promise.all([
+      const [list, people, rotationView, rulesNow] = await Promise.all([
         apiRequest<PerformanceView[]>(`/competitions/${competition.id}/performances?apparatus=${judge.apparatus}`, {
           token,
         }),
         apiRequest<Gymnast[]>(`/competitions/${competition.id}/gymnasts`),
         apiRequest<RotationView>(`/competitions/${competition.id}/rotation`),
+        apiRequest<RulesView>(`/competitions/${competition.id}/rules`),
       ]);
+      setRulesView(rulesNow);
       setPerformances(list);
       setGymnasts(new Map(people.map((g) => [g.id, g])));
       setRotation(rotationView);
@@ -84,8 +141,8 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
 
   const flush = useCallback(async () => {
     const rejected: Rejected[] = await queue.flush();
-    if (rejected.length > 0) setError(rejected.map((r) => `${KIND_NAMES[r.mark.kind]}: ${r.reason}`).join("; "));
-  }, [queue]);
+    if (rejected.length > 0) setError(rejected.map((r) => `${kindName(r.mark.kind, rules)}: ${r.reason}`).join("; "));
+  }, [queue, rules]);
 
   const onLive = useCallback(() => {
     void refresh();
@@ -100,6 +157,18 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   }, [refresh, flush]);
 
   const current = [...performances].reverse().find((p) => p.status === "SCORING") ?? null;
+  const currentGymnast = current ? gymnasts.get(current.gymnastId) : undefined;
+  const category = rulesView?.categories.find((c) => c.id === currentGymnast?.categoryId);
+  const base = category ? (category.apparatus[judge.apparatus as keyof typeof category.apparatus] ?? category.base) : null;
+  const scorer = makeScorer(rules, base);
+  const baseNote =
+    rules !== "CUSTOM" || !current
+      ? null
+      : base !== null
+        ? `${category!.name} · база ${base.toFixed(3)}`
+        : category
+          ? `Для разряда «${category.name}» не задана база: секретариат задаёт её в правилах`
+          : "У участника не указан разряд: базу взять неоткуда";
   const lastApproved = [...performances].reverse().find((p) => p.status === "APPROVED") ?? null;
 
   const submit = (kind: MarkKind, value: number) => {
@@ -134,13 +203,16 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
 
       {current ? (
         <main className="work">
-          <GymnastCard gymnast={gymnasts.get(current.gymnastId)} performance={current} />
+          <GymnastCard gymnast={currentGymnast} performance={current} note={baseNote} />
           {judge.enterAllMarks ? (
             <TabletScoring
               key={current.id}
               token={token}
               performance={current}
               panel={me.panel ?? []}
+              rules={rules}
+              deductions={deductions}
+              scorer={scorer}
               onDone={refresh}
             />
           ) : (
@@ -150,13 +222,17 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
                   <MarkInput
                     key={`${current.id}:${kind}`}
                     kind={kind}
+                    rules={rules}
+                    deductions={kind === "D" && rules === "CUSTOM" ? deductions : []}
                     sent={current.marks.find((m) => m.judgeId === judge.id && m.kind === kind)?.value}
                     pending={queued.find((m) => m.performanceId === current.id && m.kind === kind)?.value}
                     onSubmit={(value) => submit(kind, value)}
                   />
                 ))}
               </div>
-              {judge.role === "SUPERVISOR" && <SupervisorPanel token={token} performance={current} onDone={refresh} />}
+              {judge.role === "SUPERVISOR" && (
+                <SupervisorPanel token={token} performance={current} rules={rules} scorer={scorer} onDone={refresh} />
+              )}
             </>
           )}
         </main>
@@ -186,7 +262,15 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   );
 }
 
-function GymnastCard({ gymnast, performance }: { gymnast: Gymnast | undefined; performance: PerformanceView }) {
+function GymnastCard({
+  gymnast,
+  performance,
+  note,
+}: {
+  gymnast: Gymnast | undefined;
+  performance: PerformanceView;
+  note: string | null;
+}) {
   return (
     <section className="gymnast">
       <div className="bib">№{gymnast?.bib ?? "?"}</div>
@@ -196,18 +280,37 @@ function GymnastCard({ gymnast, performance }: { gymnast: Gymnast | undefined; p
           {gymnast?.club ?? ""}
           {performance.apparatus === "VT" && ` · прыжок ${performance.attempt}`}
         </div>
+        {note && <div className="muted base-note">{note}</div>}
       </div>
     </section>
   );
 }
 
+/** Кнопки сбавок за требования из списка секретариата: нажатие прибавляет сбавку. */
+function DeductionChips({ deductions, onAdd }: { deductions: Deduction[]; onAdd: (value: number) => void }) {
+  if (deductions.length === 0) return null;
+  return (
+    <div className="chips">
+      {deductions.map((d) => (
+        <button key={`${d.name}:${d.value}`} type="button" onClick={() => onAdd(d.value)}>
+          {d.name} <strong>−{d.value}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MarkInput({
   kind,
+  rules,
+  deductions,
   sent,
   pending,
   onSubmit,
 }: {
   kind: MarkKind;
+  rules: Rules | undefined;
+  deductions: Deduction[];
   sent: number | undefined;
   pending: number | undefined;
   onSubmit: (value: number) => void;
@@ -216,8 +319,9 @@ function MarkInput({
   const value = parseScore(text, kind);
   return (
     <section className="mark">
-      <h2>{KIND_NAMES[kind]}</h2>
+      <h2>{kindName(kind, rules)}</h2>
       <div className={value === null && text ? "display invalid" : "display"}>{text || "—"}</div>
+      <DeductionChips deductions={deductions} onAdd={(v) => setText((t) => addDeduction(t, v))} />
       <Keypad value={text} onChange={setText} />
       <button
         type="button"
@@ -245,12 +349,17 @@ function MarkInput({
 function SupervisorPanel({
   token,
   performance,
+  rules,
+  scorer,
   onDone,
 }: {
   token: string;
   performance: PerformanceView;
+  rules: Rules | undefined;
+  scorer: Scorer;
   onDone: () => Promise<void>;
 }) {
+  const custom = rules === "CUSTOM";
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const d = performance.marks.filter((m) => m.kind === "D");
@@ -259,13 +368,15 @@ function SupervisorPanel({
 
   let preview: string | null = null;
   const dValues = new Set(d.map((m) => m.value));
-  if (dValues.size === 1 && e.length > 0) {
-    const score = scorePerformance({
-      d: toPoints([...dValues][0]!),
-      eDeductions: e.map((m) => toPoints(m.value)),
-      neutral: toPoints(neutral[0]?.value ?? 0),
-    });
-    preview = `D ${fromPoints(score.d).toFixed(3)} + E ${fromPoints(score.e).toFixed(3)} − ${fromPoints(score.neutral).toFixed(3)} = ${fromPoints(score.total).toFixed(3)}`;
+  // По своим правилам без сбавок за требования считаем их нулевыми.
+  const dReady = dValues.size === 1 || (custom && dValues.size === 0);
+  if (dReady && e.length > 0) {
+    const score = scorer(
+      [...dValues][0] ?? 0,
+      e.map((m) => m.value),
+      neutral[0]?.value ?? 0,
+    );
+    if (score) preview = describeScore(rules, score);
   }
 
   const approve = async () => {
@@ -289,7 +400,7 @@ function SupervisorPanel({
           {performance.marks.map((m) => (
             <tr key={`${m.judgeId}:${m.kind}`}>
               <td>{judgeLabel(m.role, m.seat)}</td>
-              <td>{KIND_NAMES[m.kind]}</td>
+              <td>{kindName(m.kind, rules)}</td>
               <td className="num">{m.value.toFixed(3)}</td>
             </tr>
           ))}
@@ -300,10 +411,12 @@ function SupervisorPanel({
           )}
         </tbody>
       </table>
-      {dValues.size > 1 && <div className="alert">Оценки D у судей расходятся</div>}
+      {dValues.size > 1 && (
+        <div className="alert">{custom ? "Сбавки за требования у судей расходятся" : "Оценки D у судей расходятся"}</div>
+      )}
       {preview && <div className="preview">Предварительно: {preview}</div>}
       {message && <div className="alert">{message}</div>}
-      <button type="button" className="primary approve" disabled={busy || dValues.size !== 1} onClick={approve}>
+      <button type="button" className="primary approve" disabled={busy || !dReady} onClick={approve}>
         Утвердить
       </button>
     </section>
@@ -318,13 +431,20 @@ function TabletScoring({
   token,
   performance,
   panel,
+  rules,
+  deductions,
+  scorer,
   onDone,
 }: {
   token: string;
   performance: PerformanceView;
   panel: PanelJudge[];
+  rules: Rules | undefined;
+  deductions: Deduction[];
+  scorer: Scorer;
   onDone: () => Promise<void>;
 }) {
+  const custom = rules === "CUSTOM";
   const eJudges = panel.filter((j) => j.role === "E").sort((a, b) => a.seat - b.seat);
   const dJudge = panel.find((j) => j.role === "D");
   const [d, setD] = useState("");
@@ -335,7 +455,8 @@ function TabletScoring({
 
   // На планшете с русской раскладкой вместо точки часто ставят запятую.
   const read = (text: string, kind: MarkKind) => parseScore(text.trim().replace(",", "."), kind);
-  const dValue = read(d, "D");
+  // По своим правилам пустое поле требований — сбавок нет.
+  const dValue = custom && !d.trim() ? 0 : read(d, "D");
   const eValues = e.map((x) => read(x, "E"));
   const neutralValue = neutral.trim() ? read(neutral, "NEUTRAL") : 0;
   const complete =
@@ -343,14 +464,8 @@ function TabletScoring({
 
   let preview: string | null = null;
   if (complete) {
-    const score = scorePerformance({
-      d: toPoints(dValue),
-      eDeductions: eValues.map((v) => toPoints(v!)),
-      neutral: toPoints(neutralValue),
-    });
-    preview = `D ${fromPoints(score.d).toFixed(3)} + E ${fromPoints(score.e).toFixed(3)}${
-      score.neutral > 0 ? ` − ${fromPoints(score.neutral).toFixed(3)}` : ""
-    } = ${fromPoints(score.total).toFixed(3)}`;
+    const score = scorer(dValue, eValues as number[], neutralValue);
+    if (score) preview = describeScore(rules, score);
   }
 
   const approve = async () => {
@@ -381,11 +496,11 @@ function TabletScoring({
     else void approve();
   };
 
-  if (!dJudge || eJudges.length === 0) {
+  if ((!dJudge && !custom) || eJudges.length === 0) {
     return (
       <section className="tablet">
         <div className="alert">
-          Секретариат ещё не завёл судей D и E этого снаряда. Их фамилии и оценки идут в протокол.
+          Секретариат ещё не завёл судей {custom ? "E" : "D и E"} этого снаряда. Их фамилии и оценки идут в протокол.
         </div>
       </section>
     );
@@ -409,7 +524,13 @@ function TabletScoring({
     <section className="tablet">
       <h2>Оценки бригады</h2>
       <div className="tablet-grid">
-        {field(`D · ${dJudge.name}`, d, setD, dValue !== null, true)}
+        {field(
+          custom ? `Требования${dJudge ? ` · ${dJudge.name}` : ""}` : `D · ${dJudge!.name}`,
+          d,
+          setD,
+          dValue !== null,
+          true,
+        )}
         {eJudges.map((j, i) =>
           field(
             `E${j.seat} · ${j.name}`,
@@ -420,6 +541,7 @@ function TabletScoring({
         )}
         {field("Нейтральная сбавка", neutral, setNeutral, neutralValue !== null)}
       </div>
+      {custom && <DeductionChips deductions={deductions} onAdd={(v) => setD((t) => addDeduction(t, v))} />}
       {preview && <div className="preview">Итог: {preview}</div>}
       {message && <div className="alert">{message}</div>}
       <button type="button" className="primary approve" disabled={busy || !complete} onClick={() => void approve()}>

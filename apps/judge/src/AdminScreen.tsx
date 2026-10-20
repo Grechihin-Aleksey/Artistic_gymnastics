@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
-import type { JudgeRole } from "@ag/shared";
+import type { JudgeRole, Rules } from "@ag/shared";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
-import { InquiriesPanel, NewCompetitionForm, ProtocolsPanel, RosterPanel, RotationPanel } from "./Secretariat";
+import {
+  InquiriesPanel,
+  NewCompetitionForm,
+  ProtocolsPanel,
+  RosterPanel,
+  RotationPanel,
+  RulesPanel,
+} from "./Secretariat";
 
 interface Competition {
   id: string;
@@ -13,6 +20,7 @@ interface Competition {
   teamRoster: number;
   teamPerApparatus: number;
   teamCounting: number;
+  rules: Rules;
 }
 
 interface Judge {
@@ -43,6 +51,8 @@ export function AdminScreen() {
   const [judges, setJudges] = useState<Judge[]>([]);
   const [issued, setIssued] = useState<IssuedJudge[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Растёт после загрузки участников: в правилах появляются новые разряды.
+  const [rosterVersion, setRosterVersion] = useState(0);
 
   const competition = competitions.find((c) => c.id === competitionId);
 
@@ -165,6 +175,18 @@ export function AdminScreen() {
           }}
           adminToken={adminToken}
           onError={setError}
+          onImported={() => setRosterVersion((v) => v + 1)}
+        />
+      )}
+
+      {competition && adminToken && (
+        <RulesPanel
+          key={`rules-${competition.id}-${rosterVersion}`}
+          competitionId={competition.id}
+          discipline={competition.discipline}
+          adminToken={adminToken}
+          onError={setError}
+          onSaved={() => void loadCompetitions(competition.id)}
         />
       )}
 
@@ -260,6 +282,7 @@ export function AdminScreen() {
             key={competition.id}
             competitionId={competition.id}
             discipline={competition.discipline}
+            rules={competition.rules}
             adminToken={adminToken}
             onError={setError}
           />

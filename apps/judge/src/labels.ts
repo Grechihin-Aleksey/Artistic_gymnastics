@@ -1,4 +1,4 @@
-import type { JudgeRole, MarkKind } from "@ag/shared";
+import type { JudgeRole, MarkKind, Rules } from "@ag/shared";
 
 export { APPARATUS_NAMES } from "@ag/shared";
 
@@ -13,6 +13,17 @@ export const KIND_NAMES: Record<MarkKind, string> = {
   E: "Сбавка E",
   NEUTRAL: "Нейтральная сбавка",
 };
+
+/** Название оценки с учётом правил: по своим правилам судья D ставит сбавки за требования. */
+export function kindName(kind: MarkKind, rules: Rules | undefined): string {
+  return kind === "D" && rules === "CUSTOM" ? "Сбавки за требования" : KIND_NAMES[kind];
+}
+
+/** Прибавляет сбавку из списка к набранному значению; результат в формате поля ввода. */
+export function addDeduction(text: string, value: number): string {
+  const current = Number(text.trim().replace(",", ".")) || 0;
+  return String(Math.round((current + value) * 1000) / 1000);
+}
 
 export const KINDS_BY_ROLE: Record<JudgeRole, MarkKind[]> = {
   D: ["D", "NEUTRAL"],

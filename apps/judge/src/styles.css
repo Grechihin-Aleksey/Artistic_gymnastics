@@ -361,6 +361,7 @@ select {
 }
 
 .admin .protocols button,
+.admin .rules button:not(.link):not(.primary),
 .admin .actions button,
 .admin .rotation .buttons button {
   min-height: 44px;
@@ -588,4 +589,85 @@ select {
 
 .admin .logo .file input {
   display: none;
+}
+
+/* Сбавки за требования по своим правилам: нажатие прибавляет сбавку. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.chips button {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--key);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+
+.chips button strong {
+  color: var(--bad);
+  margin-left: 4px;
+}
+
+.base-note {
+  font-size: 14px;
+}
+
+.rules-table input {
+  width: 6.5em;
+}
+
+.rules-table td,
+.rules-table th {
+  padding: 4px 8px 4px 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.deduction-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.deduction-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.deduction-row input[inputmode="decimal"] {
+  width: 6em;
+}
+
+.entries-file {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.entries-file .file {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.entries-file .file input {
+  display: none;
+}
+
+.rules .inline {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin: 4px 12px 4px 0;
 }

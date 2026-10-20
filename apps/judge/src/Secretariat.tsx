@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
-import type { InquiryView, PerformanceView, RotationView } from "@ag/shared";
+import type { InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -24,6 +24,8 @@ interface Props {
   discipline: Discipline;
   adminToken: string;
   onError: (message: string | null) => void;
+  /** По своим правилам вместо оценки D — стоимость упражнения. */
+  rules?: Rules;
 }
 
 const fmt = (n: number) => n.toFixed(3);
@@ -247,6 +249,16 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
           Все итоги в Excel
         </button>
       </div>
+      <h2>Грамоты призёрам</h2>
+      <p className="muted">По всем разрядам сразу, по листу A4 на каждого призёра. Разделившие место получают грамоту оба.</p>
+      <div className="buttons">
+        <button type="button" onClick={() => void open("diplomas?kind=all-around", "diplomas.pdf", false)}>
+          Многоборье и команды
+        </button>
+        <button type="button" onClick={() => void open("diplomas?kind=apparatus", "diplomas.pdf", false)}>
+          Отдельные снаряды
+        </button>
+      </div>
     </section>
   );
 }
@@ -326,7 +338,11 @@ const STATUS_NAMES = { PENDING: "Ждёт решения", ACCEPTED: "Удовл
  * Запросы тренеров на пересмотр оценки D. Секретариат записывает запрос
  * и вносит решение апелляционного жюри; новая оценка сразу уходит на табло и сайт.
  */
-export function InquiriesPanel({ competitionId, discipline, adminToken, onError }: Props) {
+export function InquiriesPanel({ competitionId, discipline, adminToken, onError, rules }: Props) {
+  const custom = rules === "CUSTOM";
+  const dName = custom ? "Стоимость" : "Оценка D";
+  const dShort = custom ? "стоимость" : "D";
+  const dError = `${dName}: число до 20 с точностью до тысячных, например ${custom ? "9.500" : "5.400"}`;
   const [apparatus, setApparatus] = useState<string>(apparatusFor(discipline)[0]!);
   const [performances, setPerformances] = useState<PerformanceView[]>([]);
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
@@ -359,7 +375,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
   const submit = async (form: FormData) => {
     const claimed = String(form.get("claimedD") ?? "").replace(",", ".").trim();
     const claimedD = claimed ? parseScore(claimed, "D") : undefined;
-    if (claimedD === null) return onError("Оценка D: число до 20 с точностью до тысячных, например 5.400");
+    if (claimedD === null) return onError(dError);
     try {
       await apiRequest(`/performances/${String(form.get("performanceId"))}/inquiries`, {
         token: adminToken,
@@ -377,12 +393,12 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
     let body: object = { decision: "reject" };
     if (accept) {
       const input = prompt(
-        `Новая оценка D для №${inquiry.gymnast.bib} ${inquiry.gymnast.lastName} (сейчас ${fmt(inquiry.previousD)})`,
+        `${custom ? "Новая стоимость" : "Новая оценка D"} для №${inquiry.gymnast.bib} ${inquiry.gymnast.lastName} (сейчас ${fmt(inquiry.previousD)})`,
         inquiry.claimedD !== null ? fmt(inquiry.claimedD) : "",
       );
       if (input === null) return;
       const d = parseScore(input.replace(",", ".").trim(), "D");
-      if (d === null) return onError("Оценка D: число до 20 с точностью до тысячных, например 5.400");
+      if (d === null) return onError(dError);
       body = { decision: "accept", d };
     } else if (!confirm(`Отклонить запрос по №${inquiry.gymnast.bib} ${inquiry.gymnast.lastName}? Оценка останется ${fmt(inquiry.previousD)}.`)) {
       return;
@@ -411,7 +427,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
           void submit(new FormData(form)).then(() => form.reset());
         }}
       >
-        <h2>Запрос на пересмотр D</h2>
+        <h2>Запрос на пересмотр {custom ? "стоимости" : "D"}</h2>
         <label>
           Снаряд
           <select value={apparatus} onChange={(e) => setApparatus(e.target.value)}>
@@ -429,7 +445,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
             {performances.map((p) => (
               <option key={p.id} value={p.id}>
                 {name(p.gymnastId)}
-                {p.attempt > 1 ? `, прыжок ${p.attempt}` : ""} — D {fmt(p.score!.d)}, итог {fmt(p.score!.total)}
+                {p.attempt > 1 ? `, прыжок ${p.attempt}` : ""} — {dShort} {fmt(p.score!.d)}, итог {fmt(p.score!.total)}
               </option>
             ))}
           </select>
@@ -439,7 +455,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
           <input name="coach" required />
         </label>
         <label>
-          D по мнению тренера
+          {custom ? "Стоимость" : "D"} по мнению тренера
           <input name="claimedD" inputMode="decimal" placeholder="необязательно" />
         </label>
         <button type="submit" className="primary" disabled={performances.length === 0}>
@@ -462,12 +478,12 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError 
                   </div>
                 </td>
                 <td>
-                  D {fmt(q.previousD)}
+                  {dShort} {fmt(q.previousD)}
                   {q.claimedD !== null && <div className="muted">просят {fmt(q.claimedD)}</div>}
                 </td>
                 <td>
                   {STATUS_NAMES[q.status]}
-                  {q.newD !== null && q.newD !== q.previousD && <div className="muted">новая D {fmt(q.newD)}</div>}
+                  {q.newD !== null && q.newD !== q.previousD && <div className="muted">{custom ? "новая стоимость" : "новая D"} {fmt(q.newD)}</div>}
                   {q.note && <div className="muted">{q.note}</div>}
                 </td>
                 <td className="actions">
@@ -519,6 +535,7 @@ export function NewCompetitionForm({
             counting: Number(form.get("counting")),
           },
           publishJudgeMarks: form.get("publishJudgeMarks") === "on",
+          rules: String(form.get("rules")),
         },
       });
       onError(null);
@@ -546,6 +563,13 @@ export function NewCompetitionForm({
         <select name="discipline" defaultValue="WAG">
           <option value="WAG">Женщины (4 снаряда)</option>
           <option value="MAG">Мужчины (6 снарядов)</option>
+        </select>
+      </label>
+      <label>
+        Правила судейства
+        <select name="rules" defaultValue="FIG">
+          <option value="FIG">FIG: D + E</option>
+          <option value="CUSTOM">Свои: база по разряду минус сбавки</option>
         </select>
       </label>
       <label>
@@ -577,11 +601,13 @@ export function RosterPanel({
   teamFormat,
   adminToken,
   onError,
-}: Omit<Props, "discipline"> & { teamFormat: TeamFormat }) {
+  onImported,
+}: Omit<Props, "discipline"> & { teamFormat: TeamFormat; onImported?: () => void }) {
   const [text, setText] = useState("");
   const [people, setPeople] = useState<RosterGymnast[]>([]);
   const [teams, setTeams] = useState<Map<string, string>>(new Map());
   const [categories, setCategories] = useState<Map<string, string>>(new Map());
+  const [fileNotes, setFileNotes] = useState<string[]>([]);
   const parsed = useMemo(() => parseRoster(text), [text]);
   const warnings = useMemo(() => {
     // Команда считается внутри своего разряда.
@@ -615,6 +641,28 @@ export function RosterPanel({
     void load();
   }, [load]);
 
+  // Заявка из Excel превращается в текст списка: его видно и можно поправить до загрузки.
+  const readEntries = async (file: File) => {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const result = await apiRequest<{ text: string; count: number; notes: string[] }>(
+        `/competitions/${competitionId}/gymnasts/parse-xlsx`,
+        {
+          token: adminToken,
+          method: "POST",
+          body: { file: btoa(binary), nextBib: Math.max(0, ...parsed.rows.map((r) => r.bib)) + 1 },
+        },
+      );
+      setText((current) => (current.trim() ? `${current.trimEnd()}\n${result.text}` : result.text));
+      setFileNotes([`${file.name}: ${result.count} уч.`, ...result.notes]);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
   const upload = async () => {
     try {
       await apiRequest(`/competitions/${competitionId}/gymnasts/import`, {
@@ -623,8 +671,10 @@ export function RosterPanel({
         body: { rows: parsed.rows },
       });
       setText("");
+      setFileNotes([]);
       onError(null);
       await load();
+      onImported?.();
     } catch (e) {
       onError((e as Error).message);
     }
@@ -633,6 +683,34 @@ export function RosterPanel({
   return (
     <section className="panel roster no-print">
       <h2>Участники: {people.length}</h2>
+      <div className="wide entries-file">
+        <label className="file">
+          Загрузить заявку Excel
+          <input
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void readEntries(file);
+            }}
+          />
+        </label>
+        <a href={`/competitions/${competitionId}/entries-template.xlsx`} download="Заявка.xlsx">
+          Бланк заявки для клубов
+        </a>
+        <span className="muted">
+          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Клуб, Команда, Разряд, Смена, Стартовый номер.
+          Заявки нескольких клубов можно загрузить по очереди, а потом добавить всех разом.
+        </span>
+      </div>
+      {fileNotes.length > 0 && (
+        <div className="warning wide">
+          {fileNotes.map((n) => (
+            <div key={n}>{n}</div>
+          ))}
+        </div>
+      )}
       <label className="wide">
         Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена. Порядок строк в
         смене — порядок выхода.
@@ -678,6 +756,245 @@ export function RosterPanel({
           </table>
         </details>
       )}
+    </section>
+  );
+}
+
+interface BaseDraft {
+  base: string;
+  apparatus: Record<string, string>;
+}
+
+const scoreText = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
+const readScore = (text: string) => {
+  const t = text.trim().replace(",", ".");
+  if (!t) return null;
+  return parseScore(t, "D");
+};
+
+/**
+ * Правила судейства. FIG — оценка D плюс E. Свои правила (юношеские разряды,
+ * школьные и региональные старты): у разряда базовая оценка, из неё вычитаются
+ * сбавки за требования, средняя сбавка судей E и нейтральная сбавка.
+ */
+export function RulesPanel({
+  competitionId,
+  discipline,
+  adminToken,
+  onError,
+  onSaved,
+}: Props & { onSaved: (rules: Rules) => void }) {
+  const [view, setView] = useState<RulesView | null>(null);
+  const [rules, setRules] = useState<Rules>("FIG");
+  const [deductions, setDeductions] = useState<{ name: string; value: string }[]>([]);
+  const [bases, setBases] = useState<Record<string, BaseDraft>>({});
+  const [saved, setSaved] = useState(false);
+  const program = apparatusFor(discipline);
+
+  const apply = useCallback((v: RulesView) => {
+    setView(v);
+    setRules(v.rules);
+    setDeductions(v.deductions.map((d) => ({ name: d.name, value: String(d.value) })));
+    setBases(
+      Object.fromEntries(
+        v.categories.map((c) => [
+          c.id,
+          {
+            base: scoreText(c.base),
+            apparatus: Object.fromEntries(Object.entries(c.apparatus).map(([a, n]) => [a, scoreText(n)])),
+          },
+        ]),
+      ),
+    );
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      apply(await apiRequest<RulesView>(`/competitions/${competitionId}/rules`));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, apply, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const problems: string[] = [];
+  const deductionRows = deductions
+    .filter((d) => d.name.trim() || d.value.trim())
+    .map((d) => {
+      const value = readScore(d.value);
+      if (!d.name.trim() || value === null || value <= 0 || value > 10) {
+        problems.push(`Сбавка «${d.name || "без названия"}»: нужны название и значение от 0.001 до 10`);
+      }
+      return { name: d.name.trim(), value: value ?? 0 };
+    });
+  const baseRows = (view?.categories ?? []).map((c) => {
+    const draft = bases[c.id] ?? { base: "", apparatus: {} };
+    const base = readScore(draft.base);
+    if (draft.base.trim() && base === null) problems.push(`База разряда «${c.name}»: число до 20`);
+    const apparatus: Record<string, number> = {};
+    for (const [a, text] of Object.entries(draft.apparatus)) {
+      if (!text.trim()) continue;
+      const n = readScore(text);
+      if (n === null) problems.push(`База разряда «${c.name}», ${APPARATUS_NAMES[a]}: число до 20`);
+      else apparatus[a] = n;
+    }
+    return { categoryId: c.id, base, apparatus };
+  });
+  const missing =
+    rules === "CUSTOM"
+      ? (view?.categories ?? []).filter((c, i) => {
+          const row = baseRows[i]!;
+          return row.base === null && program.some((a) => row.apparatus[a] === undefined);
+        })
+      : [];
+
+  const save = async () => {
+    try {
+      const result = await apiRequest<RulesView>(`/competitions/${competitionId}/rules`, {
+        token: adminToken,
+        method: "PUT",
+        body: { rules, deductions: deductionRows, bases: rules === "CUSTOM" ? baseRows : [] },
+      });
+      apply(result);
+      onSaved(result.rules);
+      onError(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  const setBase = (id: string, change: (d: BaseDraft) => BaseDraft) =>
+    setBases((all) => ({ ...all, [id]: change(all[id] ?? { base: "", apparatus: {} }) }));
+
+  if (!view) return null;
+  return (
+    <section className="panel no-print rules">
+      <h2>Правила судейства</h2>
+      <label className="wide">
+        <select value={rules} disabled={view.scored} onChange={(e) => setRules(e.target.value as Rules)}>
+          <option value="FIG">FIG: итог = D + E − нейтральная сбавка</option>
+          <option value="CUSTOM">Свои: итог = база разряда − требования − сбавка E − нейтральная</option>
+        </select>
+        {view.scored && <span className="muted">Оценки уже ставятся: правила не переключить.</span>}
+      </label>
+
+      {rules === "CUSTOM" && (
+        <>
+          <div className="wide">
+            <h3>Базовые оценки по разрядам</h3>
+            {view.categories.length === 0 ? (
+              <p className="muted">Разряды появятся, когда вы загрузите участников со столбцом «Разряд».</p>
+            ) : (
+              <table className="rules-table">
+                <thead>
+                  <tr>
+                    <th>Разряд</th>
+                    <th>База</th>
+                    <th>Своя база на снарядах (если отличается)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.categories.map((c) => {
+                    const draft = bases[c.id] ?? { base: "", apparatus: {} };
+                    return (
+                      <tr key={c.id}>
+                        <td>
+                          {c.name}
+                          {c.scored && <div className="muted">есть оценки</div>}
+                        </td>
+                        <td>
+                          <input
+                            inputMode="decimal"
+                            placeholder="10.000"
+                            value={draft.base}
+                            disabled={c.scored}
+                            onChange={(e) => setBase(c.id, (d) => ({ ...d, base: e.target.value }))}
+                          />
+                        </td>
+                        <td>
+                          <details open={Object.keys(draft.apparatus).length > 0}>
+                            <summary>по снарядам</summary>
+                            {program.map((a) => (
+                              <label key={a} className="inline">
+                                {APPARATUS_NAMES[a]}{" "}
+                                <input
+                                  inputMode="decimal"
+                                  placeholder={draft.base || "—"}
+                                  value={draft.apparatus[a] ?? ""}
+                                  disabled={c.scored}
+                                  onChange={(e) =>
+                                    setBase(c.id, (d) => ({
+                                      ...d,
+                                      apparatus: { ...d.apparatus, [a]: e.target.value },
+                                    }))
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </details>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            {missing.length > 0 && (
+              <div className="warning">
+                Не задана база: {missing.map((c) => c.name).join(", ")}. Оценки участникам этих разрядов не
+                утвердятся.
+              </div>
+            )}
+          </div>
+
+          <div className="wide">
+            <h3>Сбавки за требования</h3>
+            <p className="muted">
+              Кнопки на планшете судьи: нажатие прибавляет сбавку. Любую другую сумму судья может ввести вручную.
+            </p>
+            {deductions.map((d, i) => (
+              <div key={i} className="deduction-row">
+                <input
+                  type="text"
+                  placeholder="Например: отсутствие элемента"
+                  value={d.name}
+                  onChange={(e) =>
+                    setDeductions((list) => list.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)))
+                  }
+                />
+                <input
+                  inputMode="decimal"
+                  placeholder="0.5"
+                  value={d.value}
+                  onChange={(e) =>
+                    setDeductions((list) => list.map((x, k) => (k === i ? { ...x, value: e.target.value } : x)))
+                  }
+                />
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => setDeductions((list) => list.filter((_, k) => k !== i))}
+                >
+                  Убрать
+                </button>
+              </div>
+            ))}
+            <button type="button" onClick={() => setDeductions((list) => [...list, { name: "", value: "" }])}>
+              Добавить сбавку
+            </button>
+          </div>
+        </>
+      )}
+
+      {problems.length > 0 && <div className="alert wide">{problems.join("; ")}</div>}
+      <button type="button" className="primary" disabled={problems.length > 0} onClick={() => void save()}>
+        {saved ? "Сохранено" : "Сохранить правила"}
+      </button>
     </section>
   );
 }

@@ -13,6 +13,7 @@ import {
   rankApparatus,
   rankTeams,
   scorePerformance,
+  scoreCustomPerformance,
   teamTotal,
   toPoints,
   type ScoreBreakdown,
@@ -214,5 +215,27 @@ describe("rotations", () => {
 
   it("gives shifts consecutive start apparatus", () => {
     expect([1, 2, 3, 4, 5].map((n) => defaultStart("WAG", n))).toEqual(["VT", "UB", "BB", "FX", "VT"]);
+  });
+});
+
+describe("custom rules", () => {
+  it("subtracts requirement, execution and neutral deductions from the base", () => {
+    // Сбавки E 0.6, 0.8, 0.7, 0.9, 0.5: крайние отбрасываются, средняя 0.7.
+    const score = scoreCustomPerformance({
+      base: toPoints(10),
+      requirements: toPoints(0.5),
+      eDeductions: [0.6, 0.8, 0.7, 0.9, 0.5].map(toPoints),
+      neutral: toPoints(0.1),
+    });
+    expect(score).toEqual({ d: 9500, e: -700, neutral: 100, total: 8700 });
+    expect(score.total).toBe(score.d + score.e - score.neutral);
+  });
+
+  it("never goes below zero and ranks the smaller deduction higher on a tie", () => {
+    const low = scoreCustomPerformance({ base: 2000, requirements: 3000, eDeductions: [1000] });
+    expect(low).toEqual({ d: 0, e: -1000, neutral: 0, total: 0 });
+    const clean = scoreCustomPerformance({ base: 9000, requirements: 0, eDeductions: [0, 0, 0] });
+    expect(clean.e).toBe(0);
+    expect(Object.is(clean.e, -0)).toBe(false);
   });
 });
