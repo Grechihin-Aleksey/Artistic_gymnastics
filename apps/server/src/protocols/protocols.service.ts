@@ -21,6 +21,7 @@ import {
   type AuditGroup,
   type GymnastView,
   type Official,
+  type SeriesStandings,
   type Stage,
 } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -364,6 +365,51 @@ export class ProtocolsService {
         ? [{ text: "Общекомандный зачёт не настроен: задайте очки за места в блоке «Общекомандный зачёт».", style: "note" }]
         : [rows.length === 0 ? emptyNote() : table(body, 1), ...notes.map((n) => ({ text: n, style: "note" }) as Content)];
     return renderPdf(this.document(competition, "Общекомандный зачёт", content));
+  }
+
+  /** Итоги кубка из нескольких этапов: по разрядам, очки каждого этапа, не вошедшие в зачёт — в скобках. */
+  async series(standings: SeriesStandings): Promise<Buffer> {
+    const last = standings.stages.at(-1);
+    if (!last) throw new UnprocessableEntityException("У кубка нет этапов");
+    const competition = await this.competitions.get(last.id);
+    const points = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+    const content: Content[] = [];
+    for (const category of standings.categories) {
+      content.push({ text: category.name, style: "section" });
+      const body: TableCell[][] = [
+        [
+          th("Место"),
+          th("Участник"),
+          th("Г.р."),
+          th("Клуб"),
+          ...standings.stages.map((_, i) => th(`Этап ${i + 1}`, "right")),
+          th("Очки", "right"),
+        ],
+        ...category.rows.map((r): TableCell[] => [
+          { text: String(r.rank), bold: true },
+          { text: r.name, bold: true },
+          { text: r.birthYear },
+          { text: r.club ?? "" },
+          ...r.stages.map((p, i): TableCell => ({
+            text: p === null ? "—" : r.dropped.includes(i) ? `(${points(p)})` : points(p),
+            alignment: "right",
+            ...(r.dropped.includes(i) ? { color: "#777" } : {}),
+          })),
+          { text: points(r.total), alignment: "right", bold: true },
+        ]),
+      ];
+      content.push(table(body, 1));
+    }
+    if (standings.categories.length === 0) content.push({ text: "Законченных многоборий на этапах пока нет.", italics: true });
+    const { series } = standings;
+    const notes = [
+      ...standings.stages.map((st, i) => `Этап ${i + 1} — ${st.name}.`),
+      `Очки за места в многоборье: ${series.points.map(points).join("; ")}, дальше — 0.`,
+      series.best === null ? "В зачёт идут все этапы." : `В зачёт идут ${series.best} лучших этапов, остальные очки — в скобках.`,
+      "При равенстве очков выше тот, у кого больше 1-х, затем 2-х и 3-х мест.",
+    ];
+    content.push(...notes.map((n) => ({ text: n, style: "note" }) as Content));
+    return renderPdf(this.document({ ...competition, name: series.name }, "Итоги кубка", content));
   }
 
   /** Журнал изменений для жюри: по времени, с исполнителем, снарядом и участником. */

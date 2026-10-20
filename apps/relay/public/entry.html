@@ -40,6 +40,12 @@
   .done { border-color: var(--ok); }
   .done h2 { color: var(--ok); }
   [hidden] { display: none !important; }
+  .mine ul { list-style: none; padding: 0; margin: 0; }
+  .mine li { padding: 8px 0; border-top: 1px solid var(--line); }
+  .mine li:first-child { border-top: none; }
+  .st-NEW { color: var(--muted); }
+  .st-ACCEPTED { color: var(--ok); font-weight: 600; }
+  .st-REJECTED { color: var(--bad); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -49,6 +55,11 @@
   <div id="app" hidden>
     <h1 id="name"></h1>
     <p id="status" class="muted"></p>
+
+    <section id="mine" class="mine" hidden>
+      <h2>Ваши заявки</h2>
+      <ul id="mine-list"></ul>
+    </section>
 
     <form id="form" novalidate>
       <section>
@@ -86,6 +97,7 @@
     <section id="done" class="done" hidden>
       <h2>Заявка отправлена</h2>
       <p id="done-text"></p>
+      <p>Статус заявки можно проверить по ссылке: <a id="done-link" href="#">открыть статус</a>. Сохраните её, если подаёте заявку не с этого устройства.</p>
       <button type="button" id="again">Подать ещё одну заявку</button>
     </section>
   </div>
@@ -108,6 +120,47 @@
     ["team", "Команда"],
   ];
   let call = null;
+  const STATUS = { NEW: "на рассмотрении", ACCEPTED: "принята, участники включены в список", REJECTED: "отклонена" };
+  const statusLink = (entryId) => `${location.pathname}#c=${encodeURIComponent(id)}&k=${encodeURIComponent(key)}&r=${entryId}`;
+
+  // Номера своих заявок браузер помнит, чтобы показать их статус; без хранилища — только по ссылке.
+  const storeKey = `ag-entries:${id}`;
+  function remembered() {
+    try {
+      return JSON.parse(localStorage.getItem(storeKey) || "[]");
+    } catch {
+      return [];
+    }
+  }
+  function remember(entryId) {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify([...new Set([...remembered(), entryId])].slice(-20)));
+    } catch {
+      // Приватный режим: статус доступен по ссылке.
+    }
+  }
+
+  async function showMine() {
+    const fromLink = params.get("r");
+    const ids = [...new Set([...(fromLink ? [fromLink] : []), ...remembered()])];
+    if (!ids.length) return;
+    const list = $("#mine-list");
+    list.textContent = "";
+    for (const entryId of ids) {
+      const response = await fetch(`../api/entries/${encodeURIComponent(id)}/${encodeURIComponent(entryId)}?k=${encodeURIComponent(key)}`).catch(() => null);
+      if (!response || !response.ok) continue;
+      const st = await response.json();
+      const when = new Date(st.receivedAt).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
+      const item = el("li", {}, [
+        el("strong", { textContent: st.club }),
+        ` · ${st.count} чел. · ${when} · № ${st.id.slice(0, 8)}: `,
+        el("span", { className: `st-${st.status}`, textContent: STATUS[st.status] }),
+      ]);
+      if (st.note) item.append(el("div", { className: "muted", textContent: `Причина: ${st.note}` }));
+      list.append(item);
+    }
+    $("#mine").hidden = list.children.length === 0;
+  }
 
   function el(tag, props = {}, children = []) {
     const node = Object.assign(document.createElement(tag), props);
@@ -203,6 +256,9 @@
       if (!response.ok) throw new Error(data.message || `Ошибка ${response.status}`);
       const at = new Date(data.receivedAt).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
       $("#done-text").textContent = `Заявка получена ${at}, номер ${data.id.slice(0, 8)}. Секретариат рассмотрит её и включит участников в список; при вопросах с вами свяжутся по указанному контакту.`;
+      $("#done-link").href = statusLink(data.id);
+      remember(data.id);
+      void showMine();
       $("#form").hidden = true;
       $("#done").hidden = false;
       scrollTo(0, 0);
@@ -222,6 +278,8 @@
     showStatus();
   });
 
+  addEventListener("hashchange", () => location.reload());
+
   fetch(api)
     .then(async (response) => {
       const data = await response.json().catch(() => ({}));
@@ -231,6 +289,7 @@
       $("#name").textContent = call.name;
       addRow();
       showStatus();
+      void showMine();
       $("#app").hidden = false;
     })
     .catch((err) => {

@@ -193,6 +193,24 @@ export interface OnlineEntryCall {
   categories: string[];
 }
 
+/** Решение секретариата по заявке: клуб видит его по номеру заявки. */
+export interface OnlineEntryDecision {
+  status: "ACCEPTED" | "REJECTED";
+  note: string | null;
+  decidedAt: string;
+}
+
+/** Что клуб видит по своей заявке. */
+export interface OnlineEntryStatusView {
+  id: string;
+  club: string;
+  count: number;
+  receivedAt: string;
+  status: OnlineEntryStatus;
+  note: string | null;
+  decidedAt: string | null;
+}
+
 /** Заявка, принятая ретранслятором: id и время получения ставит он. */
 export type OnlineEntry = z.infer<typeof onlineEntrySchema>;
 export interface ReceivedOnlineEntry extends OnlineEntry {
@@ -309,6 +327,43 @@ export const setClubStandingSchema = z.object({
   teams: placePoints,
   best: z.number().int().min(1).max(50).nullable(),
 });
+
+/**
+ * Кубок из нескольких этапов: очки за места в многоборье на каждом этапе
+ * по таблице из положения; best — сколько лучших этапов идёт в зачёт (null — все).
+ */
+export const seriesSchema = z.object({
+  name: z.string().trim().min(1, "Укажите название кубка").max(300),
+  points: placePoints.min(1, "Задайте очки хотя бы за 1-е место"),
+  best: z.number().int().min(1).max(50).nullable(),
+  /** Этапы — соревнования по порядку проведения. */
+  stages: z.array(z.uuid()).max(50).refine((ids) => new Set(ids).size === ids.length, "Этапы повторяются"),
+});
+export type SeriesInput = z.infer<typeof seriesSchema>;
+
+export interface SeriesView extends SeriesInput {
+  id: string;
+}
+
+export interface SeriesStandingRow {
+  rank: number;
+  name: string;
+  club: string | null;
+  birthYear: string;
+  total: number;
+  /** Очки на каждом этапе по порядку; null — не выступал(а) или многоборье не закончено. */
+  stages: (number | null)[];
+  /** Этапы, очки которых не вошли в зачёт (при лимите лучших). */
+  dropped: number[];
+  places: [number, number, number];
+}
+
+export interface SeriesStandings {
+  series: SeriesView;
+  stages: { id: string; name: string }[];
+  /** По разрядам: разряды разных этапов сопоставляются по названию. */
+  categories: { name: string; rows: SeriesStandingRow[] }[];
+}
 
 /** Что награждают: многоборье, снаряд, команды разряда или общекомандный зачёт клубов. */
 export const CEREMONY_KINDS = ["allAround", "apparatus", "teams", "clubs"] as const;
@@ -699,6 +754,26 @@ export interface RelayIngest {
   snapshot: BoardSnapshot;
   /** Оценки, утверждённые с прошлой отправки, для всплывающей строки на сайте. */
   approved: PerformanceView[];
+}
+
+/** Протокол, выложенный на сайт: file — имя файла в адресе, title — как его показать. */
+export interface PublishedProtocol {
+  file: string;
+  title: string;
+  /** Раздел списка: разряд, а для общих документов — пустая строка. */
+  group: string;
+  size: number;
+}
+
+/** Протоколы соревнования на сайте. */
+export interface ProtocolsIndex {
+  publishedAt: string;
+  files: PublishedProtocol[];
+}
+
+/** Тело запроса PUT /protocols/:competitionId на ретранслятор: файлы в base64. */
+export interface RelayProtocols {
+  files: (Omit<PublishedProtocol, "size"> & { data: string })[];
 }
 
 /** События потока ретранслятора (Server-Sent Events). */

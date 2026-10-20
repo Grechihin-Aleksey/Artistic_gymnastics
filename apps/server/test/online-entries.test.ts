@@ -14,7 +14,7 @@ let relay: Server;
 let admin: ReturnType<typeof api>;
 let competitionId: string;
 /** Что зал опубликовал на «сайте» и что «клубы» туда прислали. */
-const published: { key: string; call: OnlineEntryCall }[] = [];
+const published: { key: string; call: OnlineEntryCall; decisions?: Record<string, { status: string; note: string | null }> }[] = [];
 const submitted: ReceivedOnlineEntry[] = [];
 let down = false;
 
@@ -24,7 +24,7 @@ beforeAll(async () => {
     req.on("data", (c: Buffer) => (body += c.toString()));
     req.on("end", () => {
       if (down || req.headers.authorization !== `Bearer ${RELAY_TOKEN}`) return res.writeHead(down ? 503 : 401).end();
-      if (req.method === "PUT") published.push(JSON.parse(body) as { key: string; call: OnlineEntryCall });
+      if (req.method === "PUT") published.push(JSON.parse(body) as (typeof published)[number]);
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(req.method === "GET" ? { entries: submitted } : { ok: true }));
     });
   });
@@ -109,6 +109,11 @@ describe("онлайн-заявки клубов", () => {
     view = (await admin.post(`${base()}/${start.id}/reject`, { note: "Нет медицинского допуска" }).expect(201)).body;
     expect(view.entries[1]).toMatchObject({ status: "REJECTED", note: "Нет медицинского допуска" });
     await admin.post(`${base()}/${randomUUID()}/reject`, {}).expect(404);
+    // Решения сразу уходят на сайт: клуб видит статус своей заявки.
+    expect(published.at(-1)!.decisions).toEqual({
+      [olimp.id]: expect.objectContaining({ status: "ACCEPTED", note: null }),
+      [start.id]: expect.objectContaining({ status: "REJECTED", note: "Нет медицинского допуска" }),
+    });
 
     const log = (await admin.get(`/competitions/${competitionId}/audit?group=roster`).expect(200)).body as { text: string }[];
     expect(log.slice(0, 2).map((e) => e.text)).toEqual([

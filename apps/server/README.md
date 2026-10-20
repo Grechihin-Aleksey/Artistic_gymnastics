@@ -47,6 +47,9 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/competitions/:id/protocols/diplomas` | секретариат | Грамоты призёрам в PDF: `?kind=all-around` (многоборье и команды) или `apparatus`, `?places=3` |
 | PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, фамилия, имя, отчество, дата рождения, клуб, город, тренер, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
 | GET | `/competitions/:id/normatives` | все | Нормативы разрядов: уровни и минимальная сумма многоборья по каждому разряду |
+| GET | `/competitions/:id/site-protocols` | секретариат | Протоколы на сайте: что выложено и ссылка на страницу протоколов |
+| POST | `/competitions/:id/site-protocols` | секретариат | Собрать PDF по разрядам (многоборье, снаряды, финалы, команды), общекомандный зачёт и Excel и выложить на ретранслятор, заменив прежние |
+| DELETE | `/competitions/:id/site-protocols` | секретариат | Снять протоколы с сайта |
 | GET | `/competitions/:id/online-entries` | секретариат | Онлайн-заявки клубов: идёт ли приём, срок, ссылка для клубов, забранные заявки и решения по ним |
 | PUT | `/competitions/:id/online-entries/settings` | секретариат | Открыть или закрыть приём: `{ open, deadline }`; публикует приём на ретрансляторе и при первом открытии создаёт секретный ключ ссылки |
 | POST | `/competitions/:id/online-entries/sync` | секретариат | Забрать новые заявки с ретранслятора |
@@ -80,6 +83,12 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/competitions/:id/results/all-around` | все | Многоборье |
 | GET | `/competitions/:id/results/teams` | все | Командный зачёт |
 | GET | `/competitions/:id/results/clubs` | все | Общекомандный зачёт клубов: очки за многоборье, снаряды и команды, число призовых мест |
+| GET | `/series` | все | Кубки из нескольких этапов |
+| POST | `/series` | секретариат | Новый кубок: `{ name, points: [25, 20, 16], best: 3 \| null, stages: [id соревнований по порядку] }` |
+| PUT | `/series/:id` | секретариат | Изменить кубок (тело как у POST) |
+| DELETE | `/series/:id` | секретариат | Удалить кубок; соревнования-этапы остаются |
+| GET | `/series/:id/standings` | все | Итоги кубка по разрядам: очки за места в многоборье на каждом этапе, сумма лучших этапов, места |
+| GET | `/series/:id/protocol` | секретариат | Протокол итогов кубка в PDF |
 
 Правила оценок:
 - судья E ставит сумму сбавок `E`, судья D и старший судья — `D` и `NEUTRAL`;

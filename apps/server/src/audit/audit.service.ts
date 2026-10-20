@@ -205,6 +205,10 @@ export function describe(
         apparatus: d.apparatus as Apparatus,
         text: `Финалист ${ctx.person(d.out)} заменён запасным ${ctx.person(d.in)}`,
       };
+    case "protocols.published":
+      return { group: "setup", text: `Протоколы выложены на сайт: файлов — ${String(d.count)}` };
+    case "protocols.unpublished":
+      return { group: "setup", text: "Протоколы сняты с сайта" };
     case "ceremony.shown":
       return { group: "setup", text: "Награждение выведено на табло" };
     case "ceremony.hidden":

@@ -21,6 +21,10 @@ import { PerformancesController } from "./performances/performances.controller";
 import { PerformancesService } from "./performances/performances.service";
 import { ProtocolsController } from "./protocols/protocols.controller";
 import { ProtocolsService } from "./protocols/protocols.service";
+import { SiteProtocolsController } from "./protocols/site-protocols.controller";
+import { SiteProtocolsService } from "./protocols/site-protocols.service";
+import { SeriesController } from "./series/series.controller";
+import { SeriesService } from "./series/series.service";
 import { RelayPublisher } from "./relay/relay.publisher";
 import { CeremonyController } from "./results/ceremony.controller";
 import { ResultsController } from "./results/results.controller";
@@ -52,6 +56,8 @@ export class AppModule {
         CeremonyController,
         AuditController,
         OnlineEntriesController,
+        SiteProtocolsController,
+        SeriesController,
       ],
       providers: [
         AuthService,
@@ -65,6 +71,8 @@ export class AppModule {
         ProtocolsService,
         AuditService,
         OnlineEntriesService,
+        SiteProtocolsService,
+        SeriesService,
         LiveGateway,
         RelayPublisher,
       ],

@@ -3,9 +3,11 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import type {
+  OnlineEntryDecision,
   OnlineEntriesView,
   OnlineEntryCall,
   ReceivedOnlineEntry,
@@ -29,6 +31,8 @@ const REQUEST_TIMEOUT_MS = 10_000;
  */
 @Injectable()
 export class OnlineEntriesService {
+  private readonly log = new Logger("OnlineEntries");
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -147,6 +151,7 @@ export class OnlineEntriesService {
       action: "entries.accepted",
       details: { entryId, club: entry.club, count: entry.rows.length },
     });
+    await this.announce(competitionId);
     return this.view(competitionId);
   }
 
@@ -158,7 +163,21 @@ export class OnlineEntriesService {
       action: "entries.rejected",
       details: { entryId, club: row.entry.club, note: input.note ?? null },
     });
+    await this.announce(competitionId);
     return this.view(competitionId);
+  }
+
+  /**
+   * Сообщить сайту решения, чтобы клуб увидел статус заявки. Если связи нет,
+   * решение уйдёт со следующим «Забрать заявки» — секретаря это не задерживает.
+   */
+  private async announce(competitionId: string): Promise<void> {
+    const competition = await this.competitions.get(competitionId);
+    if (!competition.entryKey) return;
+    await this.publish(competitionId, competition.entryKey, {
+      open: competition.entriesOpen,
+      deadline: competition.entriesDeadline?.toISOString() ?? null,
+    }).catch((e: unknown) => this.log.warn(`Решение по заявке не отправлено на сайт: ${(e as Error).message}`));
   }
 
   /** Решение по заявке принимается один раз: повторное нажатие получает отказ. */
@@ -187,7 +206,15 @@ export class OnlineEntriesService {
     const competition = await this.competitions.get(competitionId);
     const categories = (await this.results.categoryList(competitionId)).filter((c) => c.id).map((c) => c.name);
     const call: OnlineEntryCall = { name: competition.name, discipline: competition.discipline, categories, ...state };
-    await this.request("PUT", `entries/${competitionId}`, { key, call });
+    const decided = await this.db
+      .select({ id: onlineEntries.id, status: onlineEntries.status, note: onlineEntries.note, decidedAt: onlineEntries.decidedAt })
+      .from(onlineEntries)
+      .where(eq(onlineEntries.competitionId, competitionId));
+    const decisions: Record<string, OnlineEntryDecision> = {};
+    for (const d of decided) {
+      if (d.status !== "NEW" && d.decidedAt) decisions[d.id] = { status: d.status, note: d.note, decidedAt: d.decidedAt.toISOString() };
+    }
+    await this.request("PUT", `entries/${competitionId}`, { key, call, decisions });
   }
 
   private async request(method: "GET" | "PUT", path: string, body?: unknown): Promise<unknown> {

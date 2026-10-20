@@ -160,6 +160,17 @@ describe("ретранслятор", () => {
     expect(sent.status).toBe(201);
     const { id } = (await sent.json()) as { id: string };
 
+    // Клуб видит статус по номеру; решение приходит из зала.
+    const status = async () => (await (await fetch(`${base}/api/entries/${ID}/${id}?k=${KEY}`)).json()) as { status: string; note: string | null };
+    expect(await status()).toMatchObject({ id, club: "Олимп", count: 1, status: "NEW", note: null });
+    expect((await fetch(`${base}/api/entries/${ID}/${id}?k=wrong-key-0123456789abc`)).status).toBe(404);
+    expect((await fetch(`${base}/api/entries/${ID}/0b9b6a52-0000-4f0e-9a4f-2f1d3c4b5a69?k=${KEY}`)).status).toBe(404);
+    await publish({ key: KEY, call, decisions: { [id]: { status: "REJECTED", note: "Нет допуска", decidedAt: "2030-01-01T00:00:00Z" } } });
+    expect(await status()).toMatchObject({ status: "REJECTED", note: "Нет допуска" });
+    // Публикация без решений их не стирает.
+    await publish({ key: KEY, call });
+    expect((await status()).status).toBe("REJECTED");
+
     const hall = (token = TOKEN) => fetch(`${base}/entries/${ID}`, { headers: { authorization: `Bearer ${token}` } });
     expect((await hall("wrong-token")).status).toBe(401);
     expect(await (await hall()).json()).toEqual({ entries: [expect.objectContaining({ ...entry, id })] });
@@ -173,5 +184,42 @@ describe("ретранслятор", () => {
     expect((await publish({ key: KEY, call: { ...call, deadline: "2020-01-01T00:00:00Z" } })).status).toBe(200);
     expect((await club(entry)).status).toBe(409);
     expect((await fetch(`${base}/entry/`)).status).toBe(200);
+  });
+
+  it("хранит выложенные протоколы, отдаёт их сайту и снимает по запросу зала", async () => {
+    const put = (body: unknown, token = TOKEN, method = "PUT") =>
+      fetch(`${base}/protocols/${ID}`, {
+        method,
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: method === "PUT" ? JSON.stringify(body) : null,
+      });
+    const pdf = Buffer.from("%PDF-1.4 протокол").toString("base64");
+    const files = [
+      { file: "all-around-1.pdf", title: "Многоборье", group: "КМС", data: pdf },
+      { file: "results.xlsx", title: "Все итоги в Excel", group: "", data: Buffer.from("xlsx").toString("base64") },
+    ];
+    expect((await put({ files }, "wrong-token")).status).toBe(401);
+    expect((await put({ files: [{ ...files[0], file: "../x.pdf" }] })).status).toBe(400);
+    expect(await (await fetch(`${base}/api/competitions/${ID}/protocols`)).json()).toEqual({ publishedAt: null, files: [] });
+    expect((await put({ files })).status).toBe(200);
+
+    const index = (await (await fetch(`${base}/api/competitions/${ID}/protocols`)).json()) as { files: unknown[] };
+    expect(index.files).toEqual([
+      { file: "all-around-1.pdf", title: "Многоборье", group: "КМС", size: Buffer.from(pdf, "base64").length },
+      { file: "results.xlsx", title: "Все итоги в Excel", group: "", size: 4 },
+    ]);
+    const got = await fetch(`${base}/api/competitions/${ID}/protocols/all-around-1.pdf`);
+    expect(got.headers.get("content-type")).toBe("application/pdf");
+    expect(await got.text()).toBe("%PDF-1.4 протокол");
+    expect((await fetch(`${base}/api/competitions/${ID}/protocols/other.pdf`)).status).toBe(404);
+
+    // Новая публикация заменяет прежнюю целиком и переживает перезапуск.
+    await put({ files: [files[1]] });
+    await relay.close();
+    await start();
+    expect(((await (await fetch(`${base}/api/competitions/${ID}/protocols`)).json()) as { files: unknown[] }).files).toHaveLength(1);
+    expect((await fetch(`${base}/api/competitions/${ID}/protocols/all-around-1.pdf`)).status).toBe(404);
+    expect((await put(null, TOKEN, "DELETE")).status).toBe(200);
+    expect((await fetch(`${base}/api/competitions/${ID}/protocols/results.xlsx`)).status).toBe(404);
   });
 });
