@@ -26,7 +26,8 @@ for ($i = 0; $i -lt 90; $i++) {
 Write-Host ""
 if (-not $ready) { Write-Host "Сервер не ответил за 3 минуты. Журнал: docker compose logs server"; pause; exit 1 }
 
-$ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -in "Dhcp", "Manual" -and $_.IPAddress -notlike "169.254*" } | Select-Object -First 1).IPAddress
+# Адрес в сети зала: у адаптера с основным шлюзом (Wi-Fi или Ethernet), а не у виртуальных адаптеров WSL и Docker.
+$ip = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } | Select-Object -First 1).IPv4Address.IPAddress | Select-Object -First 1
 if (-not $ip) { $ip = "localhost" }
 $token = ((Get-Content ".env") | Where-Object { $_ -like "ADMIN_TOKEN=*" }) -replace "^ADMIN_TOKEN=", ""
 
@@ -37,5 +38,6 @@ Write-Host "  Табло:       http://${ip}:3000/board/"
 Write-Host "  Токен секретариата: $token"
 Write-Host "Резервные копии базы каждые 5 минут в папке backups."
 Write-Host "Остановить: docker compose stop"
-Start-Process "http://localhost:3000/judge/#/admin"
+# Секретариат открывается по адресу в сети: этот адрес попадает в QR-коды судей.
+Start-Process "http://${ip}:3000/judge/#/admin"
 pause
