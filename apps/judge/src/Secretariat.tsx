@@ -2703,3 +2703,151 @@ export function SeriesPanel({
     </section>
   );
 }
+
+/** Загрузка турнира из файла, выгруженного на другом компьютере. */
+export function ImportCompetitionForm({
+  adminToken,
+  onImported,
+  onError,
+}: {
+  adminToken: string;
+  onImported: (id: string) => void;
+  onError: (message: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  const upload = async (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    setBusy(true);
+    setDone(null);
+    try {
+      let body: unknown;
+      try {
+        body = JSON.parse(await file.text());
+      } catch {
+        throw new Error("Файл повреждён или это не файл турнира");
+      }
+      const imported = await apiRequest<{ id: string; name: string }>("/competitions/import", {
+        token: adminToken,
+        method: "POST",
+        body,
+      });
+      setDone(
+        `Турнир «${imported.name}» загружен. Прежние QR-коды судей действуют, только если у этого компьютера тот же адрес в сети, что был у прежнего. Иначе выдайте судьям новые QR-коды.`,
+      );
+      onError(null);
+      onImported(imported.id);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel no-print">
+      <p className="muted wide">
+        Выберите файл, выгруженный кнопкой «Выгрузить в файл» на другом компьютере. Загрузятся участники, судьи, оценки,
+        финалы, запросы и журнал изменений.
+      </p>
+      <label className="wide">
+        Файл турнира (.json)
+        <input type="file" accept=".json,application/json" disabled={busy} onChange={(e) => void upload(e.currentTarget)} />
+      </label>
+      {busy && <p className="muted wide">Загрузка…</p>}
+      {done && <p className="wide">{done}</p>}
+    </section>
+  );
+}
+
+/** Перенос турнира на другой компьютер файлом и удаление турнира со всеми данными. */
+export function TransferPanel({
+  competitionId,
+  name,
+  adminToken,
+  onError,
+  onDeleted,
+}: {
+  competitionId: string;
+  name: string;
+  adminToken: string;
+  onError: (message: string | null) => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const response = await fetch(`/competitions/${competitionId}/export`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new ApiError(response.status, data?.message ?? `Ошибка сервера ${response.status}`);
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${name.replace(/[\\/:*?"<>|]+/g, " ").trim() || "турнир"} ${new Date().toLocaleDateString("ru-RU")}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Удалить турнир «${name}» со всеми участниками, судьями, оценками и журналом? Отменить это нельзя.`)) return;
+    setBusy(true);
+    try {
+      await apiRequest(`/competitions/${competitionId}`, { token: adminToken, method: "DELETE" });
+      setConfirmName("");
+      onError(null);
+      onDeleted();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel no-print">
+      <h2>Перенос и удаление турнира</h2>
+      <p className="muted wide">
+        Файл турнира содержит всё: участников, судей, оценки, финалы, запросы и журнал. На другом компьютере загрузите его в
+        разделе «Загрузить турнир из файла». Прежние QR-коды судей подойдут, если у нового компьютера тот же адрес в сети.
+      </p>
+      <div className="wide">
+        <button type="button" className="primary" disabled={busy} onClick={() => void download()}>
+          Выгрузить в файл
+        </button>
+      </div>
+      <label className="wide">
+        Чтобы удалить турнир, введите его название: {name}
+        <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoComplete="off" />
+      </label>
+      <div className="wide">
+        <button
+          type="button"
+          className="primary danger"
+          disabled={busy || confirmName.trim() !== name.trim()}
+          onClick={() => void remove()}
+        >
+          Удалить турнир
+        </button>
+        <p className="muted">Перед удалением выгрузите турнир в файл, если он ещё понадобится.</p>
+      </div>
+    </section>
+  );
+}

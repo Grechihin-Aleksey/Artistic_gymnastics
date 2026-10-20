@@ -23,6 +23,8 @@ import { ProtocolsController } from "./protocols/protocols.controller";
 import { ProtocolsService } from "./protocols/protocols.service";
 import { SiteProtocolsController } from "./protocols/site-protocols.controller";
 import { SiteProtocolsService } from "./protocols/site-protocols.service";
+import { TransferController } from "./competitions/transfer.controller";
+import { TransferService } from "./competitions/transfer.service";
 import { SeriesController } from "./series/series.controller";
 import { SeriesService } from "./series/series.service";
 import { RelayPublisher } from "./relay/relay.publisher";
@@ -58,6 +60,7 @@ export class AppModule {
         OnlineEntriesController,
         SiteProtocolsController,
         SeriesController,
+        TransferController,
       ],
       providers: [
         AuthService,
@@ -73,6 +76,7 @@ export class AppModule {
         OnlineEntriesService,
         SiteProtocolsService,
         SeriesService,
+        TransferService,
         LiveGateway,
         RelayPublisher,
       ],
