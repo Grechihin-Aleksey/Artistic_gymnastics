@@ -6,6 +6,8 @@ interface Competition {
   id: string;
   name: string;
   discipline: string;
+  /** Девочки и мальчики одного турнира (только в зале): обе части с одним pairId. */
+  pairId?: string | null;
 }
 
 export function App() {
@@ -105,14 +107,28 @@ function Picker() {
       {list === null && <p className="muted">Загрузка…</p>}
       {list?.length === 0 && <p className="muted">Соревнований пока нет</p>}
       <ul className="picker">
-        {list?.map((c) => (
+        {list && pairUp(list).map(([c, other]) => (
           <li key={c.id}>
-            <a href={routeHash({ competitionId: c.id, view: "auto" })}>
-              {c.name} <span className="muted">{c.discipline}</span>
+            <a href={routeHash(other ? { competitionId: c.id, group: [c.id, other.id], view: "auto" } : { competitionId: c.id, view: "auto" })}>
+              {c.name} <span className="muted">{other ? "девочки и мальчики" : c.discipline}</span>
             </a>
           </li>
         ))}
       </ul>
     </div>
   );
+}
+
+/** Турнир девочек и мальчиков — одна строка списка: девочки, затем мальчики. */
+function pairUp(list: Competition[]): [Competition, Competition | undefined][] {
+  const out: [Competition, Competition | undefined][] = [];
+  const seen = new Set<string>();
+  for (const c of list) {
+    if (seen.has(c.id)) continue;
+    const other = c.pairId ? list.find((o) => o.pairId === c.pairId && o.id !== c.id) : undefined;
+    seen.add(c.id);
+    if (other) seen.add(other.id);
+    out.push(other && other.discipline === "WAG" ? [other, c] : [c, other]);
+  }
+  return out;
 }

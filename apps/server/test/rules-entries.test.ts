@@ -67,6 +67,19 @@ describe("заявка из Excel", () => {
     expect(parsed.text).toBe("11\tОрлов\tЛев\tСШ Ржев\tРжев\t1 юношеский\t1\n12\tВолков\tЕгор\tСШ Ржев\tРжев\t1 юношеский\t1");
   });
 
+  it("читает пол для турнира девочек и мальчиков", async () => {
+    const file = await xlsx([
+      ["Фамилия", "Имя", "Пол"],
+      ["Орлов", "Лев", "м"],
+      ["Белова", "Анна", "Девочка"],
+      ["Ким", "Саша", "?"],
+    ]);
+    const parsed = (await admin.post(`/competitions/${competitionId}/gymnasts/parse-xlsx`, { file, nextBib: 1 }).expect(201)).body;
+    const genders = parsed.text.split("\n").map((line: string) => line.split("\t")[11] ?? "");
+    expect(genders).toEqual(["М", "Ж", ""]);
+    expect(parsed.notes.join(" ")).toContain("пол «?» не распознан");
+  });
+
   it("объясняет, если файл не подходит", async () => {
     const noHeader = await xlsx([["a", "b"], [1, 2]]);
     const res = await admin.post(`/competitions/${competitionId}/gymnasts/parse-xlsx`, { file: noHeader }).expect(400);

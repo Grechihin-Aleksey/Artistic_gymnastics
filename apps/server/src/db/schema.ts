@@ -64,6 +64,8 @@ export const competitions = pgTable("competitions", {
   finalSize: integer("final_size").notNull().default(8),
   finalReserves: integer("final_reserves").notNull().default(2),
   finalPerClub: integer("final_per_club"),
+  /** Девочки и мальчики одного турнира: обе части хранят один и тот же pairId. */
+  pairId: uuid("pair_id"),
   createdAt: createdAt(),
 });
 
