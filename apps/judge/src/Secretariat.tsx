@@ -19,6 +19,10 @@ interface RosterGymnast extends Gymnast {
   categoryId: string | null;
   shift: number | null;
   status: GymnastStatus;
+  middleName: string | null;
+  birthDate: string | null;
+  city: string | null;
+  coach: string | null;
 }
 
 interface Props {
@@ -702,7 +706,7 @@ export function RosterPanel({
           Бланк заявки для клубов
         </a>
         <span className="muted">
-          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Клуб, Команда, Разряд, Смена, Стартовый номер.
+          Столбцы узнаются по заголовкам: Фамилия, Имя (или ФИО), Отчество, Дата рождения, Клуб, Город, Тренер, Команда, Разряд, Смена, Стартовый номер.
           Заявки нескольких клубов можно загрузить по очереди, а потом добавить всех разом.
         </span>
       </div>
@@ -714,13 +718,13 @@ export function RosterPanel({
         </div>
       )}
       <label className="wide">
-        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена. Порядок строк в
-        смене — порядок выхода.
+        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
+        Тренер · Отчество. Обязательны первые три столбца. Порядок строк в смене — порядок выхода.
         <textarea
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"12\tИванова\tАнна\tг. Тверь\tСШОР №1\t1 юношеский\t1\n13\tПетрова\tМария\tг. Тверь\tСШОР №1\t1 юношеский\t1"}
+          placeholder={"12\tИванова\tАнна\tСШОР №1\tСШОР №1\t1 юношеский\t1\t15.03.2014\tТверь\tСмирнова О. В.\n13\tПетрова\tМария\tСШОР №1\tСШОР №1\t1 юношеский\t1\t2014\tТверь"}
         />
       </label>
       {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
@@ -1217,7 +1221,11 @@ interface GymnastDraft {
   bib: string;
   lastName: string;
   firstName: string;
+  middleName: string;
+  birthDate: string;
   club: string;
+  city: string;
+  coach: string;
   team: string;
   category: string;
   shift: string;
@@ -1269,9 +1277,14 @@ function GymnastRow({
       <tr className={g.status === "ACTIVE" ? undefined : "out"}>
         <td>№{g.bib}</td>
         <td>
-          {g.lastName} {g.firstName}
+          {g.lastName} {g.firstName} {g.middleName ?? ""}
+          {(g.birthDate || g.coach) && (
+            <div className="muted small">
+              {[g.birthDate && `д.р. ${g.birthDate}`, g.coach && `тренер ${g.coach}`].filter(Boolean).join(" · ")}
+            </div>
+          )}
         </td>
-        <td className="muted">{g.club ?? ""}</td>
+        <td className="muted">{[g.club, g.city].filter(Boolean).join(", ")}</td>
         <td className="muted">{team}</td>
         <td className="muted">{category}</td>
         <td className="muted">{g.shift ? `смена ${g.shift}` : ""}</td>
@@ -1285,7 +1298,11 @@ function GymnastRow({
                 bib: String(g.bib),
                 lastName: g.lastName,
                 firstName: g.firstName,
+                middleName: g.middleName ?? "",
+                birthDate: g.birthDate ?? "",
                 club: g.club ?? "",
+                city: g.city ?? "",
+                coach: g.coach ?? "",
                 team,
                 category,
                 shift: g.shift ? String(g.shift) : "",
@@ -1304,7 +1321,9 @@ function GymnastRow({
   );
   const bib = Number(draft.bib);
   const shift = draft.shift.trim() ? Number(draft.shift) : null;
+  const birthOk = draft.birthDate.trim() === "" || /^(\d{4}|\d{2}\.\d{2}\.\d{4})$/.test(draft.birthDate.trim());
   const valid =
+    birthOk &&
     Number.isInteger(bib) &&
     bib >= 1 &&
     draft.lastName.trim() !== "" &&
@@ -1316,8 +1335,18 @@ function GymnastRow({
       <td>
         {field("lastName", { "aria-label": "Фамилия", placeholder: "Фамилия" })}
         {field("firstName", { "aria-label": "Имя", placeholder: "Имя" })}
+        {field("middleName", { "aria-label": "Отчество", placeholder: "Отчество" })}
+        {field("birthDate", {
+          "aria-label": "Дата рождения",
+          placeholder: "Дата рождения: 2014 или 15.03.2014",
+          className: birthOk ? undefined : "invalid",
+        })}
       </td>
-      <td>{field("club", { "aria-label": "Клуб", placeholder: "Клуб" })}</td>
+      <td>
+        {field("club", { "aria-label": "Клуб", placeholder: "Клуб" })}
+        {field("city", { "aria-label": "Город", placeholder: "Город" })}
+        {field("coach", { "aria-label": "Тренер", placeholder: "Тренер" })}
+      </td>
       <td>{field("team", { "aria-label": "Команда", placeholder: "Команда", list: "team-names" })}</td>
       <td>{field("category", { "aria-label": "Разряд", placeholder: "Разряд", list: "category-names" })}</td>
       <td>{field("shift", { "aria-label": "Смена", placeholder: "Смена", inputMode: "numeric", className: "narrow" })}</td>
@@ -1333,7 +1362,11 @@ function GymnastRow({
                 bib,
                 lastName: draft.lastName.trim(),
                 firstName: draft.firstName.trim(),
+                middleName: draft.middleName.trim() || null,
+                birthDate: draft.birthDate.trim() || null,
                 club: draft.club.trim() || null,
+                city: draft.city.trim() || null,
+                coach: draft.coach.trim() || null,
                 team: draft.team.trim() || null,
                 category: draft.category.trim() || null,
                 shift,

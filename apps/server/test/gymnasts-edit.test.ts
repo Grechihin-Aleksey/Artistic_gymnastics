@@ -1,5 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { normalizeBirthDate } from "../src/competitions/entries";
 import { ADMIN_TOKEN, api, startApp } from "./helpers";
 
 let app: INestApplication;
@@ -30,6 +31,30 @@ const path = (bib: number) => `/competitions/${competitionId}/gymnasts/${ids.get
 const rotation = async () => (await api(app).get(`/competitions/${competitionId}/rotation`).expect(200)).body;
 
 describe("правка участников", () => {
+  it("правит отчество, дату рождения, город и тренера; пустое значение стирает", async () => {
+    const full = (
+      await admin
+        .patch(path(4), { middleName: "Игоревна", birthDate: "07.05.2014", city: "Тверь", coach: "Смирнова О. В." })
+        .expect(200)
+    ).body;
+    expect(full).toMatchObject({ middleName: "Игоревна", birthDate: "07.05.2014", city: "Тверь", coach: "Смирнова О. В." });
+    expect((await admin.patch(path(4), { birthDate: "7 мая" }).expect(400)).body.issues[0].message).toContain("Дата рождения");
+    const cleared = (await admin.patch(path(4), { birthDate: "2014", coach: null, city: "" }).expect(200)).body;
+    expect(cleared).toMatchObject({ birthDate: "2014", coach: null, city: null, middleName: "Игоревна" });
+  });
+
+  it("распознаёт дату рождения из заявки", () => {
+    expect(["2014", "2014 г.", "7.5.2014", "07.05.14", "2014-05-07", "", "весной"].map(normalizeBirthDate)).toEqual([
+      "2014",
+      "2014",
+      "07.05.2014",
+      "07.05.2014",
+      "07.05.2014",
+      "",
+      null,
+    ]);
+  });
+
   it("исправляет фамилию, номер, разряд, команду и смену", async () => {
     await api(app).patch(path(1), { lastName: "Иванова" }).expect(401);
     const fixed = (await admin.patch(path(1), { lastName: "Иванова", bib: 11 }).expect(200)).body;

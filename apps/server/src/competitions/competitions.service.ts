@@ -274,6 +274,10 @@ export class CompetitionsService {
               lastName: r.lastName,
               firstName: r.firstName,
               club: r.club ?? null,
+              middleName: r.middleName || null,
+              birthDate: r.birthDate || null,
+              city: r.city || null,
+              coach: r.coach || null,
               teamId: r.team ? teamIds.get(teamKey(r.team, categoryId))! : null,
               categoryId,
               shift: r.shift ?? null,
@@ -302,7 +306,9 @@ export class CompetitionsService {
       for (const key of ["lastName", "firstName", "status"] as const) {
         if (input[key] !== undefined) Object.assign(changes, { [key]: input[key] });
       }
-      if (input.club !== undefined) changes.club = input.club || null;
+      for (const key of ["club", "middleName", "birthDate", "city", "coach"] as const) {
+        if (input[key] !== undefined) changes[key] = input[key] || null;
+      }
 
       if (input.bib !== undefined && input.bib !== current.bib) {
         const [taken] = await tx

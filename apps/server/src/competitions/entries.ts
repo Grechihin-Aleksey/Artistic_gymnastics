@@ -1,9 +1,33 @@
 import ExcelJS from "exceljs";
 
 /** Порядок столбцов в списке участников секретариата. */
-export const ENTRY_COLUMNS = ["Стартовый номер", "Фамилия", "Имя", "Клуб", "Команда", "Разряд", "Смена"] as const;
+export const ENTRY_COLUMNS = [
+  "Стартовый номер",
+  "Фамилия",
+  "Имя",
+  "Клуб",
+  "Команда",
+  "Разряд",
+  "Смена",
+  "Дата рождения",
+  "Город",
+  "Тренер",
+  "Отчество",
+] as const;
 
-type Field = "bib" | "lastName" | "firstName" | "fullName" | "club" | "city" | "team" | "category" | "shift";
+type Field =
+  | "bib"
+  | "lastName"
+  | "firstName"
+  | "middleName"
+  | "fullName"
+  | "birthDate"
+  | "club"
+  | "city"
+  | "coach"
+  | "team"
+  | "category"
+  | "shift";
 
 /**
  * Заголовки, по которым узнаём столбцы заявки. Первый подходящий столбец побеждает.
@@ -15,6 +39,9 @@ const HEADERS: [Field, RegExp][] = [
   ["fullName", /^ф\.?\s*и\.?\s*о|фамилия[,\s]+имя|^участник|^спортсмен/i],
   ["lastName", /фамилия/i],
   ["firstName", /^имя/i],
+  ["middleName", /отчеств/i],
+  ["birthDate", /рожд|^г\.?\s*р|^д\.?\s*р/i],
+  ["coach", /тренер|преподават/i],
   ["club", /клуб|организац|школ|сш|дюсш|сдюшор|ведомств|коллектив/i],
   ["city", /город|регион|субъект|населённ|населенн|муниципал/i],
   ["team", /команд/i],
@@ -32,9 +59,13 @@ export interface ParsedEntries {
 
 const clean = (value: string) => value.replace(/\s+/g, " ").trim();
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
 function cellText(cell: ExcelJS.Cell): string {
   const v = cell.value;
   if (v === null || v === undefined) return "";
+  // Дата в ячейке Excel — 15.03.2012.
+  if (v instanceof Date) return `${pad(v.getUTCDate())}.${pad(v.getUTCMonth() + 1)}.${v.getUTCFullYear()}`;
   if (typeof v === "object" && "result" in v) return clean(String(v.result ?? ""));
   return clean(cell.text ?? "");
 }
@@ -88,11 +119,13 @@ export async function parseEntries(file: Buffer, nextBib: number): Promise<Parse
       const rowNumber = headerIndex + offset + 2;
       let lastName = get(cells, "lastName");
       let firstName = get(cells, "firstName");
+      let middleName = get(cells, "middleName");
       if (columns.has("fullName") && !(lastName && firstName)) {
-        // «Иванова Анна Сергеевна»: фамилия, имя, отчество не нужно.
+        // «Иванова Анна Сергеевна»: фамилия, имя, отчество.
         const parts = get(cells, "fullName").split(" ").filter(Boolean);
         lastName = parts[0] ?? "";
         firstName = parts[1] ?? "";
+        if (!columns.has("middleName")) middleName = parts.slice(2).join(" ");
       }
       if (!lastName && !firstName) return;
       if (!lastName || !firstName) {
@@ -104,9 +137,28 @@ export async function parseEntries(file: Buffer, nextBib: number): Promise<Parse
         number = String(bib++);
         autoBibs++;
       }
-      const club = get(cells, "club") || get(cells, "city");
       const shift = get(cells, "shift").replace(/^(смена|поток)\s*/i, "");
-      lines.push([number, lastName, firstName, club, get(cells, "team"), get(cells, "category"), shift].join("\t"));
+      const birth = normalizeBirthDate(get(cells, "birthDate"));
+      if (birth === null) {
+        notes.push(`Лист «${ws.name}», строка ${rowNumber}: дата рождения «${get(cells, "birthDate")}» не распознана, не загружена`);
+      }
+      lines.push(
+        [
+          number,
+          lastName,
+          firstName,
+          get(cells, "club"),
+          get(cells, "team"),
+          get(cells, "category"),
+          shift,
+          birth ?? "",
+          get(cells, "city"),
+          get(cells, "coach"),
+          middleName,
+        ]
+          .join("\t")
+          .replace(/\t+$/, ""),
+      );
     });
   }
 
@@ -119,15 +171,33 @@ export async function parseEntries(file: Buffer, nextBib: number): Promise<Parse
   return { text: lines.join("\n"), count: lines.length, notes };
 }
 
+/**
+ * Дата рождения из заявки: «2012», «2012 г.», «15.03.2012», «15.03.12», «2012-03-15».
+ * Пустая строка — нет даты, null — не распознана.
+ */
+export function normalizeBirthDate(text: string): string | null {
+  const t = text.replace(/\s*(г\.?|года?)\s*$/i, "").trim();
+  if (!t) return "";
+  if (/^\d{4}$/.test(t)) return t;
+  let m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/.exec(t);
+  if (m) {
+    const year = m[3]!.length === 2 ? (Number(m[3]) > 50 ? "19" : "20") + m[3] : m[3]!;
+    return `${pad(Number(m[1]))}.${pad(Number(m[2]))}.${year}`;
+  }
+  m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  return null;
+}
+
 /** Пустой бланк заявки с примером строки. */
 export async function entriesTemplate(): Promise<Buffer> {
   const book = new ExcelJS.Workbook();
   const ws = book.addWorksheet("Заявка");
   const header = ws.addRow([...ENTRY_COLUMNS]);
   header.font = { bold: true };
-  ws.addRow([101, "Иванова", "Анна", "СШОР №1", "СШОР №1", "1 юношеский", 1]);
-  ws.addRow([102, "Петрова", "Мария", "СШОР №1", "СШОР №1", "1 юношеский", 1]);
-  ws.columns.forEach((c, i) => (c.width = [16, 18, 14, 24, 20, 16, 8][i]));
+  ws.addRow([101, "Иванова", "Анна", "СШОР №1", "СШОР №1", "1 юношеский", 1, "15.03.2014", "Тула", "Смирнова О. В.", "Сергеевна"]);
+  ws.addRow([102, "Петрова", "Мария", "СШОР №1", "СШОР №1", "1 юношеский", 1, "2014", "Тула", "Смирнова О. В.", ""]);
+  ws.columns.forEach((c, i) => (c.width = [16, 18, 14, 24, 20, 16, 8, 14, 14, 20, 16][i]));
   ws.views = [{ state: "frozen", ySplit: 1 }];
   return Buffer.from(await book.xlsx.writeBuffer());
 }

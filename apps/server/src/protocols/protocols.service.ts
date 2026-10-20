@@ -11,7 +11,7 @@ import {
   shiftApparatus,
   type Apparatus,
 } from "@ag/scoring";
-import { APPARATUS_NAMES, GYMNAST_STATUS_NAMES, scoreLabels, type GymnastView } from "@ag/shared";
+import { APPARATUS_NAMES, GYMNAST_STATUS_NAMES, birthYear, scoreLabels, type GymnastView } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   Content,
@@ -533,7 +533,13 @@ export class ProtocolsService {
             ],
             color: "#777",
           },
-      g.club ?? "",
+      birthYear(g.birthDate),
+      {
+        stack: [
+          [g.club, g.city].filter(Boolean).join(", "),
+          ...(g.coach ? [{ text: `тренер ${g.coach}`, style: "small" }] : []),
+        ],
+      },
       g.teamId ? (teamNames.get(g.teamId) ?? "") : "",
       g.categoryId ? (categoryNames.get(g.categoryId) ?? "") : "",
     ];
@@ -541,7 +547,8 @@ export class ProtocolsService {
       th("п/п"),
       th("№"),
       th("Участник"),
-      th("Клуб"),
+      th("Г.р."),
+      th("Клуб, город"),
       th("Команда"),
       th("Разряд"),
     ];
