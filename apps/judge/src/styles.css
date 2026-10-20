@@ -898,3 +898,32 @@ select {
 .series-standings h4 {
   margin: 12px 0 4px;
 }
+
+.admin .manual-gymnast {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.admin .manual-gymnast h3,
+.admin .manual-gymnast-hint,
+.admin .manual-gymnast-actions {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.admin .manual-gymnast-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin .manual-gymnast-actions .primary {
+  width: auto;
+  padding: 0 24px;
+  margin: 0;
+}

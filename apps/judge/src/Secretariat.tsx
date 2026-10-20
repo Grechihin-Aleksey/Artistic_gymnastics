@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
+import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
@@ -776,14 +777,29 @@ export function RosterPanel({
           ))}
         </div>
       )}
+      <ManualGymnastForm
+        nextBib={Math.max(0, ...people.map((g) => g.bib), ...parsed.rows.map((r) => r.bib)) + 1}
+        clubs={[...new Set(people.map((g) => g.club).filter((c): c is string => Boolean(c)))]}
+        add={async (row) => {
+          await apiRequest(`/competitions/${competitionId}/gymnasts/import`, {
+            token: adminToken,
+            method: "POST",
+            body: { rows: [row] },
+          });
+          onError(null);
+          await load();
+          onImported?.();
+        }}
+        onError={onError}
+      />
       <label className="wide">
-        Вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
+        Или вставьте список из таблицы: № · Фамилия · Имя · Клуб · Команда · Разряд · Смена · Дата рождения · Город ·
         Тренер · Отчество. Обязательны первые три столбца. Порядок строк в смене — порядок выхода.
         <textarea
           rows={6}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={"12\tИванова\tАнна\tСШОР №1\tСШОР №1\t1 юношеский\t1\t15.03.2014\tТверь\tСмирнова О. В.\n13\tПетрова\tМария\tСШОР №1\tСШОР №1\t1 юношеский\t1\t2014\tТверь"}
+          placeholder={"Например:\n12\tИванова\tАнна\tСШОР №1\tСШОР №1\t1 юношеский\t1\t15.03.2014\tТверь\tСмирнова О. В.\n13\tПетрова\tМария\tСШОР №1\tСШОР №1\t1 юношеский\t1\t2014\tТверь"}
         />
       </label>
       {parsed.errors.length > 0 && <div className="alert wide">{parsed.errors.join("; ")}</div>}
@@ -798,8 +814,18 @@ export function RosterPanel({
         disabled={parsed.rows.length === 0 || parsed.errors.length > 0}
         onClick={() => void upload()}
       >
-        Добавить {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
+        Добавить из списка {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
       </button>
+      <datalist id="category-names">
+        {[...categories.values()].map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <datalist id="team-names">
+        {[...new Set(teams.values())].map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
       {people.length > 0 && (
         <details className="wide" open={people.some((g) => g.status !== "ACTIVE")}>
           <summary>
@@ -807,16 +833,6 @@ export function RosterPanel({
             {people.some((g) => g.status !== "ACTIVE") &&
               ` (не выступают: ${people.filter((g) => g.status !== "ACTIVE").length})`}
           </summary>
-          <datalist id="category-names">
-            {[...categories.values()].map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-          <datalist id="team-names">
-            {[...new Set(teams.values())].map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
           <table className="roster-table">
             <tbody>
               {people.map((g) => (
@@ -850,6 +866,162 @@ export function RosterPanel({
         </details>
       )}
     </section>
+  );
+}
+
+type RosterRow = ImportGymnastsInput["rows"][number];
+
+/** Цифры даты рождения с точками по мере набора: 15032014 → 15.03.2014. */
+const dateMask = (value: string) => {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4)].filter(Boolean).join(".");
+};
+
+/** Настоящая дата в прошлом: 31.02 или 2040 год не пройдут. */
+const validDate = (text: string) => {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(text);
+  if (!m) return false;
+  const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(year, month - 1, day);
+  return date.getDate() === day && date.getMonth() === month - 1 && year >= 1900 && date <= new Date();
+};
+
+const MANUAL_FIELDS = ["club", "city", "coach", "team", "category", "shift"] as const;
+
+/**
+ * Один участник вручную: обязательны фамилия, имя, полная дата рождения, клуб и тренер. После добавления фамилия, имя и отчество очищаются, номер растёт,
+ * а клуб, город, тренер, команда, разряд и смена остаются: так удобно вносить клуб целиком.
+ */
+function ManualGymnastForm({
+  nextBib,
+  clubs,
+  add,
+  onError,
+}: {
+  nextBib: number;
+  clubs: string[];
+  add: (row: RosterRow) => Promise<void>;
+  onError: (message: string | null) => void;
+}) {
+  const [bib, setBib] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
+  const form = useRef<HTMLFormElement>(null);
+
+  const submit = async (data: FormData) => {
+    const text = (name: string) => String(data.get(name) ?? "").trim();
+    const bibValue = Number(bib || nextBib);
+    const birthDate = text("birthDate");
+    const shiftText = text("shift");
+    if (!Number.isInteger(bibValue) || bibValue < 1) return onError("Номер участника — целое число от 1");
+    if (!validDate(birthDate)) return onError("Укажите дату рождения полностью: день, месяц и год, например 15.03.2014");
+    const shift = shiftText ? Number(shiftText) : undefined;
+    if (shift !== undefined && !(Number.isInteger(shift) && shift >= 1 && shift <= 50)) {
+      return onError("Смена — число от 1 до 50");
+    }
+    const row: RosterRow = {
+      bib: bibValue,
+      lastName: text("lastName"),
+      firstName: text("firstName"),
+      ...(text("middleName") ? { middleName: text("middleName") } : {}),
+      birthDate,
+      ...(shift !== undefined ? { shift } : {}),
+    };
+    for (const field of MANUAL_FIELDS) if (field !== "shift" && text(field)) row[field] = text(field);
+    setBusy(true);
+    try {
+      await add(row);
+      setAdded(`Добавлен №${row.bib} ${row.lastName} ${row.firstName}`);
+      setBib("");
+      for (const name of ["lastName", "firstName", "middleName", "birthDate"]) {
+        const input = form.current?.elements.namedItem(name);
+        if (input instanceof HTMLInputElement) input.value = "";
+      }
+      (form.current?.elements.namedItem("lastName") as HTMLInputElement | null)?.focus();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      ref={form}
+      className="wide manual-gymnast"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit(new FormData(e.currentTarget));
+      }}
+    >
+      <h3>Добавить участника вручную</h3>
+      <p className="muted manual-gymnast-hint">
+        Обязательны фамилия, имя, дата рождения, клуб и тренер. Клуб, город, тренер, команда, разряд и смена остаются после
+        добавления, чтобы следующего участника того же клуба вносить быстрее.
+      </p>
+      <label>
+        №
+        <input inputMode="numeric" value={bib} placeholder={String(nextBib)} onChange={(e) => setBib(e.target.value)} />
+      </label>
+      <label>
+        Фамилия
+        <input name="lastName" required maxLength={100} />
+      </label>
+      <label>
+        Имя
+        <input name="firstName" required maxLength={100} />
+      </label>
+      <label>
+        Отчество (если есть)
+        <input name="middleName" maxLength={100} />
+      </label>
+      <label>
+        Дата рождения
+        <input
+          name="birthDate"
+          required
+          inputMode="numeric"
+          placeholder="дд.мм.гггг"
+          maxLength={10}
+          onChange={(e) => (e.currentTarget.value = dateMask(e.currentTarget.value))}
+        />
+      </label>
+      <label>
+        Клуб
+        <input name="club" list="club-names" required maxLength={200} />
+      </label>
+      <label>
+        Город
+        <input name="city" maxLength={200} />
+      </label>
+      <label>
+        Тренер
+        <input name="coach" required maxLength={200} placeholder="Смирнова О. В." />
+      </label>
+      <label>
+        Команда
+        <input name="team" list="team-names" maxLength={200} />
+      </label>
+      <label>
+        Разряд
+        <input name="category" list="category-names" maxLength={100} />
+      </label>
+      <label>
+        Смена
+        <input name="shift" inputMode="numeric" />
+      </label>
+      <datalist id="club-names">
+        {clubs.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <div className="manual-gymnast-actions">
+        <button type="submit" className="primary" disabled={busy}>
+          Добавить участника
+        </button>
+        {added && <span className="muted">{added}</span>}
+      </div>
+    </form>
   );
 }
 
