@@ -24,6 +24,7 @@ import { ProtocolsService } from "./protocols/protocols.service";
 import { SiteProtocolsController } from "./protocols/site-protocols.controller";
 import { SiteProtocolsService } from "./protocols/site-protocols.service";
 import { TransferController } from "./competitions/transfer.controller";
+import { AutoExportService } from "./competitions/auto-export.service";
 import { TransferService } from "./competitions/transfer.service";
 import { SeriesController } from "./series/series.controller";
 import { SeriesService } from "./series/series.service";
@@ -77,6 +78,7 @@ export class AppModule {
         SiteProtocolsService,
         SeriesService,
         TransferService,
+        AutoExportService,
         LiveGateway,
         RelayPublisher,
       ],

@@ -32,6 +32,12 @@ services:
       # Если заданы, результаты уходят на сайт через облачный ретранслятор.
       RELAY_URL: ${RELAY_URL:-}
       RELAY_TOKEN: ${RELAY_TOKEN:-}
+      # Каждые полчаса турниры сохраняются файлами в backups/tournaments,
+      # их загружают кнопкой «Загрузить турнир из файла».
+      EXPORT_DIR: /backups/tournaments
+      EXPORT_INTERVAL: ${EXPORT_INTERVAL:-1800}
+    volumes:
+      - ./backups:/backups
     ports:
       - "3000:3000"
 
