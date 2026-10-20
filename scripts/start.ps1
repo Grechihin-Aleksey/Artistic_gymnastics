@@ -1,4 +1,4 @@
-# Запуск сервера в зале одной командой (Windows). Нужен Docker Desktop.
+﻿# Запуск сервера в зале одной командой (Windows). Нужен Docker Desktop.
 # Запуск: правой кнопкой по файлу -> «Выполнить с помощью PowerShell»
 # или в PowerShell: powershell -ExecutionPolicy Bypass -File scripts\start.ps1
 $ErrorActionPreference = "Stop"

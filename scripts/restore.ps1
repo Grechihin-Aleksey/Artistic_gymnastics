@@ -1,4 +1,4 @@
-# Восстановление базы из резервной копии (Windows).
+﻿# Восстановление базы из резервной копии (Windows).
 #   powershell -ExecutionPolicy Bypass -File scripts\restore.ps1                 — из самой свежей копии
 #   powershell -ExecutionPolicy Bypass -File scripts\restore.ps1 backups\имя.dump — из выбранной
 # Текущие данные в базе заменяются данными из копии.
