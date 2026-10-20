@@ -30,6 +30,8 @@ export const competitions = pgTable("competitions", {
   publishJudgeMarks: boolean("publish_judge_marks").notNull().default(false),
   /** Номер текущей ротации с нуля: смена s сейчас на снаряде (старт + rotation) по олимпийскому порядку. */
   rotation: integer("rotation").notNull().default(0),
+  /** Логотип для шапки протоколов: data URL картинки PNG или JPEG. */
+  logo: text("logo"),
   createdAt: createdAt(),
 });
 

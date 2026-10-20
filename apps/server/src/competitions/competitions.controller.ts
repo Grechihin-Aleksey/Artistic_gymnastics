@@ -1,19 +1,22 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, NotFoundException, Param, ParseUUIDPipe, Post, Put, Res } from "@nestjs/common";
+import type { Response } from "express";
 import {
   createCompetitionSchema,
   createGymnastSchema,
   createJudgeSchema,
   createTeamSchema,
   importGymnastsSchema,
+  setLogoSchema,
   type CreateCompetitionInput,
   type CreateGymnastInput,
   type CreateJudgeInput,
   type CreateTeamInput,
   type ImportGymnastsInput,
+  type SetLogoInput,
 } from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
-import { CompetitionsService } from "./competitions.service";
+import { CompetitionsService, publicCompetition } from "./competitions.service";
 
 @Controller("competitions")
 export class CompetitionsController {
@@ -21,18 +24,39 @@ export class CompetitionsController {
 
   @Post()
   @RequireAccess("admin")
-  create(@Body(new ZodPipe(createCompetitionSchema)) body: CreateCompetitionInput) {
-    return this.competitions.create(body);
+  async create(@Body(new ZodPipe(createCompetitionSchema)) body: CreateCompetitionInput) {
+    return publicCompetition(await this.competitions.create(body));
   }
 
   @Get()
-  list() {
-    return this.competitions.list();
+  async list() {
+    return (await this.competitions.list()).map(publicCompetition);
   }
 
   @Get(":id")
-  get(@Param("id", ParseUUIDPipe) id: string) {
-    return this.competitions.get(id);
+  async get(@Param("id", ParseUUIDPipe) id: string) {
+    return publicCompetition(await this.competitions.get(id));
+  }
+
+  /** Логотип открыт всем: его показывают протоколы и, при желании, сайт. */
+  @Get(":id/logo")
+  async logo(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    const { logo } = await this.competitions.get(id);
+    if (!logo) throw new NotFoundException("Логотип не загружен");
+    const [, type, base64] = /^data:(image\/(?:png|jpeg));base64,(.*)$/.exec(logo)!;
+    res.status(200).set({ "Content-Type": type!, "Cache-Control": "no-cache" }).end(Buffer.from(base64!, "base64"));
+  }
+
+  @Put(":id/logo")
+  @RequireAccess("admin")
+  setLogo(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(setLogoSchema)) body: SetLogoInput) {
+    return this.competitions.setLogo(id, body.dataUrl);
+  }
+
+  @Delete(":id/logo")
+  @RequireAccess("admin")
+  removeLogo(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.setLogo(id, null);
   }
 
   @Post(":id/teams")

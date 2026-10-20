@@ -175,10 +175,12 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
       .catch(() => setCategories([]));
   }, [competitionId]);
 
-  const open = async (path: string, filename: string) => {
+  /** PDF открывается в новой вкладке, Excel скачивается файлом. */
+  const open = async (path: string, filename: string, byCategory = true) => {
+    const download = filename.endsWith(".xlsx");
     // Окно открываем сразу по нажатию, иначе браузер сочтёт его всплывающей рекламой.
-    const tab = window.open("", "_blank");
-    const query = categories.length > 1 || categories[0]?.id ? `?category=${category}` : "";
+    const tab = download ? null : window.open("", "_blank");
+    const query = byCategory && (categories.length > 1 || categories[0]?.id) ? `?category=${category}` : "";
     try {
       const response = await fetch(`/competitions/${competitionId}/protocols/${path}${query}`, {
         headers: { Authorization: `Bearer ${adminToken}` },
@@ -204,6 +206,18 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
 
   return (
     <section className="panel protocols no-print">
+      <h2>Перед стартом</h2>
+      <div className="buttons">
+        <button type="button" onClick={() => void open("start-list", "start-list.pdf", false)}>
+          Стартовый протокол
+        </button>
+        {apparatusFor(discipline).map((a) => (
+          <button key={a} type="button" onClick={() => void open(`sheet/${a}`, `sheet-${a}.pdf`, false)}>
+            Ведомость: {APPARATUS_NAMES[a]}
+          </button>
+        ))}
+      </div>
+      <LogoControl competitionId={competitionId} adminToken={adminToken} onError={onError} />
       <h2>Протоколы</h2>
       {categories.length > 0 && categories[0]!.id !== null && (
         <label>
@@ -229,8 +243,80 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         <button type="button" onClick={() => void open("teams", "protocol-teams.pdf")}>
           Команды
         </button>
+        <button type="button" onClick={() => void open("results.xlsx", "results.xlsx", false)}>
+          Все итоги в Excel
+        </button>
       </div>
     </section>
+  );
+}
+
+/** Сжимает картинку до 512 точек по большей стороне и возвращает PNG как data URL. */
+async function toLogo(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const scale = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Логотип соревнования для шапки всех протоколов. */
+function LogoControl({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  // Номер версии в адресе картинки, чтобы браузер не показывал старую из кэша.
+  const [version, setVersion] = useState(0);
+  const [present, setPresent] = useState(false);
+
+  useEffect(() => {
+    fetch(`/competitions/${competitionId}/logo`, { method: "HEAD" })
+      .then((r) => setPresent(r.ok))
+      .catch(() => setPresent(false));
+  }, [competitionId, version]);
+
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const dataUrl = await toLogo(file).catch(() => {
+        throw new Error("Не удалось прочитать картинку");
+      });
+      await apiRequest(`/competitions/${competitionId}/logo`, { token: adminToken, method: "PUT", body: { dataUrl } });
+      setVersion((v) => v + 1);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  const remove = async () => {
+    try {
+      await apiRequest(`/competitions/${competitionId}/logo`, { token: adminToken, method: "DELETE" });
+      setVersion((v) => v + 1);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="logo wide">
+      {present && <img src={`/competitions/${competitionId}/logo?v=${version}`} alt="Логотип соревнования" />}
+      <label className="file">
+        {present ? "Заменить логотип" : "Логотип в шапку протоколов"}
+        <input type="file" accept="image/*" onChange={(e) => void upload(e.target.files?.[0])} />
+      </label>
+      {present && (
+        <button type="button" className="link" onClick={() => void remove()}>
+          Убрать
+        </button>
+      )}
+    </div>
   );
 }
 
