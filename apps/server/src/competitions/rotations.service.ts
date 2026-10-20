@@ -28,10 +28,11 @@ export class RotationsService {
     const competition = await this.competitions.get(competitionId);
     const [shiftRows, people] = await Promise.all([
       this.db.select().from(shifts).where(eq(shifts.competitionId, competitionId)).orderBy(asc(shifts.number)),
+      // Не явившиеся и снявшиеся из очереди выхода выпадают.
       this.db
         .select({ id: gymnasts.id, shift: gymnasts.shift })
         .from(gymnasts)
-        .where(eq(gymnasts.competitionId, competitionId))
+        .where(and(eq(gymnasts.competitionId, competitionId), eq(gymnasts.status, "ACTIVE")))
         .orderBy(asc(gymnasts.startOrder), asc(gymnasts.bib)),
     ]);
     return {

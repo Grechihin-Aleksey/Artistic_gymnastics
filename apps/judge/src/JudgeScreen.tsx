@@ -88,6 +88,8 @@ interface Gymnast {
   lastName: string;
   club: string | null;
   categoryId: string | null;
+  /** Не явившихся и снявшихся не вызывают. */
+  status?: "ACTIVE" | "DNS" | "WITHDRAWN";
 }
 
 export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
@@ -590,7 +592,7 @@ function CallPanel({
     !filter || String(g.bib).startsWith(filter) || g.lastName.toLowerCase().startsWith(filter.toLowerCase());
   const everyone = byShift
     ? shiftsHere.flatMap((s) => s.gymnastIds.map((id) => gymnasts.get(id)).filter((g): g is Gymnast => Boolean(g)))
-    : [...gymnasts.values()].sort((a, b) => a.bib - b.bib);
+    : [...gymnasts.values()].filter((g) => (g.status ?? "ACTIVE") === "ACTIVE").sort((a, b) => a.bib - b.bib);
   const first = everyone.filter((g) => !firstDone.has(g.id) && matches(g));
   // Второй прыжок — по желанию (на финал в опорном прыжке), он не держит смену.
   const second =

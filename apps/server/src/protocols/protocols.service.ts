@@ -11,7 +11,7 @@ import {
   shiftApparatus,
   type Apparatus,
 } from "@ag/scoring";
-import { APPARATUS_NAMES, scoreLabels, type GymnastView } from "@ag/shared";
+import { APPARATUS_NAMES, GYMNAST_STATUS_NAMES, scoreLabels, type GymnastView } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   Content,
@@ -250,6 +250,29 @@ export class ProtocolsService {
     const notes = ["Опорный прыжок в многоборье — оценка за первый прыжок."];
     if (rows.some((r) => !r.complete))
       notes.push("¹ Выступил(а) не на всех снарядах.");
+    const out = await this.db
+      .select()
+      .from(gymnasts)
+      .where(
+        and(
+          eq(gymnasts.competitionId, competitionId),
+          inArray(gymnasts.status, ["DNS", "WITHDRAWN"]),
+        ),
+      )
+      .orderBy(asc(gymnasts.bib));
+    for (const status of ["DNS", "WITHDRAWN"] as const) {
+      const list = out.filter(
+        (g) =>
+          g.status === status &&
+          (scope === undefined || g.categoryId === scope),
+      );
+      if (list.length > 0)
+        notes.push(
+          `${status === "DNS" ? "Не явились" : "Сняты с соревнований"}: ${list
+            .map((g) => `№${g.bib} ${g.lastName} ${g.firstName}`)
+            .join(", ")}.`,
+        );
+    }
     return renderPdf(
       this.document(
         competition,
@@ -501,7 +524,15 @@ export class ProtocolsService {
     const row = (g: (typeof people)[number], i: number): TableCell[] => [
       String(i + 1),
       String(g.bib),
-      { text: `${g.lastName} ${g.firstName}`, bold: true },
+      g.status === "ACTIVE"
+        ? { text: `${g.lastName} ${g.firstName}`, bold: true }
+        : {
+            text: [
+              { text: `${g.lastName} ${g.firstName}`, bold: true, decoration: "lineThrough" },
+              ` — ${GYMNAST_STATUS_NAMES[g.status]}`,
+            ],
+            color: "#777",
+          },
       g.club ?? "",
       g.teamId ? (teamNames.get(g.teamId) ?? "") : "",
       g.categoryId ? (categoryNames.get(g.categoryId) ?? "") : "",
@@ -590,8 +621,10 @@ export class ProtocolsService {
         `Снаряда ${apparatus} нет в программе ${competition.discipline}`,
       );
     }
-    const { people, shiftRows, categoryNames } =
-      await this.roster(competitionId);
+    const roster = await this.roster(competitionId);
+    const { shiftRows, categoryNames } = roster;
+    // Не явившихся и снявшихся в ведомости не пишем.
+    const people = roster.people.filter((g) => g.status === "ACTIVE");
     const eCount =
       (
         await this.db

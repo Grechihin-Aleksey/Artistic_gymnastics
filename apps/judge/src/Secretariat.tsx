@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apparatusFor, type Discipline } from "@ag/scoring";
+import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, type GymnastStatus } from "@ag/shared";
 import type { DrawView, InquiryView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parseScore } from "./labels";
@@ -17,6 +18,7 @@ interface RosterGymnast extends Gymnast {
   teamId: string | null;
   categoryId: string | null;
   shift: number | null;
+  status: GymnastStatus;
 }
 
 interface Props {
@@ -736,21 +738,49 @@ export function RosterPanel({
         Добавить {parsed.rows.length > 0 ? `${parsed.rows.length} уч.` : ""}
       </button>
       {people.length > 0 && (
-        <details className="wide">
-          <summary>Список участников</summary>
-          <table>
+        <details className="wide" open={people.some((g) => g.status !== "ACTIVE")}>
+          <summary>
+            Список участников: правка, неявка, снятие
+            {people.some((g) => g.status !== "ACTIVE") &&
+              ` (не выступают: ${people.filter((g) => g.status !== "ACTIVE").length})`}
+          </summary>
+          <datalist id="category-names">
+            {[...categories.values()].map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <datalist id="team-names">
+            {[...new Set(teams.values())].map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+          <table className="roster-table">
             <tbody>
               {people.map((g) => (
-                <tr key={g.id}>
-                  <td>№{g.bib}</td>
-                  <td>
-                    {g.lastName} {g.firstName}
-                  </td>
-                  <td className="muted">{g.club ?? ""}</td>
-                  <td className="muted">{g.teamId ? teams.get(g.teamId) : ""}</td>
-                  <td className="muted">{g.categoryId ? categories.get(g.categoryId) : ""}</td>
-                  <td className="muted">{g.shift ? `смена ${g.shift}` : ""}</td>
-                </tr>
+                <GymnastRow
+                  key={g.id}
+                  gymnast={g}
+                  team={g.teamId ? (teams.get(g.teamId) ?? "") : ""}
+                  category={g.categoryId ? (categories.get(g.categoryId) ?? "") : ""}
+                  save={async (patch) => {
+                    await apiRequest(`/competitions/${competitionId}/gymnasts/${g.id}`, {
+                      token: adminToken,
+                      method: "PATCH",
+                      body: patch,
+                    });
+                    await load();
+                    onImported?.();
+                  }}
+                  remove={async () => {
+                    await apiRequest(`/competitions/${competitionId}/gymnasts/${g.id}`, {
+                      token: adminToken,
+                      method: "DELETE",
+                    });
+                    await load();
+                    onImported?.();
+                  }}
+                  onError={onError}
+                />
               ))}
             </tbody>
           </table>
@@ -1180,5 +1210,152 @@ export function DrawPanel({
         )}
       </div>
     </section>
+  );
+}
+
+interface GymnastDraft {
+  bib: string;
+  lastName: string;
+  firstName: string;
+  club: string;
+  team: string;
+  category: string;
+  shift: string;
+}
+
+/** Строка участника: статус меняется сразу, остальное — по кнопке «Изменить». */
+function GymnastRow({
+  gymnast: g,
+  team,
+  category,
+  save,
+  remove,
+  onError,
+}: {
+  gymnast: RosterGymnast;
+  team: string;
+  category: string;
+  save: (patch: object) => Promise<void>;
+  remove: () => Promise<void>;
+  onError: (message: string | null) => void;
+}) {
+  const [draft, setDraft] = useState<GymnastDraft | null>(null);
+  const run = async (action: () => Promise<void>) => {
+    try {
+      await action();
+      onError(null);
+      return true;
+    } catch (e) {
+      onError((e as Error).message);
+      return false;
+    }
+  };
+  const statusSelect = (
+    <select
+      value={g.status}
+      className={g.status === "ACTIVE" ? undefined : "out"}
+      onChange={(e) => void run(() => save({ status: e.target.value }))}
+    >
+      {GYMNAST_STATUSES.map((s) => (
+        <option key={s} value={s}>
+          {GYMNAST_STATUS_NAMES[s]}
+        </option>
+      ))}
+    </select>
+  );
+
+  if (!draft) {
+    return (
+      <tr className={g.status === "ACTIVE" ? undefined : "out"}>
+        <td>№{g.bib}</td>
+        <td>
+          {g.lastName} {g.firstName}
+        </td>
+        <td className="muted">{g.club ?? ""}</td>
+        <td className="muted">{team}</td>
+        <td className="muted">{category}</td>
+        <td className="muted">{g.shift ? `смена ${g.shift}` : ""}</td>
+        <td>{statusSelect}</td>
+        <td>
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              setDraft({
+                bib: String(g.bib),
+                lastName: g.lastName,
+                firstName: g.firstName,
+                club: g.club ?? "",
+                team,
+                category,
+                shift: g.shift ? String(g.shift) : "",
+              })
+            }
+          >
+            Изменить
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  const field = (key: keyof GymnastDraft, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <input value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} {...props} />
+  );
+  const bib = Number(draft.bib);
+  const shift = draft.shift.trim() ? Number(draft.shift) : null;
+  const valid =
+    Number.isInteger(bib) &&
+    bib >= 1 &&
+    draft.lastName.trim() !== "" &&
+    draft.firstName.trim() !== "" &&
+    (shift === null || (Number.isInteger(shift) && shift >= 1 && shift <= 50));
+  return (
+    <tr className="editing">
+      <td>{field("bib", { inputMode: "numeric", "aria-label": "Номер", className: "narrow" })}</td>
+      <td>
+        {field("lastName", { "aria-label": "Фамилия", placeholder: "Фамилия" })}
+        {field("firstName", { "aria-label": "Имя", placeholder: "Имя" })}
+      </td>
+      <td>{field("club", { "aria-label": "Клуб", placeholder: "Клуб" })}</td>
+      <td>{field("team", { "aria-label": "Команда", placeholder: "Команда", list: "team-names" })}</td>
+      <td>{field("category", { "aria-label": "Разряд", placeholder: "Разряд", list: "category-names" })}</td>
+      <td>{field("shift", { "aria-label": "Смена", placeholder: "Смена", inputMode: "numeric", className: "narrow" })}</td>
+      <td>{statusSelect}</td>
+      <td className="actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={!valid}
+          onClick={() =>
+            void run(() =>
+              save({
+                bib,
+                lastName: draft.lastName.trim(),
+                firstName: draft.firstName.trim(),
+                club: draft.club.trim() || null,
+                team: draft.team.trim() || null,
+                category: draft.category.trim() || null,
+                shift,
+              }),
+            ).then((ok) => ok && setDraft(null))
+          }
+        >
+          Сохранить
+        </button>
+        <button type="button" onClick={() => setDraft(null)}>
+          Отмена
+        </button>
+        <button
+          type="button"
+          className="link danger"
+          onClick={() => {
+            if (confirm(`Удалить ${g.lastName} ${g.firstName} из списка?`)) void run(remove);
+          }}
+        >
+          Удалить
+        </button>
+      </td>
+    </tr>
   );
 }

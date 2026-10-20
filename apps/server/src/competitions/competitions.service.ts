@@ -8,8 +8,9 @@ import type {
   ImportGymnastsInput,
   RulesView,
   SetRulesInput,
+  UpdateGymnastInput,
 } from "@ag/shared";
-import { and, asc, eq, inArray, max } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
 import { categories, competitions, gymnasts, judges, performances, shifts, teams } from "../db/schema";
@@ -282,6 +283,129 @@ export class CompetitionsService {
         )
         .returning();
     });
+  }
+
+  /**
+   * Правка участника. Разряд нельзя сменить, когда у участника уже есть оценки:
+   * по своим правилам от разряда зависит база. Номер должен быть свободен.
+   */
+  async updateGymnast(competitionId: string, gymnastId: string, input: UpdateGymnastInput) {
+    const competition = await this.get(competitionId);
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(gymnasts)
+        .where(and(eq(gymnasts.id, gymnastId), eq(gymnasts.competitionId, competitionId)))
+        .for("update");
+      if (!current) throw new NotFoundException("Участник не найден");
+      const changes: Partial<typeof gymnasts.$inferInsert> = {};
+      for (const key of ["lastName", "firstName", "status"] as const) {
+        if (input[key] !== undefined) Object.assign(changes, { [key]: input[key] });
+      }
+      if (input.club !== undefined) changes.club = input.club || null;
+
+      if (input.bib !== undefined && input.bib !== current.bib) {
+        const [taken] = await tx
+          .select({ lastName: gymnasts.lastName, firstName: gymnasts.firstName })
+          .from(gymnasts)
+          .where(and(eq(gymnasts.competitionId, competitionId), eq(gymnasts.bib, input.bib)));
+        if (taken) throw new ConflictException(`Номер ${input.bib} уже у участника ${taken.lastName} ${taken.firstName}`);
+        changes.bib = input.bib;
+      }
+
+      let categoryId = current.categoryId;
+      if (input.category !== undefined) {
+        if (input.category) {
+          const [found] = await tx
+            .select()
+            .from(categories)
+            .where(and(eq(categories.competitionId, competitionId), eq(categories.name, input.category)));
+          if (found) categoryId = found.id;
+          else {
+            const [{ value } = { value: null }] = await tx
+              .select({ value: max(categories.position) })
+              .from(categories)
+              .where(eq(categories.competitionId, competitionId));
+            const [row] = await tx
+              .insert(categories)
+              .values({ competitionId, name: input.category, position: (value ?? -1) + 1 })
+              .returning();
+            categoryId = row!.id;
+          }
+        } else categoryId = null;
+        if (categoryId !== current.categoryId) {
+          const [scored] = await tx
+            .select({ id: performances.id })
+            .from(performances)
+            .where(eq(performances.gymnastId, gymnastId))
+            .limit(1);
+          if (scored) throw new ConflictException("У участника уже есть оценки: разряд менять нельзя");
+          changes.categoryId = categoryId;
+        }
+      }
+
+      // Команда принадлежит разряду: ищем её в разряде участника.
+      const teamName = input.team !== undefined ? input.team || null : null;
+      if (input.team !== undefined || changes.categoryId !== undefined) {
+        const name =
+          input.team !== undefined
+            ? teamName
+            : current.teamId
+              ? ((await tx.select({ name: teams.name }).from(teams).where(eq(teams.id, current.teamId)))[0]?.name ?? null)
+              : null;
+        if (name) {
+          const sameCategory = categoryId === null ? isNull(teams.categoryId) : eq(teams.categoryId, categoryId);
+          const [found] = await tx
+            .select()
+            .from(teams)
+            .where(and(eq(teams.competitionId, competitionId), eq(teams.name, name), sameCategory));
+          changes.teamId =
+            found?.id ?? (await tx.insert(teams).values({ competitionId, name, categoryId }).returning())[0]!.id;
+        } else changes.teamId = null;
+      }
+
+      if (input.shift !== undefined && input.shift !== current.shift) {
+        changes.shift = input.shift;
+        changes.startOrder = null;
+        if (input.shift !== null) {
+          const [known] = await tx
+            .select({ id: shifts.id })
+            .from(shifts)
+            .where(and(eq(shifts.competitionId, competitionId), eq(shifts.number, input.shift)));
+          if (!known) {
+            await tx
+              .insert(shifts)
+              .values({ competitionId, number: input.shift, startApparatus: defaultStart(competition.discipline, input.shift) });
+          }
+          // В новой смене — последним.
+          const [last] = await tx
+            .select({ value: max(gymnasts.startOrder) })
+            .from(gymnasts)
+            .where(and(eq(gymnasts.competitionId, competitionId), eq(gymnasts.shift, input.shift)));
+          changes.startOrder = (last?.value ?? 0) + 1;
+        }
+      }
+
+      if (Object.keys(changes).length === 0) return current;
+      const [row] = await tx.update(gymnasts).set(changes).where(eq(gymnasts.id, gymnastId)).returning();
+      return row!;
+    });
+  }
+
+  /** Удалить можно только того, кто ещё не выступал; иначе — отметить «снятие». */
+  async deleteGymnast(competitionId: string, gymnastId: string) {
+    const [scored] = await this.db
+      .select({ id: performances.id })
+      .from(performances)
+      .where(eq(performances.gymnastId, gymnastId))
+      .limit(1);
+    if (scored) throw new ConflictException("Участник уже выступал: удалить нельзя, отметьте «снятие»");
+    const [row] = await this.db
+      .delete(gymnasts)
+      .where(and(eq(gymnasts.id, gymnastId), eq(gymnasts.competitionId, competitionId)))
+      .returning();
+    if (!row) throw new NotFoundException("Участник не найден");
+    return { deleted: row.id };
   }
 
   listCategories(competitionId: string) {

@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Res,
@@ -21,6 +22,7 @@ import {
   parseEntriesSchema,
   setLogoSchema,
   setRulesSchema,
+  updateGymnastSchema,
   type CreateCompetitionInput,
   type CreateGymnastInput,
   type CreateJudgeInput,
@@ -29,6 +31,7 @@ import {
   type ParseEntriesInput,
   type SetLogoInput,
   type SetRulesInput,
+  type UpdateGymnastInput,
 } from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
@@ -105,6 +108,22 @@ export class CompetitionsController {
     @Body(new ZodPipe(importGymnastsSchema)) body: ImportGymnastsInput,
   ) {
     return this.competitions.importGymnasts(id, body);
+  }
+
+  @Patch(":id/gymnasts/:gymnastId")
+  @RequireAccess("admin")
+  updateGymnast(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("gymnastId", ParseUUIDPipe) gymnastId: string,
+    @Body(new ZodPipe(updateGymnastSchema)) body: UpdateGymnastInput,
+  ) {
+    return this.competitions.updateGymnast(id, gymnastId, body);
+  }
+
+  @Delete(":id/gymnasts/:gymnastId")
+  @RequireAccess("admin")
+  deleteGymnast(@Param("id", ParseUUIDPipe) id: string, @Param("gymnastId", ParseUUIDPipe) gymnastId: string) {
+    return this.competitions.deleteGymnast(id, gymnastId);
   }
 
   /**

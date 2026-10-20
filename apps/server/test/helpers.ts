@@ -34,6 +34,7 @@ export function api(app: INestApplication, token?: string) {
     get: (path: string) => auth(request(server).get(path)),
     post: (path: string, body?: object) => auth(request(server).post(path)).send(body ?? {}),
     put: (path: string, body?: object) => auth(request(server).put(path)).send(body ?? {}),
+    patch: (path: string, body?: object) => auth(request(server).patch(path)).send(body ?? {}),
     delete: (path: string) => auth(request(server).delete(path)),
   };
 }

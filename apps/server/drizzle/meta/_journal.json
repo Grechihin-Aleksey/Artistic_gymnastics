@@ -43,6 +43,13 @@
       "when": 1792475596279,
       "tag": "0005_custom_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792478007739,
+      "tag": "0006_gymnast_status",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,8 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/competitions/:id/protocols/sheet/:apparatus` | секретариат | Судейская ведомость снаряда в PDF: участники по ротациям и пустые графы для оценок |
 | GET | `/competitions/:id/protocols/results.xlsx` | секретариат | Итоги в Excel: по каждому разряду многоборье, снаряды и команды |
 | GET | `/competitions/:id/protocols/diplomas` | секретариат | Грамоты призёрам в PDF: `?kind=all-around` (многоборье и команды) или `apparatus`, `?places=3` |
+| PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, ФИО, клуб, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
+| DELETE | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Удалить участника, который ещё не выступал |
 | POST | `/competitions/:id/draw` | секретариат | Жеребьёвка до первых оценок: `{ mode: "random", firstBib, keepTeams }` или `{ mode: "manual", bibs: [{ gymnastId, bib }] }` |
 | GET | `/competitions/:id/draw` | секретариат | Идут ли уже оценки и когда была последняя жеребьёвка |
 | GET | `/competitions/:id/rules` | все | Правила судейства: FIG или свои, базы разрядов, список сбавок за требования |
