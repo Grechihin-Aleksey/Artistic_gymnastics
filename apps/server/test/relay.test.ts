@@ -74,7 +74,7 @@ describe("отправка на сайт", () => {
     expect(failFirst).toBe(0);
     expect(sent.path).toBe(`/ingest/${competition.id}`);
     expect(sent.auth).toBe(`Bearer ${RELAY_TOKEN}`);
-    expect(sent.body.snapshot.competition).toEqual({ id: competition.id, name: "Кубок", discipline: "WAG", rules: "FIG" });
+    expect(sent.body.snapshot.competition).toEqual({ id: competition.id, name: "Кубок", discipline: "WAG", rules: "FIG", phase: "QUAL" });
     expect(sent.body.snapshot.categories[0]!.apparatus.BB?.[0]?.score.total).toBe(13.8);
     expect(sent.body.approved.map((p) => p.id)).toContain(perf.id);
     // Сбавки отдельных судей на сайт не уходят, пока соревнование их не публикует.

@@ -6,11 +6,16 @@ export interface WorkbookCategory {
   allAround: AllAroundRow[];
   teams: TeamResultRow[];
   apparatus: { code: string; rows: ApparatusResultRow[] }[];
+  /** Финалы на снарядах, если они проводились. */
+  finals?: { code: string; rows: ApparatusResultRow[] }[];
 }
 
 const SHEET_FORBIDDEN = /[[\]:*?/\\]/g;
 
-/** Итоги соревнования в Excel: по разряду лист многоборья, лист снарядов и лист команд. */
+/**
+ * Итоги соревнования в Excel: по разряду лист многоборья, лист снарядов,
+ * лист финалов (если были) и лист команд.
+ */
 export async function resultsWorkbook(
   competitionName: string,
   program: readonly string[],
@@ -42,25 +47,9 @@ export async function resultsWorkbook(
   const prefix = (c: WorkbookCategory) => (c.name ? `${c.name} — ` : "");
   const team = (id: string | null) => (id ? (teamNames.get(id) ?? "") : "");
 
-  for (const c of categories) {
-    const aa = sheet(`${prefix(c)}многоборье`);
-    header(aa, ["Место", "№", "Фамилия", "Имя", "Клуб", "Команда", ...program.map((a) => APPARATUS_NAMES[a]!), "Сумма"]);
-    for (const r of c.allAround) {
-      aa.addRow([
-        r.rank,
-        r.gymnast.bib,
-        r.gymnast.lastName,
-        r.gymnast.firstName,
-        r.gymnast.club ?? "",
-        team(r.gymnast.teamId),
-        ...program.map((a) => r.apparatus[a as keyof typeof r.apparatus]?.total ?? null),
-        r.total,
-      ]);
-    }
-    for (let i = 7; i <= 7 + program.length; i++) aa.getColumn(i).numFmt = score;
-
-    const app = sheet(`${prefix(c)}снаряды`);
-    for (const { code, rows } of c.apparatus) {
+  const apparatusSheet = (title: string, list: { code: string; rows: ApparatusResultRow[] }[]) => {
+    const app = sheet(title);
+    for (const { code, rows } of list) {
       app.addRow([APPARATUS_NAMES[code]]).font = { bold: true };
       header(app, ["Место", "№", "Фамилия", "Имя", "Клуб", labels.d, labels.e, rules === "CUSTOM" ? "НС" : "Сбавка", "Итог"]);
       for (const r of rows) {
@@ -79,6 +68,28 @@ export async function resultsWorkbook(
       app.addRow([]);
     }
     for (let i = 6; i <= 9; i++) app.getColumn(i).numFmt = score;
+  };
+
+  for (const c of categories) {
+    const aa = sheet(`${prefix(c)}многоборье`);
+    header(aa, ["Место", "№", "Фамилия", "Имя", "Клуб", "Команда", ...program.map((a) => APPARATUS_NAMES[a]!), "Сумма"]);
+    for (const r of c.allAround) {
+      aa.addRow([
+        r.rank,
+        r.gymnast.bib,
+        r.gymnast.lastName,
+        r.gymnast.firstName,
+        r.gymnast.club ?? "",
+        team(r.gymnast.teamId),
+        ...program.map((a) => r.apparatus[a as keyof typeof r.apparatus]?.total ?? null),
+        r.total,
+      ]);
+    }
+    for (let i = 7; i <= 7 + program.length; i++) aa.getColumn(i).numFmt = score;
+
+    apparatusSheet(`${prefix(c)}снаряды`, c.apparatus);
+    const finals = c.finals?.filter((f) => f.rows.length > 0) ?? [];
+    if (finals.length > 0) apparatusSheet(`${prefix(c)}финалы`, finals);
 
     if (c.teams.length > 0) {
       const teams = sheet(`${prefix(c)}команды`);

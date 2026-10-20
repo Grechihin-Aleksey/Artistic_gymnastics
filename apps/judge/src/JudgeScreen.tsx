@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type ScoreBreakdown } from "@ag/scoring";
 import type {
+  FinalsView,
   JudgeRole,
   MarkKind,
   PerformanceView,
@@ -98,6 +99,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
   const [rotation, setRotation] = useState<RotationView | null>(null);
   const [rulesView, setRulesView] = useState<RulesView | null>(null);
+  const [finals, setFinals] = useState<FinalsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const rules = rulesView?.rules ?? competition.rules;
   const deductions = rulesView?.deductions ?? competition.deductions ?? [];
@@ -124,15 +126,17 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
 
   const refresh = useCallback(async () => {
     try {
-      const [list, people, rotationView, rulesNow] = await Promise.all([
+      const [list, people, rotationView, rulesNow, finalsNow] = await Promise.all([
         apiRequest<PerformanceView[]>(`/competitions/${competition.id}/performances?apparatus=${judge.apparatus}`, {
           token,
         }),
         apiRequest<Gymnast[]>(`/competitions/${competition.id}/gymnasts`),
         apiRequest<RotationView>(`/competitions/${competition.id}/rotation`),
         apiRequest<RulesView>(`/competitions/${competition.id}/rules`),
+        apiRequest<FinalsView>(`/competitions/${competition.id}/finals`),
       ]);
       setRulesView(rulesNow);
+      setFinals(finalsNow);
       setPerformances(list);
       setGymnasts(new Map(people.map((g) => [g.id, g])));
       setRotation(rotationView);
@@ -171,6 +175,10 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
         : category
           ? `Для разряда «${category.name}» не задана база: секретариат задаёт её в правилах`
           : "У участника не указан разряд: базу взять неоткуда";
+  // Во время финалов в очереди только финалисты снаряда, а выступившими считаются по финальным выступлениям.
+  const phase = finals?.phase ?? "QUAL";
+  const stagePerformances = performances.filter((p) => (p.stage ?? "QUAL") === phase);
+  const finalLists = phase === "FINAL" ? (finals?.lists.filter((l) => l.apparatus === judge.apparatus) ?? []) : null;
   const lastApproved = [...performances].reverse().find((p) => p.status === "APPROVED") ?? null;
 
   const submit = (kind: MarkKind, value: number) => {
@@ -185,7 +193,10 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
     <div className="screen">
       <header className="bar">
         <div>
-          <div className="apparatus">{APPARATUS_NAMES[judge.apparatus] ?? judge.apparatus}</div>
+          <div className="apparatus">
+            {APPARATUS_NAMES[judge.apparatus] ?? judge.apparatus}
+            {phase === "FINAL" && <span className="stage-badge">Финал</span>}
+          </div>
           <div className="muted">
             {judge.role === "SUPERVISOR" ? ROLE_NAMES.SUPERVISOR : judgeLabel(judge.role, judge.seat)} · {judge.name} ·{" "}
             {competition.name}
@@ -252,9 +263,10 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               token={token}
               competitionId={competition.id}
               apparatus={judge.apparatus}
-              performances={performances}
+              performances={stagePerformances}
               gymnasts={gymnasts}
               rotation={rotation}
+              finalLists={finalLists}
               onDone={refresh}
             />
           )}
@@ -564,6 +576,7 @@ function CallPanel({
   performances,
   gymnasts,
   rotation,
+  finalLists,
   onDone,
 }: {
   token: string;
@@ -572,6 +585,8 @@ function CallPanel({
   performances: PerformanceView[];
   gymnasts: Map<string, Gymnast>;
   rotation: RotationView | null;
+  /** Идут финалы: составы финала на этом снаряде по разрядам, в порядке выступления. */
+  finalLists: FinalsView["lists"] | null;
   onDone: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState("");
@@ -581,7 +596,10 @@ function CallPanel({
 
   // Смены, которые в этой ротации стоят на снаряде, в порядке выхода.
   const shiftsHere = rotation?.shifts.filter((s) => s.apparatus === apparatus) ?? [];
-  const byShift = rotation !== null && rotation.shifts.length > 0 && !showAll;
+  const isFinal = finalLists !== null;
+  const byShift = !isFinal && rotation !== null && rotation.shifts.length > 0 && !showAll;
+  // В финале участник выступает в своём разряде: подпишем разряд, если финалов несколько.
+  const finalCategory = new Map<string, string>();
 
   const firstDone = new Set(performances.filter((p) => p.attempt === 1).map((p) => p.gymnastId));
   const secondDone = new Set(performances.filter((p) => p.attempt === 2).map((p) => p.gymnastId));
@@ -590,7 +608,18 @@ function CallPanel({
   );
   const matches = (g: Gymnast) =>
     !filter || String(g.bib).startsWith(filter) || g.lastName.toLowerCase().startsWith(filter.toLowerCase());
-  const everyone = byShift
+  const finalists = (finalLists ?? []).flatMap((l) =>
+    l.finalists
+      .filter((f) => !f.reserve)
+      .map((f) => {
+        if (finalLists!.length > 1 && l.category.name) finalCategory.set(f.gymnast.id, l.category.name);
+        return gymnasts.get(f.gymnast.id);
+      })
+      .filter((g): g is Gymnast => Boolean(g) && (g!.status ?? "ACTIVE") === "ACTIVE"),
+  );
+  const everyone = isFinal
+    ? finalists
+    : byShift
     ? shiftsHere.flatMap((s) => s.gymnastIds.map((id) => gymnasts.get(id)).filter((g): g is Gymnast => Boolean(g)))
     : [...gymnasts.values()].filter((g) => (g.status ?? "ACTIVE") === "ACTIVE").sort((a, b) => a.bib - b.bib);
   const first = everyone.filter((g) => !firstDone.has(g.id) && matches(g));
@@ -600,6 +629,8 @@ function CallPanel({
 
   let empty = "Все участники выступили на этом снаряде";
   if (filter) empty = "Никого не найдено";
+  else if (isFinal && finalists.length === 0) empty = "Финала на этом снаряде нет";
+  else if (isFinal) empty = "Все финалисты выступили";
   else if (byShift && shiftsHere.length === 0) empty = "В этой ротации на снаряде нет смены";
   else if (byShift) empty = "Смена выступила на этом снаряде. Ждём перехода на следующую ротацию.";
 
@@ -623,7 +654,12 @@ function CallPanel({
 
   return (
     <section className="call">
-      {rotation && rotation.shifts.length > 0 && (
+      {isFinal && (
+        <div className="call-shift">
+          <span>Финал · порядок по жеребьёвке</span>
+        </div>
+      )}
+      {!isFinal && rotation && rotation.shifts.length > 0 && (
         <div className="call-shift">
           <span>
             {shiftsHere.length > 0
@@ -651,11 +687,12 @@ function CallPanel({
             <li key={gymnast.id}>
               <button
                 type="button"
-                className={byShift && i === 0 && !filter ? "next" : undefined}
+                className={(byShift || isFinal) && i === 0 && !filter ? "next" : undefined}
                 disabled={busy}
                 onClick={() => void call(gymnast, 1)}
               >
                 <strong>№{gymnast.bib}</strong> {gymnast.lastName} {gymnast.firstName}
+                {finalCategory.has(gymnast.id) && <span className="muted"> · {finalCategory.get(gymnast.id)}</span>}
               </button>
             </li>
           ))}

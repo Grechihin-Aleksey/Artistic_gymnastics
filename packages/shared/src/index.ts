@@ -6,6 +6,10 @@ export const JUDGE_ROLES = ["D", "E", "SUPERVISOR"] as const;
 export const MARK_KINDS = ["D", "E", "NEUTRAL"] as const;
 export const PERFORMANCE_STATUSES = ["SCORING", "APPROVED"] as const;
 export const INQUIRY_STATUSES = ["PENDING", "ACCEPTED", "REJECTED"] as const;
+/** Этап: квалификация (многоборье) или финалы на отдельных снарядах. */
+export const STAGES = ["QUAL", "FINAL"] as const;
+export type Stage = (typeof STAGES)[number];
+
 /** Участник выступает, не явился или снялся по ходу соревнований. */
 export const GYMNAST_STATUSES = ["ACTIVE", "DNS", "WITHDRAWN"] as const;
 export type GymnastStatus = (typeof GYMNAST_STATUSES)[number];
@@ -212,6 +216,22 @@ export const drawSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
+/**
+ * Финалы на снарядах: в каждом разряде на каждом снаряде лучшие size участников
+ * квалификации (при равенстве на границе проходят все), не больше perClub от клуба,
+ * и reserves запасных. Порядок выступления в финале — жеребьёвка.
+ */
+export const createFinalsSchema = z.object({
+  size: z.number().int().min(1).max(16).default(8),
+  reserves: z.number().int().min(0).max(5).default(2),
+  perClub: z.number().int().min(1).max(16).nullable().default(null),
+});
+
+export const setPhaseSchema = z.object({ phase: z.enum(STAGES) });
+
+/** Финалист снимается, его место в порядке выступления занимает первый запасной. */
+export const replaceFinalistSchema = z.object({ gymnastId: z.uuid() });
+
 export const setShiftStartSchema = z.object({ startApparatus: apparatusSchema });
 
 export const setRotationSchema = z.object({ rotation: z.number().int().min(0).max(20) });
@@ -243,12 +263,39 @@ export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
 export type UpdateGymnastInput = z.infer<typeof updateGymnastSchema>;
+export type CreateFinalsInput = z.infer<typeof createFinalsSchema>;
+export type SetPhaseInput = z.infer<typeof setPhaseSchema>;
+export type ReplaceFinalistInput = z.infer<typeof replaceFinalistSchema>;
 export type DrawInput = z.infer<typeof drawSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
+
+export interface FinalistView {
+  gymnast: GymnastView;
+  /** Порядок выступления в финале; у запасных — очередь запасных. */
+  position: number;
+  reserve: boolean;
+  /** Место и оценка в квалификации на этом снаряде. */
+  qualRank: number;
+  qualTotal: number;
+}
+
+export interface FinalsView {
+  phase: Stage;
+  size: number;
+  reserves: number;
+  perClub: number | null;
+  /** Финальные оценки уже есть: состав не пересобрать. */
+  started: boolean;
+  lists: {
+    apparatus: (typeof APPARATUS)[number];
+    category: { id: string | null; name: string };
+    finalists: FinalistView[];
+  }[];
+}
 
 export interface DrawView {
   /** Оценки уже ставятся: номера не меняются. */
@@ -302,6 +349,8 @@ export interface PerformanceView {
   gymnastId: string;
   apparatus: (typeof APPARATUS)[number];
   attempt: number;
+  /** Квалификация или финал на снаряде. */
+  stage: Stage;
   status: PerformanceStatus;
   score: ScoreView | null;
   marks: MarkView[];
@@ -321,6 +370,8 @@ export const LIVE_EVENTS = {
   called: "performance.called",
   /** Сервер → все: смены перешли на следующий снаряд или поменялся стартовый снаряд. */
   rotation: "competition.rotation",
+  /** Сервер → все: сформированы финалы, заменён финалист или сменился этап. */
+  finals: "competition.finals",
 } as const;
 
 export function competitionRoom(competitionId: string): string {
@@ -394,7 +445,8 @@ export interface LiveApparatus {
  * в облачный ретранслятор, а тот раздаёт сайту.
  */
 export interface BoardSnapshot {
-  competition: { id: string; name: string; discipline: (typeof DISCIPLINES)[number]; rules?: Rules };
+  /** phase FINAL — идут финалы: таблицы снарядов показывают финальные оценки. */
+  competition: { id: string; name: string; discipline: (typeof DISCIPLINES)[number]; rules?: Rules; phase?: Stage };
   live: LiveApparatus[];
   /** Таблицы по разрядам. Если разрядов нет — одна запись с id null и пустым именем. */
   categories: CategoryResults[];

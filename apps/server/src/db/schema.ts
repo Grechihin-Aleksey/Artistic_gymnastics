@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES } from "@ag/shared";
+import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
 export const apparatusEnum = pgEnum("apparatus", APPARATUS);
@@ -19,6 +19,7 @@ export const performanceStatusEnum = pgEnum("performance_status", PERFORMANCE_ST
 export const inquiryStatusEnum = pgEnum("inquiry_status", INQUIRY_STATUSES);
 export const rulesEnum = pgEnum("rules", RULES);
 export const gymnastStatusEnum = pgEnum("gymnast_status", GYMNAST_STATUSES);
+export const stageEnum = pgEnum("stage", STAGES);
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -38,6 +39,12 @@ export const competitions = pgTable("competitions", {
   rules: rulesEnum("rules").notNull().default("FIG"),
   /** Своих правил: список сбавок за требования, баллы в тысячных. */
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
+  /** Идёт квалификация или финалы на снарядах: новые выступления получают этот этап. */
+  phase: stageEnum("phase").notNull().default("QUAL"),
+  /** Параметры отбора в финалы, с которыми их сформировали последний раз. */
+  finalSize: integer("final_size").notNull().default(8),
+  finalReserves: integer("final_reserves").notNull().default(2),
+  finalPerClub: integer("final_per_club"),
   createdAt: createdAt(),
 });
 
@@ -149,6 +156,7 @@ export const performances = pgTable(
       .references(() => gymnasts.id, { onDelete: "cascade" }),
     apparatus: apparatusEnum("apparatus").notNull(),
     attempt: integer("attempt").notNull().default(1),
+    stage: stageEnum("stage").notNull().default("QUAL"),
     status: performanceStatusEnum("status").notNull().default("SCORING"),
     d: integer("d"),
     e: integer("e"),
@@ -157,7 +165,7 @@ export const performances = pgTable(
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("performances_unique").on(t.gymnastId, t.apparatus, t.attempt)],
+  (t) => [uniqueIndex("performances_unique").on(t.gymnastId, t.apparatus, t.stage, t.attempt)],
 );
 
 export const marks = pgTable(
@@ -176,6 +184,28 @@ export const marks = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("marks_judge_unique").on(t.performanceId, t.judgeId, t.kind)],
+);
+
+/** Финалисты на снаряде в разряде: порядок выступления по жеребьёвке и запасные. */
+export const finalists = pgTable(
+  "finalists",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    apparatus: apparatusEnum("apparatus").notNull(),
+    categoryId: uuid("category_id").references(() => categories.id, { onDelete: "cascade" }),
+    gymnastId: uuid("gymnast_id")
+      .notNull()
+      .references(() => gymnasts.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    reserve: boolean("reserve").notNull().default(false),
+    qualRank: integer("qual_rank").notNull(),
+    qualTotal: integer("qual_total").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("finalists_unique").on(t.competitionId, t.apparatus, t.gymnastId)],
 );
 
 /** Запросы тренеров на пересмотр оценки D. Баллы в тысячных. */

@@ -8,6 +8,8 @@ import { RotationsController } from "./competitions/rotations.controller";
 import { RotationsService } from "./competitions/rotations.service";
 import { APP_CONFIG, type AppConfig } from "./config";
 import { DbModule } from "./db/db.module";
+import { FinalsController } from "./finals/finals.controller";
+import { FinalsService } from "./finals/finals.service";
 import { InquiriesController } from "./inquiries/inquiries.controller";
 import { InquiriesService } from "./inquiries/inquiries.service";
 import { LiveGateway } from "./live/live.gateway";
@@ -39,6 +41,7 @@ export class AppModule {
         RotationsController,
         PerformancesController,
         ResultsController,
+        FinalsController,
         InquiriesController,
         ProtocolsController,
       ],
@@ -49,6 +52,7 @@ export class AppModule {
         RotationsService,
         PerformancesService,
         ResultsService,
+        FinalsService,
         InquiriesService,
         ProtocolsService,
         LiveGateway,

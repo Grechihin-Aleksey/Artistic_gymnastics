@@ -105,6 +105,7 @@ describe("ретранслятор", () => {
       gymnastId: "g1",
       apparatus: "BB",
       attempt: 1,
+      stage: "QUAL",
       status: "APPROVED",
       score: { d: 5, e: 8, neutral: 0, total: 13 },
       marks: [],

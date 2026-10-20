@@ -18,6 +18,7 @@ export function useLive(token: string, onChange: () => void): boolean {
       LIVE_EVENTS.reopened,
       LIVE_EVENTS.marksUpdated,
       LIVE_EVENTS.rotation,
+      LIVE_EVENTS.finals,
     ]) {
       socket.on(event, onChange);
     }
