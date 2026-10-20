@@ -27,7 +27,10 @@ until curl -fsS http://localhost:3000/competitions >/dev/null 2>&1; do
 done
 echo
 
-ip=$( (hostname -I 2>/dev/null || ipconfig getifaddr en0 2>/dev/null || echo localhost) | awk '{print $1}')
+# Адрес в сети зала: тот, через который идёт основной маршрут, а не адрес моста Docker.
+ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')
+[ -n "$ip" ] || ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)
+[ -n "$ip" ] || ip=localhost
 token=$(sed -n 's/^ADMIN_TOKEN=//p' .env)
 cat <<INFO
 
