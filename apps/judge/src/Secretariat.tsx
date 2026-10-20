@@ -3,6 +3,7 @@ import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
+import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -184,7 +185,10 @@ export function RotationPanel({ competitionId, discipline, adminToken, onError }
                 </select>
               </td>
               <td>
-                <strong>{APPARATUS_NAMES[s.apparatus]}</strong>
+                <strong>
+                  <ApparatusIcon code={s.apparatus} />
+                  {APPARATUS_NAMES[s.apparatus]}
+                </strong>
               </td>
               <td className={s.performed === s.gymnastIds.length ? "ok" : ""}>
                 {s.performed} из {s.gymnastIds.length}

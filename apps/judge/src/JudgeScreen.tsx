@@ -11,6 +11,7 @@ import type {
   SubmitMarkInput,
 } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
+import { ApparatusIcon } from "./ApparatusIcon";
 import { Keypad } from "./Keypad";
 import { Stopwatch } from "./Stopwatch";
 import {
@@ -199,6 +200,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       <header className="bar">
         <div>
           <div className="apparatus">
+            <ApparatusIcon code={judge.apparatus} />
             {APPARATUS_NAMES[judge.apparatus] ?? judge.apparatus}
             {phase === "FINAL" && <span className="stage-badge">Финал</span>}
           </div>
