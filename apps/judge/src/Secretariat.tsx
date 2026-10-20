@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apparatusFor, type Discipline } from "@ag/scoring";
+import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
 import { GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, type GymnastStatus, type Official } from "@ag/shared";
-import type { ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
+import type { BoardSnapshot, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView } from "@ag/shared";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
 import { parseRoster, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -1426,6 +1426,130 @@ export function FinalsPanel({ competitionId, adminToken, onError }: Omit<Props, 
 }
 
 /** «20 17 15 14» или «20, 17, 15» → [20, 17, 15]; null — в строке ошибка. */
+
+const CEREMONY_TITLES: Record<Ceremony["kind"], string> = {
+  allAround: "Многоборье",
+  apparatus: "Отдельный снаряд",
+  teams: "Командный зачёт",
+  clubs: "Общекомандный зачёт",
+};
+
+/** Награждение: секретариат выводит пьедестал на табло в зале и на сайт, затем убирает его. */
+export function CeremonyPanel({ competitionId, discipline, adminToken, onError }: Props) {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [draft, setDraft] = useState<{ kind: Ceremony["kind"]; category: string; apparatus: Apparatus }>({
+    kind: "allAround",
+    category: "",
+    apparatus: apparatusFor(discipline)[0]!,
+  });
+  const [shown, setShown] = useState<CeremonyView | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiRequest<Category[]>(`/competitions/${competitionId}/results/categories`)
+      .then((list) => {
+        setCategories(list);
+        setDraft((d) => ({ ...d, category: d.category || categoryParam(list[0]) }));
+      })
+      .catch(() => setCategories([]));
+    apiRequest<BoardSnapshot>(`/competitions/${competitionId}/results/snapshot`)
+      .then((snapshot) => setShown(snapshot.ceremony ?? null))
+      .catch(() => setShown(null));
+  }, [competitionId]);
+
+  const send = async (ceremony: Ceremony | null) => {
+    setBusy(true);
+    try {
+      const result = await apiRequest<{ ceremony: CeremonyView | null }>(`/competitions/${competitionId}/ceremony`, {
+        token: adminToken,
+        method: "PUT",
+        body: { ceremony },
+      });
+      setShown(result.ceremony);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const show = () =>
+    void send({
+      kind: draft.kind,
+      categoryId: draft.kind === "clubs" || draft.category === "none" ? null : draft.category || null,
+      ...(draft.kind === "apparatus" ? { apparatus: draft.apparatus } : {}),
+    });
+
+  return (
+    <section className="panel no-print ceremony-panel">
+      <h2>Награждение на табло</h2>
+      <p className="muted wide">
+        Табло в зале и на сайте в автоматическом режиме покажет пьедестал с призёрами, пока награждение не уберут. На
+        снаряде награждают по финалу, если он был.
+      </p>
+      <label>
+        Что награждаем
+        <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as Ceremony["kind"] })}>
+          {(Object.keys(CEREMONY_TITLES) as Ceremony["kind"][]).map((k) => (
+            <option key={k} value={k}>
+              {CEREMONY_TITLES[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {draft.kind === "apparatus" && (
+        <label>
+          Снаряд
+          <select value={draft.apparatus} onChange={(e) => setDraft({ ...draft, apparatus: e.target.value as Apparatus })}>
+            {apparatusFor(discipline).map((a) => (
+              <option key={a} value={a}>
+                {APPARATUS_NAMES[a]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {draft.kind !== "clubs" && categories.some((c) => c.id) && (
+        <label>
+          Разряд
+          <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
+            {categories.map((c) => (
+              <option key={categoryParam(c)} value={categoryParam(c)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button type="button" className="primary" disabled={busy} onClick={show}>
+        Показать на табло
+      </button>
+      {shown && (
+        <div className="wide ceremony-shown">
+          <p>
+            Сейчас на табло: <strong>{shown.title}</strong>
+          </p>
+          {shown.podium.length === 0 ? (
+            <p className="muted">Призёров пока нет: результаты не готовы.</p>
+          ) : (
+            <ol className="muted">
+              {shown.podium.map((p) => (
+                <li key={`${p.place}-${p.name}`} value={p.place}>
+                  {p.name}
+                  {p.detail && ` · ${p.detail}`} · {shown.points ? `${p.total} очк.` : p.total.toFixed(3)}
+                </li>
+              ))}
+            </ol>
+          )}
+          <button type="button" disabled={busy} onClick={() => void send(null)}>
+            Убрать с табло
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 /**
  * Общекомандный зачёт: очки клубам за места в многоборье, на снарядах и команд

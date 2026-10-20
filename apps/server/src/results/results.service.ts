@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, UnprocessableEntityException } from "@nestjs/common";
 import {
   apparatusFor,
   averageVaults,
@@ -9,11 +9,21 @@ import {
   type Apparatus,
   type ScoreBreakdown,
 } from "@ag/scoring";
-import type { BoardSnapshot, CategoryResults, ClubStandingRow, ClubStandingView, LiveApparatus, Stage } from "@ag/shared";
+import {
+  APPARATUS_NAMES,
+  type BoardSnapshot,
+  type CategoryResults,
+  type Ceremony,
+  type CeremonyView,
+  type ClubStandingRow,
+  type ClubStandingView,
+  type LiveApparatus,
+  type Stage,
+} from "@ag/shared";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
-import { categories, gymnasts, judges, marks, performances, teams } from "../db/schema";
+import { auditLog, categories, competitions, gymnasts, judges, marks, performances, teams } from "../db/schema";
 
 type GymnastRow = typeof gymnasts.$inferSelect;
 
@@ -318,6 +328,52 @@ export class ResultsService {
     return { settings, rows: list };
   }
 
+  /** Вывести награждение на табло или убрать его (null). */
+  async setCeremony(competitionId: string, ceremony: Ceremony | null): Promise<CeremonyView | null> {
+    const view = ceremony ? await this.ceremony(competitionId, ceremony) : null;
+    await this.db.transaction(async (tx) => {
+      await tx.update(competitions).set({ ceremony }).where(eq(competitions.id, competitionId));
+      await tx.insert(auditLog).values({ competitionId, actor: "admin", action: ceremony ? "ceremony.shown" : "ceremony.hidden", details: ceremony ?? {} });
+    });
+    return view;
+  }
+
+  /**
+   * Пьедестал награждения: участники, команды или клубы на 1–3 местах.
+   * На снаряде награждают по финалу, если он был, иначе по квалификации.
+   */
+  async ceremony(competitionId: string, ceremony: Ceremony): Promise<CeremonyView> {
+    const podium: CeremonyView["podium"] = [];
+    if (ceremony.kind === "clubs") {
+      for (const r of (await this.clubs(competitionId)).rows) {
+        if (r.rank <= 3) podium.push({ place: r.rank, name: r.club, detail: null, total: r.total });
+      }
+      return { title: "Общекомандный зачёт", podium, points: true };
+    }
+    const category = (await this.categoryList(competitionId)).find((c) => c.id === ceremony.categoryId);
+    if (!category) throw new BadRequestException("В соревновании нет такого разряда");
+    const person = (g: { lastName: string; firstName: string; club: string | null }) => ({ name: `${g.lastName} ${g.firstName}`, detail: g.club?.trim() || null });
+    let title: string;
+    if (ceremony.kind === "allAround") {
+      title = "Многоборье";
+      for (const r of await this.allAround(competitionId, category.id)) {
+        if (r.complete && r.rank <= 3) podium.push({ place: r.rank, ...person(r.gymnast), total: r.total });
+      }
+    } else if (ceremony.kind === "teams") {
+      title = "Командный зачёт";
+      for (const r of await this.teams(competitionId, category.id)) {
+        if (r.rank <= 3) podium.push({ place: r.rank, name: r.team.name ?? "", detail: null, total: r.total });
+      }
+    } else {
+      const apparatus = ceremony.apparatus!;
+      const final = await this.apparatus(competitionId, apparatus, "average", category.id, "FINAL");
+      title = `${final.length > 0 ? "Финал: " : ""}${APPARATUS_NAMES[apparatus]}`;
+      const list = final.length > 0 ? final : await this.apparatus(competitionId, apparatus, "average", category.id);
+      for (const r of list) if (r.rank <= 3) podium.push({ place: r.rank, ...person(r.gymnast), total: r.score.total });
+    }
+    return { title: category.name ? `${title} · ${category.name}` : title, podium, points: false };
+  }
+
   /**
    * Разряды соревнования для таблиц. Без разрядов — одна общая запись (id null).
    * Участники без разряда при заданных разрядах идут отдельной записью.
@@ -379,6 +435,7 @@ export class ResultsService {
       },
       live,
       categories: results,
+      ceremony: competition.ceremony ? await this.ceremony(competitionId, competition.ceremony).catch(() => null) : null,
       generatedAt: new Date().toISOString(),
     };
   }

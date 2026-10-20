@@ -106,3 +106,43 @@ describe("общекомандный зачёт", () => {
     expect(values).toEqual(expect.arrayContaining(["Олимп", "24", "Старт", "9", "Юность", "3"]));
   });
 });
+
+describe("награждение на табло", () => {
+  const ceremony = (body: object) => admin.put(`/competitions/${competitionId}/ceremony`, { ceremony: body });
+  const snapshot = async () => (await api(app).get(`/competitions/${competitionId}/results/snapshot`).expect(200)).body;
+
+  it("выводит пьедестал многоборья, снаряда, команд и клубов", async () => {
+    await api(app).put(`/competitions/${competitionId}/ceremony`, { ceremony: null }).expect(401);
+    const aa = (await ceremony({ kind: "allAround" }).expect(200)).body.ceremony;
+    expect(aa.title).toBe("Многоборье");
+    expect(aa.podium.map((p: { place: number; name: string; detail: string }) => [p.place, p.name, p.detail])).toEqual([
+      [1, "Абрамова Анна", "Олимп"],
+      [2, "Белова Бэлла", "Олимп"],
+      [3, "Волкова Вера", "олимп"],
+    ]);
+    expect((await snapshot()).ceremony).toEqual(aa);
+
+    const bb = (await ceremony({ kind: "apparatus", apparatus: "BB" }).expect(200)).body.ceremony;
+    expect(bb).toMatchObject({ title: "Бревно", points: false, podium: [{ place: 1, name: "Абрамова Анна" }, { place: 2 }, { place: 3 }] });
+    expect((await ceremony({ kind: "teams" }).expect(200)).body.ceremony.podium.map((p: { name: string }) => p.name)).toEqual([
+      "Олимп",
+      "Старт",
+    ]);
+    const clubs = (await ceremony({ kind: "clubs" }).expect(200)).body.ceremony;
+    expect(clubs).toMatchObject({ title: "Общекомандный зачёт", points: true });
+    expect(clubs.podium.map((p: { name: string; total: number }) => [p.name, p.total])).toEqual([
+      ["Олимп", 24],
+      ["Старт", 9],
+      ["Юность", 3],
+    ]);
+  });
+
+  it("проверяет данные и убирает награждение", async () => {
+    expect((await ceremony({ kind: "apparatus" }).expect(400)).body.issues[0].path).toBe("ceremony.apparatus");
+    expect((await ceremony({ kind: "allAround", categoryId: "00000000-0000-4000-8000-000000000000" }).expect(400)).body.message).toBe(
+      "В соревновании нет такого разряда",
+    );
+    expect((await admin.put(`/competitions/${competitionId}/ceremony`, { ceremony: null }).expect(200)).body).toEqual({ ceremony: null });
+    expect((await snapshot()).ceremony).toBeNull();
+  });
+});

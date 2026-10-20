@@ -9,6 +9,7 @@ import {
   FinalsPanel,
   NormativesPanel,
   ClubStandingPanel,
+  CeremonyPanel,
   OfficialsPanel,
   InquiriesPanel,
   NewCompetitionForm,
@@ -324,6 +325,13 @@ export function AdminScreen() {
           />
           <ClubStandingPanel key={`clubs-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
           <ProtocolsPanel
+            competitionId={competition.id}
+            discipline={competition.discipline}
+            adminToken={adminToken}
+            onError={setError}
+          />
+          <CeremonyPanel
+            key={`ceremony-${competition.id}`}
             competitionId={competition.id}
             discipline={competition.discipline}
             adminToken={adminToken}

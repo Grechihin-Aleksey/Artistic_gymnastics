@@ -18,6 +18,7 @@ import { PerformancesService } from "./performances/performances.service";
 import { ProtocolsController } from "./protocols/protocols.controller";
 import { ProtocolsService } from "./protocols/protocols.service";
 import { RelayPublisher } from "./relay/relay.publisher";
+import { CeremonyController } from "./results/ceremony.controller";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
 
@@ -44,6 +45,7 @@ export class AppModule {
         FinalsController,
         InquiriesController,
         ProtocolsController,
+        CeremonyController,
       ],
       providers: [
         AuthService,

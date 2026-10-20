@@ -249,6 +249,27 @@ export const setClubStandingSchema = z.object({
   best: z.number().int().min(1).max(50).nullable(),
 });
 
+/** Что награждают: многоборье, снаряд, команды разряда или общекомандный зачёт клубов. */
+export const CEREMONY_KINDS = ["allAround", "apparatus", "teams", "clubs"] as const;
+
+/**
+ * Экран награждения на табло. categoryId — разряд (null, если разрядов нет;
+ * для клубов не нужен), apparatus — только для награждения на снаряде.
+ */
+export const ceremonySchema = z
+  .object({
+    kind: z.enum(CEREMONY_KINDS),
+    categoryId: z.uuid().nullable().default(null),
+    apparatus: apparatusSchema.optional(),
+  })
+  .refine((c) => (c.kind === "apparatus") === (c.apparatus !== undefined), {
+    message: "Снаряд указывается только для награждения на снаряде",
+    path: ["apparatus"],
+  });
+
+/** null — убрать награждение с табло. */
+export const setCeremonySchema = z.object({ ceremony: ceremonySchema.nullable() });
+
 /** Файл заявки Excel (.xlsx) в base64. */
 export const parseEntriesSchema = z.object({
   file: z.string().min(1).max(6_000_000).regex(/^[A-Za-z0-9+/]+=*$/, "Нужен файл в base64"),
@@ -324,6 +345,8 @@ export type SetLogoInput = z.infer<typeof setLogoSchema>;
 export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type SetNormativesInput = z.infer<typeof setNormativesSchema>;
 export type ClubStandingSettings = z.infer<typeof setClubStandingSchema>;
+export type Ceremony = z.infer<typeof ceremonySchema>;
+export type SetCeremonyInput = z.infer<typeof setCeremonySchema>;
 export type Official = z.infer<typeof officialSchema>;
 export type SetOfficialsInput = z.infer<typeof setOfficialsSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
@@ -442,6 +465,8 @@ export const LIVE_EVENTS = {
   rotation: "competition.rotation",
   /** Сервер → все: сформированы финалы, заменён финалист или сменился этап. */
   finals: "competition.finals",
+  /** Сервер → все: секретариат вывел награждение на табло или убрал его. */
+  ceremony: "competition.ceremony",
 } as const;
 
 export function competitionRoom(competitionId: string): string {
@@ -502,6 +527,15 @@ export interface ClubStandingRow {
   places: [number, number, number];
 }
 
+/** Пьедестал для табло: призёры 1–3 мест (при равенстве — все, кто делит место). */
+export interface CeremonyView {
+  /** Например: «Многоборье · КМС», «Финал: Бревно · 1 разряд», «Общекомандный зачёт». */
+  title: string;
+  podium: { place: number; name: string; detail: string | null; total: number }[];
+  /** Для клубов total — очки, а не сумма баллов. */
+  points: boolean;
+}
+
 export interface ClubStandingView {
   settings: ClubStandingSettings;
   rows: ClubStandingRow[];
@@ -539,6 +573,8 @@ export interface BoardSnapshot {
   live: LiveApparatus[];
   /** Таблицы по разрядам. Если разрядов нет — одна запись с id null и пустым именем. */
   categories: CategoryResults[];
+  /** Идёт награждение: табло в авторежиме показывает пьедестал. */
+  ceremony?: CeremonyView | null;
   /** Когда снимок собран на сервере в зале (ISO). */
   generatedAt: string;
 }

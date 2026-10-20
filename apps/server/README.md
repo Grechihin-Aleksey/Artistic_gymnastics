@@ -45,6 +45,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/competitions/:id/protocols/diplomas` | секретариат | Грамоты призёрам в PDF: `?kind=all-around` (многоборье и команды) или `apparatus`, `?places=3` |
 | PATCH | `/competitions/:id/gymnasts/:gymnastId` | секретариат | Правка участника: номер, фамилия, имя, отчество, дата рождения, клуб, город, тренер, команда, разряд, смена, статус (`ACTIVE`, `DNS` — неявка, `WITHDRAWN` — снятие) |
 | GET | `/competitions/:id/normatives` | все | Нормативы разрядов: уровни и минимальная сумма многоборья по каждому разряду |
+| PUT | `/competitions/:id/ceremony` | секретариат | Вывести награждение на табло: `{ ceremony: { kind: "allAround" \| "apparatus" \| "teams" \| "clubs", categoryId, apparatus? } }` или убрать его (`{ ceremony: null }`); отвечает пьедесталом, табло получает событие `competition.ceremony`, пьедестал приходит в снимке (`ceremony`) |
 | PUT | `/competitions/:id/club-standing` | секретариат | Очки общекомандного зачёта: `{ allAround: [10, 8, 6], apparatus: [...], teams: [...], best: 3 \| null }` — очки за места по порядку и сколько лучших от клуба в разряде идут в зачёт многоборья |
 | PUT | `/competitions/:id/normatives` | секретариат | Задать нормативы: `{ categories: [{ categoryId, levels: [{ name, min }] }] }` |
 | PUT | `/competitions/:id/officials` | секретариат | Главный судья и главный секретарь: `{ chiefJudge, chiefSecretary }`, у каждого `{ name, category?, city? }` или `null` |

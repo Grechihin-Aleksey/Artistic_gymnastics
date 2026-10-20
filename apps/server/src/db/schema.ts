@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { ClubStandingSettings, Official } from "@ag/shared";
+import type { Ceremony, ClubStandingSettings, Official } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -47,6 +47,8 @@ export const competitions = pgTable("competitions", {
     .$type<ClubStandingSettings>()
     .notNull()
     .default({ allAround: [], apparatus: [], teams: [], best: null }),
+  /** Награждение, выведенное на табло; null — табло показывает результаты. */
+  ceremony: jsonb("ceremony").$type<Ceremony>(),
   /** Главный судья и главный секретарь: их ФИО и категории печатаются в протоколах. */
   officials: jsonb("officials").$type<{ chiefJudge: Official | null; chiefSecretary: Official | null }>().notNull().default({ chiefJudge: null, chiefSecretary: null }),
   /** Параметры отбора в финалы, с которыми их сформировали последний раз. */
