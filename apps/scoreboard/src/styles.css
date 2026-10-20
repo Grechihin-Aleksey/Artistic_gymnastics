@@ -480,3 +480,12 @@ nav.categories {
   color: var(--bg);
   font-weight: 700;
 }
+
+/* Значок снаряда рядом с названием. */
+.app-icon {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.2em;
+  margin-right: 0.35em;
+  flex-shrink: 0;
+}

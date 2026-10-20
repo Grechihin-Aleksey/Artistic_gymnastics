@@ -12,6 +12,7 @@ import {
   type Rules,
   type TeamResultRow,
 } from "@ag/shared";
+import { ApparatusIcon } from "./ApparatusIcon";
 import { clubList, clubResults } from "./club";
 import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
@@ -129,6 +130,7 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
               href={routeHash(view === "club" ? { ...route, view: view! } : { ...route, view: view!, club: undefined })}
               className={route.view === view ? "active" : ""}
             >
+              <ApparatusIcon code={view!} />
               {label}
             </a>
           ))}
@@ -154,7 +156,10 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
 
       {flash && (
         <div className="flash" key={flash.key}>
-          <span className="flash-app">{APPARATUS_NAMES[flash.apparatus]}</span>
+          <span className="flash-app">
+            <ApparatusIcon code={flash.apparatus} />
+            {APPARATUS_NAMES[flash.apparatus]}
+          </span>
           <span className="flash-name">
             {flashGymnast
               ? `№${flashGymnast.bib} ${fullName(flashGymnast)}`
@@ -222,7 +227,12 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
                 <span className="bib">№{p.gymnast.bib}</span> <strong>{fullName(p.gymnast)}</strong>
                 {p.category && <span className="muted"> · {p.category}</span>}
               </header>
-              {p.now && <div className="now-badge">Выступает: {APPARATUS_NAMES[p.now]}</div>}
+              {p.now && (
+                <div className="now-badge">
+                  Выступает: <ApparatusIcon code={p.now} />
+                  {APPARATUS_NAMES[p.now]}
+                </div>
+              )}
               {p.allAround && (
                 <div className="club-aa">
                   Многоборье: <strong>{p.allAround.complete ? `${p.allAround.rank} место` : "идёт"}</strong>
@@ -234,7 +244,10 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
                   <tbody>
                     {p.apparatus.map((a) => (
                       <tr key={a.apparatus}>
-                        <td>{APPARATUS_NAMES[a.apparatus]}</td>
+                        <td>
+                          <ApparatusIcon code={a.apparatus} />
+                          {APPARATUS_NAMES[a.apparatus]}
+                        </td>
                         <td className="num">{a.rank} место</td>
                         <td className="num total">{fmt(a.total)}</td>
                       </tr>
@@ -407,7 +420,10 @@ function NowView({
       <div className="now-grid">
         {live.map((a) => (
           <article key={a.apparatus} className="now-card">
-            <h2>{APPARATUS_NAMES[a.apparatus]}</h2>
+            <h2>
+              <ApparatusIcon code={a.apparatus} />
+              {APPARATUS_NAMES[a.apparatus]}
+            </h2>
             <div className="label">Выступает</div>
             {a.current ? (
               <div className="performer">
@@ -476,6 +492,7 @@ function ApparatusTable({
   return (
     <section>
       <h1>
+        <ApparatusIcon code={code} />
         {final && "Финал: "}
         {APPARATUS_NAMES[code]}
         {note}
@@ -545,6 +562,7 @@ function AllAroundTable({
                 <th className="name-col">Участник</th>
                 {apparatus.map((a) => (
                   <th key={a} className="num">
+                    <ApparatusIcon code={a} />
                     {SHORT[a]}
                   </th>
                 ))}
@@ -595,6 +613,7 @@ function TeamsTable({ rows, note }: { rows: TeamResultRow[]; note: string }) {
                 <th className="name-col">Команда</th>
                 {apparatus.map((a) => (
                   <th key={a} className="num">
+                    <ApparatusIcon code={a} />
                     {SHORT[a]}
                   </th>
                 ))}
