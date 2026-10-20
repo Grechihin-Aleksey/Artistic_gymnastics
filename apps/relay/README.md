@@ -27,7 +27,7 @@ docker run -d --restart unless-stopped -p 8080:8080 \
 pnpm --filter @ag/scoreboard build && pnpm --filter @ag/relay build:php
 ```
 
-Получится `dist-php/ag-relay-php.zip` с папкой `results`. Её нужно распаковать в корень сайта, вписать токен в `results/config.php`, а на ноутбуке в зале указать `RELAY_URL=https://сайт/results/`. Нужен PHP 7.4 или новее с `mod_rewrite`, база данных не требуется: данные лежат в `results/data`, каждый файл начинается с `<?php exit; ?>` и по прямому адресу не открывается.
+Получится `dist-php/ag-relay-php.zip` с папкой `results`; готовый архив лежит и в `downloads/` в корне репозитория. Её нужно распаковать в корень сайта, вписать токен в `results/config.php`, а на ноутбуке в зале указать `RELAY_URL=https://сайт/results/`. Нужен PHP 7.4 или новее с `mod_rewrite`, база данных не требуется: данные лежат в `results/data`, каждый файл начинается с `<?php exit; ?>` и по прямому адресу не открывается.
 
 Сервер в зале шлёт токен и в `Authorization`, и в `X-Relay-Token`: некоторые хостинги не передают `Authorization` в PHP.
 
