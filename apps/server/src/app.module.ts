@@ -29,6 +29,7 @@ import { TransferService } from "./competitions/transfer.service";
 import { SeriesController } from "./series/series.controller";
 import { SeriesService } from "./series/series.service";
 import { RelayPublisher } from "./relay/relay.publisher";
+import { SiteController } from "./relay/site.controller";
 import { CeremonyController } from "./results/ceremony.controller";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
@@ -60,6 +61,7 @@ export class AppModule {
         AuditController,
         OnlineEntriesController,
         SiteProtocolsController,
+        SiteController,
         SeriesController,
         TransferController,
       ],

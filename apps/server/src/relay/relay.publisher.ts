@@ -16,6 +16,15 @@ interface Pending {
   approved: { view: PerformanceView; at: number }[];
 }
 
+/** Состояние связи с сайтом для секретариата. */
+export interface RelayStatus {
+  enabled: boolean;
+  /** Когда снимок последний раз дошёл до сайта (ISO), null — ещё не отправляли. */
+  sentAt: string | null;
+  /** Почему последняя отправка не удалась; null — связь в порядке. */
+  error: string | null;
+}
+
 /**
  * Отправляет снимки результатов в облачный ретранслятор, если задан RELAY_URL.
  * Связь из зала бывает плохой, поэтому неотправленное копится и уходит
@@ -30,6 +39,9 @@ export class RelayPublisher implements OnModuleDestroy {
   private resync: NodeJS.Timeout | null = null;
   private flushing = false;
   private failures = 0;
+  private readonly sent = new Map<string, number>();
+  private lastSentAt: number | null = null;
+  private lastError: string | null = null;
 
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -60,6 +72,34 @@ export class RelayPublisher implements OnModuleDestroy {
   forget(competitionId: string): void {
     this.pending.delete(competitionId);
     this.known.delete(competitionId);
+    this.sent.delete(competitionId);
+  }
+
+  /** Связь с сайтом в целом или по одному соревнованию. */
+  status(competitionId?: string): RelayStatus {
+    const at = competitionId ? this.sent.get(competitionId) : this.lastSentAt;
+    return {
+      enabled: this.enabled,
+      sentAt: at ? new Date(at).toISOString() : null,
+      error: this.enabled ? this.lastError : null,
+    };
+  }
+
+  /** Отправить соревнование на сайт сейчас, не дожидаясь первой оценки; ошибка уходит вызывающему. */
+  async publishNow(competitionId: string): Promise<RelayStatus> {
+    if (!this.enabled) return this.status(competitionId);
+    const entry = this.pending.get(competitionId) ?? { approved: [] };
+    this.pending.delete(competitionId);
+    try {
+      await this.send(competitionId, entry);
+      this.delivered(competitionId);
+    } catch (e) {
+      this.pending.set(competitionId, entry);
+      this.lastError = (e as Error).message;
+      this.schedule(DEBOUNCE_MS);
+      throw e;
+    }
+    return this.status(competitionId);
   }
 
   onModuleDestroy(): void {
@@ -91,7 +131,7 @@ export class RelayPublisher implements OnModuleDestroy {
         this.pending.delete(competitionId);
         try {
           await this.send(competitionId, entry);
-          this.known.add(competitionId);
+          this.delivered(competitionId);
           if (this.failures > 0) this.log.log("Связь с ретранслятором восстановлена");
           this.failures = 0;
         } catch (e) {
@@ -100,7 +140,8 @@ export class RelayPublisher implements OnModuleDestroy {
           this.pending.set(competitionId, {
             approved: [...entry.approved, ...(fresh?.approved ?? [])],
           });
-          if (this.failures === 0) this.log.warn(`Не удалось отправить результаты на сайт: ${(e as Error).message}`);
+          this.lastError = (e as Error).message;
+          if (this.failures === 0) this.log.warn(`Не удалось отправить результаты на сайт: ${this.lastError}`);
           this.failures++;
         }
       }
@@ -112,6 +153,14 @@ export class RelayPublisher implements OnModuleDestroy {
     }
   }
 
+  private delivered(competitionId: string): void {
+    const now = Date.now();
+    this.known.add(competitionId);
+    this.sent.set(competitionId, now);
+    this.lastSentAt = now;
+    this.lastError = null;
+  }
+
   private async send(competitionId: string, entry: Pending): Promise<void> {
     const cutoff = Date.now() - FLASH_TTL_MS;
     const body: RelayIngest = {
@@ -119,12 +168,25 @@ export class RelayPublisher implements OnModuleDestroy {
       approved: entry.approved.filter((a) => a.at >= cutoff).map((a) => a.view),
     };
     const url = new URL(`ingest/${competitionId}`, this.config.relayUrl!.replace(/\/?$/, "/"));
-    const response = await fetch(url, {
-      method: "POST",
-      headers: relayHeaders(this.config),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) throw new Error(`ретранслятор ответил ${response.status}`);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: relayHeaders(this.config),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch {
+      throw new Error("нет связи с сайтом: проверьте интернет и адрес RELAY_URL");
+    }
+    if (!response.ok) throw new Error(relayRefusal(response.status));
   }
+}
+
+/** Понятная секретарю причина отказа ретранслятора. */
+function relayRefusal(status: number): string {
+  if (status === 401) return "сайт не принял токен: RELAY_TOKEN в .env не совпадает с токеном в config.php";
+  if (status === 503) return "на сайте не вписан токен в config.php";
+  if (status === 404) return "по адресу RELAY_URL нет ретранслятора: проверьте адрес";
+  return `сайт ответил ошибкой ${status}`;
 }

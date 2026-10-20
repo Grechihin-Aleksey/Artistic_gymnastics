@@ -1,7 +1,9 @@
 ﻿# Запуск сервера в зале одной командой (Windows). Нужен Docker Desktop.
-# Запуск: правой кнопкой по файлу -> «Выполнить с помощью PowerShell»
+# Запуск: двойной щелчок по «Запуск.bat» в папке программы
 # или в PowerShell: powershell -ExecutionPolicy Bypass -File scripts\start.ps1
 $ErrorActionPreference = "Stop"
+# Любая ошибка остаётся на экране, а не закрывает окно молча.
+trap { Write-Host ""; Write-Host "Ошибка: $_" -ForegroundColor Red; pause; exit 1 }
 Set-Location (Join-Path $PSScriptRoot "..")
 
 if (-not (Test-Path ".env")) {
@@ -11,8 +13,36 @@ if (-not (Test-Path ".env")) {
   # Без метки BOM: docker compose читает .env построчно и метку не ожидает.
   [System.IO.File]::WriteAllLines((Join-Path (Get-Location) ".env"), $lines, (New-Object System.Text.UTF8Encoding $false))
   Write-Host "Создан файл .env с новым токеном секретариата."
+  Write-Host ""
+  Write-Host "Результаты можно показывать на сайте (подробно в инструкции «Подключение результатов к сайту»)."
+  $relayUrl = (Read-Host "Адрес ретранслятора на сайте, например https://ffk52.ru/results (Enter - без сайта)").Trim()
+  if ($relayUrl) {
+    $relayToken = (Read-Host "Токен ретранслятора (тот же, что в config.php на хостинге)").Trim()
+    $lines = $lines -replace "^RELAY_URL=.*", "RELAY_URL=$relayUrl" -replace "^RELAY_TOKEN=.*", "RELAY_TOKEN=$relayToken"
+    [System.IO.File]::WriteAllLines((Join-Path (Get-Location) ".env"), $lines, (New-Object System.Text.UTF8Encoding $false))
+    Write-Host "Сайт подключён. Поменять адрес и токен можно в файле .env."
+  }
+}
+if ((Get-Content ".env") -contains "ADMIN_TOKEN=change-me-to-a-long-random-string") {
+  Write-Host "В .env остался токен секретариата из образца. Замените его своим в строке ADMIN_TOKEN." -ForegroundColor Yellow
 }
 New-Item -ItemType Directory -Force -Path "backups" | Out-Null
+
+# Docker Desktop закрыт: запускаем его сами и ждём, пока он поднимется.
+docker info *> $null
+if ($LASTEXITCODE -ne 0) {
+  $desktop = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
+  if (-not (Test-Path $desktop)) { Write-Host "Docker Desktop не найден. Установите его с docker.com и повторите."; pause; exit 1 }
+  Start-Process $desktop
+  Write-Host -NoNewline "Запускаю Docker Desktop"
+  for ($i = 0; $i -lt 60; $i++) {
+    Start-Sleep -Seconds 3
+    docker info *> $null
+    if ($LASTEXITCODE -eq 0) { break }
+    Write-Host -NoNewline "."
+  }
+  Write-Host ""
+}
 
 docker compose up -d --build
 if ($LASTEXITCODE -ne 0) { Write-Host "Docker не запустился. Откройте Docker Desktop и повторите."; pause; exit 1 }

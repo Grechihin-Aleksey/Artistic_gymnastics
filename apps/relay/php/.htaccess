@@ -2,6 +2,9 @@
 # отдаёт сам хостинг, всё остальное обрабатывает index.php.
 Options -Indexes
 DirectoryIndex index.html index.php
+# Русские буквы в embed.js и страницах без кракозябр.
+AddDefaultCharset UTF-8
+AddCharset UTF-8 .js .css .html
 
 <IfModule mod_rewrite.c>
   RewriteEngine On

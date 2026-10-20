@@ -1,6 +1,6 @@
 import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
-import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, timeLimit } from "./labels";
+import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
@@ -221,5 +221,23 @@ describe("секундомер", () => {
     expect(formatTime(0)).toBe("0:00.0");
     expect(formatTime(65_340)).toBe("1:05.3");
     expect(formatTime(90_000)).toBe("1:30.0");
+  });
+});
+
+describe("подсказка на снаряде без смены", () => {
+  const shift = (number: number, startApparatus: "VT" | "UB" | "BB" | "FX", apparatus: "VT" | "UB" | "BB" | "FX") => ({
+    number,
+    startApparatus,
+    apparatus,
+    gymnastIds: [],
+  });
+  it("называет смену и ротацию, когда она придёт на снаряд", () => {
+    // Три смены на четырёх снарядах: во 2-й ротации на вольных никого, смена 2 придёт в 3-й.
+    const rotation = { rotation: 1, rotations: 4, shifts: [shift(1, "VT", "UB"), shift(2, "UB", "BB"), shift(3, "BB", "VT")] };
+    expect(restHint(rotation, "WAG", "FX")).toContain("смена 2 придёт в ротации 3");
+  });
+  it("говорит, что смен больше не будет", () => {
+    const rotation = { rotation: 3, rotations: 4, shifts: [shift(1, "VT", "FX"), shift(2, "UB", "VT")] };
+    expect(restHint(rotation, "WAG", "UB")).toContain("больше смен на этом снаряде не будет");
   });
 });
