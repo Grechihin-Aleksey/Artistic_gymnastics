@@ -219,7 +219,17 @@ export function AdminScreen() {
       <section className="panel no-print">
         <label>
           Токен секретариата
-          <input type="password" value={adminToken} onChange={(e) => remember(e.target.value)} />
+          {/* Не поле пароля: иначе браузер при каждом сохранении оценки предлагает запомнить «пароль». */}
+          <input
+            className="secret"
+            value={adminToken}
+            onChange={(e) => remember(e.target.value)}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+          />
         </label>
         <label>
           Соревнование

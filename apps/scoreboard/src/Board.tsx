@@ -499,11 +499,11 @@ function ApparatusTable({
             <thead>
               <tr>
                 <th>Место</th>
-                <th>№</th>
+                <th className="bib">№</th>
                 <th className="name-col">Участник</th>
                 <th className="num">{labels.d}</th>
                 <th className="num">{labels.e}</th>
-                <th className="num">{rules === "CUSTOM" ? "НС" : "Сбавки"}</th>
+                <th className="num pen">{rules === "CUSTOM" ? "НС" : "Сбавки"}</th>
                 <th className="num">Итог</th>
               </tr>
             </thead>
@@ -511,17 +511,21 @@ function ApparatusTable({
               {rows.map((r) => (
                 <tr key={r.gymnast.id}>
                   <td className="rank">{r.rank}</td>
-                  <td>{r.gymnast.bib}</td>
+                  <td className="bib">{r.gymnast.bib}</td>
                   <td className="name-col">
+                    <span className="bib-inline muted">№{r.gymnast.bib} </span>
                     {fullName(r.gymnast)}{" "}
                     <span className="muted">{r.gymnast.club}</span>
                   </td>
                   <td className="num">{fmt(r.score.d)}</td>
                   <td className="num">{fmt(Math.abs(r.score.e))}</td>
-                  <td className="num">
+                  <td className="num pen">
                     {r.score.neutral > 0 ? `−${fmt(r.score.neutral)}` : ""}
                   </td>
-                  <td className="num total">{fmt(r.score.total)}</td>
+                  <td className="num total">
+                    {fmt(r.score.total)}
+                    {r.score.neutral > 0 && <span className="pen-inline muted">−{fmt(r.score.neutral)}</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -552,10 +556,10 @@ function AllAroundTable({
             <thead>
               <tr>
                 <th>Место</th>
-                <th>№</th>
+                <th className="bib">№</th>
                 <th className="name-col">Участник</th>
                 {apparatus.map((a) => (
-                  <th key={a} className="num">
+                  <th key={a} className="num ap">
                     <ApparatusIcon code={a} />
                     {SHORT[a]}
                   </th>
@@ -567,15 +571,19 @@ function AllAroundTable({
               {rows.map((r) => (
                 <tr key={r.gymnast.id}>
                   <td className="rank">{r.rank}</td>
-                  <td>{r.gymnast.bib}</td>
+                  <td className="bib">{r.gymnast.bib}</td>
                   <td className="name-col">
+                    <span className="bib-inline muted">№{r.gymnast.bib} </span>
                     {fullName(r.gymnast)}{" "}
                     <span className="muted">{r.gymnast.club}</span>
+                    <ApparatusLine
+                      scores={apparatus.map((a) => [a, r.apparatus[a as keyof typeof r.apparatus]?.total])}
+                    />
                   </td>
                   {apparatus.map((a) => {
                     const s = r.apparatus[a as keyof typeof r.apparatus];
                     return (
-                      <td key={a} className="num">
+                      <td key={a} className="num ap">
                         {s ? fmt(s.total) : ""}
                       </td>
                     );
@@ -606,7 +614,7 @@ function TeamsTable({ rows, note }: { rows: TeamResultRow[]; note: string }) {
                 <th>Место</th>
                 <th className="name-col">Команда</th>
                 {apparatus.map((a) => (
-                  <th key={a} className="num">
+                  <th key={a} className="num ap">
                     <ApparatusIcon code={a} />
                     {SHORT[a]}
                   </th>
@@ -618,9 +626,14 @@ function TeamsTable({ rows, note }: { rows: TeamResultRow[]; note: string }) {
               {rows.map((r) => (
                 <tr key={r.team.id}>
                   <td className="rank">{r.rank}</td>
-                  <td className="name-col">{r.team.name}</td>
+                  <td className="name-col">
+                    {r.team.name}
+                    <ApparatusLine
+                      scores={r.apparatus.map((a) => [a.apparatus, a.counted.length > 0 ? a.total : undefined])}
+                    />
+                  </td>
                   {r.apparatus.map((a) => (
-                    <td key={a.apparatus} className="num">
+                    <td key={a.apparatus} className="num ap">
                       {a.counted.length > 0 ? fmt(a.total) : ""}
                     </td>
                   ))}
@@ -632,6 +645,20 @@ function TeamsTable({ rows, note }: { rows: TeamResultRow[]; note: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** Оценки по снарядам строкой под именем: на телефоне вместо отдельных столбцов. */
+function ApparatusLine({ scores }: { scores: [string, number | undefined][] }) {
+  return (
+    <span className="ap-line">
+      {scores.map(([code, total]) => (
+        <span key={code}>
+          <ApparatusIcon code={code} />
+          {total === undefined ? "—" : fmt(total)}
+        </span>
+      ))}
+    </span>
   );
 }
 
