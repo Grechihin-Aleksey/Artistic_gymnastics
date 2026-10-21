@@ -10,13 +10,14 @@ import { apparatusFor, fromPoints, scoreCustomPerformance, scorePerformance, toP
 import {
   LIVE_EVENTS,
   type CreatePerformanceInput,
+  type ManualScoreInput,
   type MarkKind,
   type PerformanceView,
   type SubmitMarkInput,
   type TabletScoreInput,
 } from "@ag/shared";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { JudgeRow, Principal } from "../auth/auth";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
@@ -24,6 +25,8 @@ import { auditLog, categories, competitions, finalists, gymnasts, judges, marks,
 import { LiveGateway } from "../live/live.gateway";
 
 type PerformanceRow = typeof performances.$inferSelect;
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+type Competition = Awaited<ReturnType<CompetitionsService["get"]>>;
 
 /** Какие оценки может ставить каждая роль. */
 const ALLOWED_KINDS: Record<JudgeRow["role"], readonly MarkKind[]> = {
@@ -53,39 +56,8 @@ export class PerformancesService {
       }
     }
     const competition = await this.competitions.get(competitionId);
-    if (!apparatusFor(competition.discipline).includes(input.apparatus)) {
-      throw new BadRequestException(`Снаряда ${input.apparatus} нет в программе ${competition.discipline}`);
-    }
-    if (input.apparatus !== "VT" && input.attempt !== 1) {
-      throw new BadRequestException("Вторая попытка бывает только в опорном прыжке");
-    }
-    const [gymnast] = await this.db
-      .select()
-      .from(gymnasts)
-      .where(and(eq(gymnasts.id, input.gymnastId), eq(gymnasts.competitionId, competitionId)));
-    if (!gymnast) throw new BadRequestException("Участник не найден в этом соревновании");
-    if (gymnast.status !== "ACTIVE") {
-      throw new ConflictException(
-        `${gymnast.lastName} ${gymnast.firstName}: ${gymnast.status === "DNS" ? "неявка" : "снятие с соревнований"}, вызвать нельзя`,
-      );
-    }
-    // Во время финалов на снаряд вызывают только его финалистов.
+    await this.assertCanPerform(competition, input);
     const stage = competition.phase;
-    if (stage === "FINAL") {
-      const [finalist] = await this.db
-        .select({ reserve: finalists.reserve })
-        .from(finalists)
-        .where(
-          and(
-            eq(finalists.competitionId, competitionId),
-            eq(finalists.apparatus, input.apparatus),
-            eq(finalists.gymnastId, input.gymnastId),
-          ),
-        );
-      if (!finalist || finalist.reserve) {
-        throw new ConflictException(`${gymnast.lastName} ${gymnast.firstName} не в финале на этом снаряде`);
-      }
-    }
     // Судьи видят одно текущее выступление: следующего вызывают после утверждения.
     const [open] = await this.db
       .select({ gymnastId: performances.gymnastId })
@@ -283,61 +255,161 @@ export class PerformancesService {
       this.assertCanApprove(principal, perf);
       if (perf.status !== "SCORING") throw new ConflictException("Оценка уже утверждена");
 
-      const markRows = await tx
-        .select({ kind: marks.kind, value: marks.value })
-        .from(marks)
-        .where(eq(marks.performanceId, id));
-      const eJudges = await tx
-        .select({ id: judges.id })
-        .from(judges)
-        .where(
-          and(
-            eq(judges.competitionId, perf.competitionId),
-            eq(judges.apparatus, perf.apparatus),
-            eq(judges.role, "E"),
-          ),
-        );
-
-      const dValues = new Set(markRows.filter((m) => m.kind === "D").map((m) => m.value));
-      const neutralValues = new Set(markRows.filter((m) => m.kind === "NEUTRAL").map((m) => m.value));
-      const eDeductions = markRows.filter((m) => m.kind === "E").map((m) => m.value);
-
-      const [competition] = await tx.select().from(competitions).where(eq(competitions.id, perf.competitionId));
-      const custom = competition!.rules === "CUSTOM";
-      if (dValues.size === 0 && !custom) throw new ConflictException("Нет оценки D");
-      if (dValues.size > 1) {
-        throw new ConflictException(custom ? "Сбавки за требования у судей расходятся" : "Оценки D у судей расходятся");
-      }
-      if (neutralValues.size > 1) throw new ConflictException("Нейтральные сбавки у судей расходятся");
-      if (eJudges.length === 0) throw new ConflictException("В бригаде нет судей E");
-      if (eDeductions.length < eJudges.length) {
-        throw new ConflictException(`Оценки E: ${eDeductions.length} из ${eJudges.length}`);
-      }
-
-      const neutral = [...neutralValues][0] ?? 0;
-      const score: ScoreBreakdown = custom
-        ? scoreCustomPerformance({
-            base: await this.baseValue(tx, perf),
-            // Судья D ставит сумму сбавок за требования; нет оценки — сбавок нет.
-            requirements: [...dValues][0] ?? 0,
-            eDeductions,
-            neutral,
-          })
-        : scorePerformance({ d: [...dValues][0]!, eDeductions, neutral });
-      await tx
-        .update(performances)
-        .set({ status: "APPROVED", ...score, approvedAt: new Date() })
-        .where(eq(performances.id, id));
-      await tx.insert(auditLog).values({
-        competitionId: perf.competitionId,
-        actor: actorName(principal),
-        action: "performance.approved",
-        details: { performanceId: id, ...score },
-      });
+      await this.finish(tx, principal, perf);
       return perf.competitionId;
     });
 
     return this.announceApproved(competitionId, id);
+  }
+
+  /** Итог по правилам соревнования из оценок бригады: выступление утверждено, запись в журнале. */
+  private async finish(tx: Tx, principal: Principal, perf: PerformanceRow): Promise<void> {
+    const markRows = await tx
+      .select({ kind: marks.kind, value: marks.value })
+      .from(marks)
+      .where(eq(marks.performanceId, perf.id));
+    const eJudges = await tx
+      .select({ id: judges.id })
+      .from(judges)
+      .where(
+        and(
+          eq(judges.competitionId, perf.competitionId),
+          eq(judges.apparatus, perf.apparatus),
+          eq(judges.role, "E"),
+        ),
+      );
+
+    const dValues = new Set(markRows.filter((m) => m.kind === "D").map((m) => m.value));
+    const neutralValues = new Set(markRows.filter((m) => m.kind === "NEUTRAL").map((m) => m.value));
+    const eDeductions = markRows.filter((m) => m.kind === "E").map((m) => m.value);
+
+    const [competition] = await tx.select().from(competitions).where(eq(competitions.id, perf.competitionId));
+    const custom = competition!.rules === "CUSTOM";
+    if (dValues.size === 0 && !custom) throw new ConflictException("Нет оценки D");
+    if (dValues.size > 1) {
+      throw new ConflictException(custom ? "Сбавки за требования у судей расходятся" : "Оценки D у судей расходятся");
+    }
+    if (neutralValues.size > 1) throw new ConflictException("Нейтральные сбавки у судей расходятся");
+    if (eJudges.length === 0) throw new ConflictException("В бригаде нет судей E");
+    if (eDeductions.length < eJudges.length) {
+      throw new ConflictException(`Оценки E: ${eDeductions.length} из ${eJudges.length}`);
+    }
+
+    const neutral = [...neutralValues][0] ?? 0;
+    const score: ScoreBreakdown = custom
+      ? scoreCustomPerformance({
+          base: await this.baseValue(tx, perf),
+          // Судья D ставит сумму сбавок за требования; нет оценки — сбавок нет.
+          requirements: [...dValues][0] ?? 0,
+          eDeductions,
+          neutral,
+        })
+      : scorePerformance({ d: [...dValues][0]!, eDeductions, neutral });
+    await tx
+      .update(performances)
+      .set({ status: "APPROVED", ...score, approvedAt: new Date() })
+      .where(eq(performances.id, perf.id));
+    await tx.insert(auditLog).values({
+      competitionId: perf.competitionId,
+      actor: actorName(principal),
+      action: "performance.approved",
+      details: { performanceId: perf.id, ...score },
+    });
+  }
+
+  /**
+   * Оценки с судейских листов, когда планшеты без связи: секретариат вводит D,
+   * сбавки E по местам и нейтральную сбавку. Выступление создаётся, если его
+   * не было, а уже утверждённое исправляется; оценки записываются за судьями
+   * бригады, как с планшета снаряда, и сразу утверждаются.
+   */
+  async scoreManually(principal: Principal, competitionId: string, input: ManualScoreInput): Promise<PerformanceView> {
+    const competition = await this.competitions.get(competitionId);
+    await this.assertCanPerform(competition, input);
+    const stage = competition.phase;
+    const id = await this.db.transaction(async (tx) => {
+      await tx
+        .insert(performances)
+        .values({ competitionId, gymnastId: input.gymnastId, apparatus: input.apparatus, attempt: input.attempt, stage })
+        .onConflictDoNothing();
+      const [perf] = await tx
+        .select()
+        .from(performances)
+        .where(
+          and(
+            eq(performances.gymnastId, input.gymnastId),
+            eq(performances.apparatus, input.apparatus),
+            eq(performances.stage, stage),
+            eq(performances.attempt, input.attempt),
+          ),
+        )
+        .for("update");
+      if (!perf) throw new NotFoundException("Выступление не найдено");
+
+      const panel = await tx
+        .select()
+        .from(judges)
+        .where(and(eq(judges.competitionId, competitionId), eq(judges.apparatus, input.apparatus)))
+        .orderBy(asc(judges.seat));
+      const dJudges = panel.filter((j) => j.role === "D");
+      const eJudges = panel.filter((j) => j.role === "E");
+      const supervisor = panel.find((j) => j.role === "SUPERVISOR");
+      const dOwners = dJudges.length > 0 ? dJudges : supervisor ? [supervisor] : [];
+      if (eJudges.length === 0 || (dOwners.length === 0 && (competition.rules === "FIG" || input.d > 0))) {
+        throw new ConflictException("Заведите судей этого снаряда на вкладке «Судьи»: их фамилии и оценки идут в протокол");
+      }
+      if (input.e.length !== eJudges.length) {
+        throw new BadRequestException(`Сбавок E ${input.e.length}, а судей E в бригаде ${eJudges.length}`);
+      }
+
+      await tx.delete(marks).where(eq(marks.performanceId, perf.id));
+      const d = toPoints(input.d);
+      const neutralOwner = supervisor ?? dJudges[0] ?? eJudges[0]!;
+      const rows = [
+        ...dOwners.map((j) => ({ judgeId: j.id, kind: "D" as const, value: d })),
+        ...eJudges.map((j, i) => ({ judgeId: j.id, kind: "E" as const, value: toPoints(input.e[i]!) })),
+        ...(input.neutral ? [{ judgeId: neutralOwner.id, kind: "NEUTRAL" as const, value: toPoints(input.neutral) }] : []),
+      ];
+      await tx.insert(marks).values(rows.map((r) => ({ id: randomUUID(), performanceId: perf.id, ...r })));
+      await tx.insert(auditLog).values({
+        competitionId,
+        actor: actorName(principal),
+        action: "marks.entered_manually",
+        details: { performanceId: perf.id, marks: rows, previousTotal: perf.total },
+      });
+      await this.finish(tx, principal, perf);
+      return perf.id;
+    });
+    const view = await this.announceApproved(competitionId, id);
+    this.live.toPanel(competitionId, input.apparatus, LIVE_EVENTS.marksUpdated, view);
+    return view;
+  }
+
+  /**
+   * Удаление выступления вместе с оценками: например, оценку ввели не тому
+   * участнику. Записи журнала об этом выступлении сохраняют снаряд и участника.
+   */
+  async remove(principal: Principal, id: string): Promise<{ id: string }> {
+    const perf = await this.db.transaction(async (tx) => {
+      const [perf] = await tx.select().from(performances).where(eq(performances.id, id)).for("update");
+      if (!perf) throw new NotFoundException("Выступление не найдено");
+      const context = { gymnastId: perf.gymnastId, apparatus: perf.apparatus };
+      await tx
+        .update(auditLog)
+        .set({ details: sql`${auditLog.details} || ${JSON.stringify(context)}::jsonb` })
+        .where(and(eq(auditLog.competitionId, perf.competitionId), sql`${auditLog.details}->>'performanceId' = ${id}`));
+      await tx.delete(performances).where(eq(performances.id, id));
+      await tx.insert(auditLog).values({
+        competitionId: perf.competitionId,
+        actor: actorName(principal),
+        action: "performance.deleted",
+        details: { ...context, attempt: perf.attempt, stage: perf.stage, previousTotal: perf.total },
+      });
+      return perf;
+    });
+    this.live.toCompetition(perf.competitionId, LIVE_EVENTS.reopened, { id, reason: "Оценка удалена" });
+    this.live.toPanel(perf.competitionId, perf.apparatus, LIVE_EVENTS.marksUpdated, { id, deleted: true });
+    return { id };
   }
 
   /** Сообщает залу и сайту об утверждённой (или изменённой по запросу) оценке. */
@@ -370,6 +442,44 @@ export class PerformancesService {
     this.live.toCompetition(perf.competitionId, LIVE_EVENTS.reopened, { id, reason });
     this.live.toPanel(perf.competitionId, perf.apparatus, LIVE_EVENTS.marksUpdated, view);
     return view;
+  }
+
+  /** Снаряд в программе, участник выступает, во время финалов — финалист этого снаряда. */
+  private async assertCanPerform(competition: Competition, input: CreatePerformanceInput): Promise<void> {
+    const competitionId = competition.id;
+    if (!apparatusFor(competition.discipline).includes(input.apparatus)) {
+      throw new BadRequestException(`Снаряда ${input.apparatus} нет в программе ${competition.discipline}`);
+    }
+    if (input.apparatus !== "VT" && input.attempt !== 1) {
+      throw new BadRequestException("Вторая попытка бывает только в опорном прыжке");
+    }
+    const [gymnast] = await this.db
+      .select()
+      .from(gymnasts)
+      .where(and(eq(gymnasts.id, input.gymnastId), eq(gymnasts.competitionId, competitionId)));
+    if (!gymnast) throw new BadRequestException("Участник не найден в этом соревновании");
+    if (gymnast.status !== "ACTIVE") {
+      throw new ConflictException(
+        `${gymnast.lastName} ${gymnast.firstName}: ${gymnast.status === "DNS" ? "неявка" : "снятие с соревнований"}, выступать не может`,
+      );
+    }
+    // Во время финалов на снаряд вызывают только его финалистов.
+    const stage = competition.phase;
+    if (stage === "FINAL") {
+      const [finalist] = await this.db
+        .select({ reserve: finalists.reserve })
+        .from(finalists)
+        .where(
+          and(
+            eq(finalists.competitionId, competitionId),
+            eq(finalists.apparatus, input.apparatus),
+            eq(finalists.gymnastId, input.gymnastId),
+          ),
+        );
+      if (!finalist || finalist.reserve) {
+        throw new ConflictException(`${gymnast.lastName} ${gymnast.firstName} не в финале на этом снаряде`);
+      }
+    }
   }
 
   /** Своих правил: база разряда участника на этом снаряде. */

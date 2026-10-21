@@ -139,6 +139,19 @@ export const tabletScoreSchema = z.object({
   neutral: score.optional(),
 });
 
+/**
+ * Оценка с судейского листа, введённая секретариатом, когда планшеты без связи.
+ * Создаёт выступление или исправляет уже утверждённое и сразу утверждает его.
+ */
+export const manualScoreSchema = z.object({
+  gymnastId: z.uuid(),
+  apparatus: apparatusSchema,
+  attempt: z.number().int().min(1).max(2).default(1),
+  d: score,
+  e: z.array(score.max(10)).min(1).max(10),
+  neutral: score.optional(),
+});
+
 export const reopenPerformanceSchema = z.object({
   reason: z.string().min(1).max(500),
 });
@@ -457,6 +470,7 @@ export type CreateJudgeInput = z.infer<typeof createJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;
+export type ManualScoreInput = z.infer<typeof manualScoreSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
 export type SetLogoInput = z.infer<typeof setLogoSchema>;
