@@ -11,6 +11,7 @@ import {
   ClubStandingPanel,
   CeremonyPanel,
   AuditPanel,
+  ShiftsPanel,
   ManualScoresPanel,
   OnlineEntriesPanel,
   SeriesPanel,
@@ -383,6 +384,16 @@ export function AdminScreen() {
               adminToken={adminToken}
               onError={setError}
               onImported={() => setRosterVersion((v) => v + 1)}
+            />
+            <ShiftsPanel
+              key={`shifts-${competition.id}-${rosterVersion}-${drawVersion}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+              onChanged={() => {
+                setDrawVersion((v) => v + 1);
+                setRosterVersion((v) => v + 1);
+              }}
             />
             <DrawPanel
               key={`draw-${competition.id}-${rosterVersion}`}

@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomInt } from "node:crypto";
-import { apparatusFor, rotationOrder, shiftApparatus } from "@ag/scoring";
+import { apparatusFor, defaultStart, rotationOrder, shiftApparatus } from "@ag/scoring";
 import {
   LIVE_EVENTS,
+  type DistributeShiftsInput,
   type DrawInput,
   type DrawView,
   type RotationView,
@@ -186,11 +187,116 @@ export class RotationsService {
     return this.drawView(competitionId);
   }
 
+  /**
+   * Делит участников на смены или убирает смены совсем. Разряды (или команды
+   * и участники по порядку разрядов) идут подряд и делятся на смены как можно
+   * ровнее; команда не разрывается. Только до первых оценок.
+   */
+  async distribute(competitionId: string, input: DistributeShiftsInput): Promise<RotationView> {
+    const competition = await this.competitions.get(competitionId);
+    if ((await this.drawView(competitionId)).started) {
+      throw new ConflictException("Соревнование уже идёт: после первых оценок смены не меняют");
+    }
+    const people = await this.db
+      .select({ id: gymnasts.id, bib: gymnasts.bib, teamId: gymnasts.teamId, categoryId: gymnasts.categoryId, category: categories.position })
+      .from(gymnasts)
+      .leftJoin(categories, eq(categories.id, gymnasts.categoryId))
+      .where(eq(gymnasts.competitionId, competitionId));
+    if (people.length === 0) throw new BadRequestException("Сначала загрузите участников");
+
+    const shiftOf = new Map<string, number | null>(people.map((g) => [g.id, null]));
+    if (input.shifts > 0) {
+      const last = Number.MAX_SAFE_INTEGER;
+      const sorted = [...people].sort((a, b) => (a.category ?? last) - (b.category ?? last) || a.bib - b.bib);
+      const blocks = new Map<string, typeof people>();
+      for (const g of sorted) {
+        const key = input.byCategory ? `category:${g.categoryId ?? "none"}` : g.teamId ? `team:${g.teamId}` : `one:${g.id}`;
+        blocks.set(key, [...(blocks.get(key) ?? []), g]);
+      }
+      const list = [...blocks.values()];
+      if (list.length < input.shifts) {
+        throw new BadRequestException(
+          input.byCategory
+            ? `Разрядов ${list.length}, а смен ${input.shifts}: разряд целиком не делится. Уменьшите число смен или делите поровну`
+            : `Участников и команд ${list.length}, на ${input.shifts} смен не хватает`,
+        );
+      }
+      splitEvenly(list.map((b) => b.length), input.shifts).forEach((shift, i) => {
+        for (const g of list[i]!) shiftOf.set(g.id, shift);
+      });
+    }
+
+    await this.db.transaction(async (tx) => {
+      // Стартовые снаряды оставшихся смен, выбранные секретариатом, сохраняются.
+      const known = await tx.select().from(shifts).where(eq(shifts.competitionId, competitionId));
+      await tx.delete(shifts).where(eq(shifts.competitionId, competitionId));
+      for (let number = 1; number <= input.shifts; number++) {
+        const startApparatus = known.find((s) => s.number === number)?.startApparatus ?? defaultStart(competition.discipline, number);
+        await tx.insert(shifts).values({ competitionId, number, startApparatus });
+      }
+      // Порядок выхода в смене — по возрастанию номеров.
+      const order = new Map<string, number>();
+      for (let number = 1; number <= input.shifts; number++) {
+        people
+          .filter((g) => shiftOf.get(g.id) === number)
+          .sort((a, b) => a.bib - b.bib)
+          .forEach((g, i) => order.set(g.id, i + 1));
+      }
+      for (const g of people) {
+        await tx
+          .update(gymnasts)
+          .set({ shift: shiftOf.get(g.id) ?? null, startOrder: order.get(g.id) ?? null })
+          .where(eq(gymnasts.id, g.id));
+      }
+      await tx.update(competitions).set({ rotation: 0 }).where(eq(competitions.id, competitionId));
+      await tx.insert(auditLog).values({
+        competitionId,
+        actor: "admin",
+        action: "shifts.distributed",
+        details: { shifts: input.shifts, byCategory: input.byCategory },
+      });
+    });
+    return this.changed(competitionId);
+  }
+
   private async changed(competitionId: string): Promise<RotationView> {
     const view = await this.view(competitionId);
     this.live.toCompetition(competitionId, LIVE_EVENTS.rotation, view);
     return view;
   }
+}
+
+/**
+ * Делит блоки (размеры по порядку) на count подряд идущих групп так, чтобы
+ * самая большая группа была как можно меньше. Номер группы каждого блока — с 1.
+ */
+export function splitEvenly(sizes: number[], count: number): number[] {
+  const n = sizes.length;
+  const prefix = [0];
+  for (const size of sizes) prefix.push(prefix.at(-1)! + size);
+  const sum = (from: number, to: number) => prefix[to]! - prefix[from]!;
+  // best[k][i] — наименьший максимум, если первые i блоков разбиты на k групп; cut — где началась последняя.
+  const best = Array.from({ length: count + 1 }, () => new Array<number>(n + 1).fill(Infinity));
+  const cut = Array.from({ length: count + 1 }, () => new Array<number>(n + 1).fill(0));
+  best[0]![0] = 0;
+  for (let k = 1; k <= count; k++) {
+    for (let i = k; i <= n; i++) {
+      for (let j = k - 1; j < i; j++) {
+        const value = Math.max(best[k - 1]![j]!, sum(j, i));
+        if (value <= best[k]![i]!) {
+          best[k]![i] = value;
+          cut[k]![i] = j;
+        }
+      }
+    }
+  }
+  const groups = new Array<number>(n);
+  for (let k = count, i = n; k > 0; k--) {
+    const j = cut[k]![i]!;
+    for (let b = j; b < i; b++) groups[b] = k;
+    i = j;
+  }
+  return groups;
 }
 
 /** Случайная перестановка (Фишер — Йетс) на криптографическом генераторе. */
