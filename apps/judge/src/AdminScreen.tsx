@@ -91,6 +91,8 @@ export function AdminScreen() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [competitionId, setCompetitionId] = useState("");
   const [judges, setJudges] = useState<Judge[]>([]);
+  const [newRole, setNewRole] = useState<JudgeRole>("D");
+  const [newSingle, setNewSingle] = useState(false);
   const [issued, setIssued] = useState<IssuedJudge[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => tabFromHash() ?? "competition");
@@ -172,29 +174,48 @@ export function AdminScreen() {
   };
 
   const addJudge = async (form: FormData) => {
+    const post = (body: Record<string, unknown>) =>
+      apiRequest<IssuedJudge>(`/competitions/${competitionId}/judges`, { token: adminToken, method: "POST", body });
+    const apparatus = String(form.get("apparatus"));
+    const role = String(form.get("role"));
+    const single = role === "SUPERVISOR" && form.get("enterAllMarks") === "on";
     try {
-      const judge = await apiRequest<IssuedJudge>(`/competitions/${competitionId}/judges`, {
-        token: adminToken,
-        method: "POST",
-        body: {
+      const created = [
+        await post({
           name: String(form.get("name")),
           ...(String(form.get("category") ?? "").trim() ? { category: String(form.get("category")).trim() } : {}),
-          apparatus: String(form.get("apparatus")),
-          role: String(form.get("role")),
+          apparatus,
+          role,
           seat: Number(form.get("seat")),
-          enterAllMarks: form.get("enterAllMarks") === "on",
-        },
-      });
+          enterAllMarks: single,
+        }),
+      ];
+      // Один планшет: бригаду можно завести тут же списком — первая строка судья D (если D есть), дальше E1, E2…
+      if (single) {
+        const names = String(form.get("brigade") ?? "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const withD = competition?.rules !== "CUSTOM";
+        for (const [i, name] of names.entries()) {
+          const isD = withD && i === 0;
+          created.push(await post({ name, apparatus, role: isD ? "D" : "E", seat: isD ? 1 : withD ? i : i + 1 }));
+        }
+      }
       // Если на снаряде один планшет, судьям D и E QR-коды не нужны: оценки за них вводит старший.
       const tabletApparatus = new Set(
-        [...judges, judge].filter((j) => j.enterAllMarks).map((j) => j.apparatus),
+        [...judges, ...created].filter((j) => j.enterAllMarks).map((j) => j.apparatus),
       );
       setIssued((list) =>
-        [...list, judge].filter((j) => j.role === "SUPERVISOR" || !tabletApparatus.has(j.apparatus)),
+        [...list, ...created].filter((j) => j.role === "SUPERVISOR" || !tabletApparatus.has(j.apparatus)),
       );
-      await loadJudges();
+      setError(null);
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
+    } finally {
+      await loadJudges();
     }
   };
 
@@ -446,8 +467,15 @@ export function AdminScreen() {
                 className="panel no-print"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void addJudge(new FormData(e.currentTarget));
-                  e.currentTarget.reset();
+                  const form = e.currentTarget;
+                  void addJudge(new FormData(form)).then((ok) => {
+                    if (!ok) return;
+                    // Снаряд и роль остаются: следующего судью той же бригады заводить быстрее.
+                    for (const name of ["name", "category", "brigade"]) {
+                      const field = form.elements.namedItem(name) as HTMLInputElement | null;
+                      if (field) field.value = "";
+                    }
+                  });
                 }}
               >
                 <h2>Судьи и QR-коды</h2>
@@ -476,7 +504,7 @@ export function AdminScreen() {
                 </label>
                 <label>
                   Роль
-                  <select name="role">
+                  <select name="role" value={newRole} onChange={(e) => setNewRole(e.target.value as JudgeRole)}>
                     {(Object.keys(ROLE_NAMES) as JudgeRole[]).map((r) => (
                       <option key={r} value={r}>
                         {ROLE_NAMES[r]}
@@ -488,10 +516,26 @@ export function AdminScreen() {
                   Место в бригаде
                   <input name="seat" type="number" min={1} max={10} defaultValue={1} required />
                 </label>
-                <label className="check wide">
-                  <input name="enterAllMarks" type="checkbox" />
-                  Один планшет на снаряд: старший судья вводит оценки всей бригады (судьям D и E QR-коды не нужны)
-                </label>
+                {newRole === "SUPERVISOR" && (
+                  <label className="check wide">
+                    <input name="enterAllMarks" type="checkbox" checked={newSingle} onChange={(e) => setNewSingle(e.target.checked)} />
+                    Один планшет на снаряд: старший судья вводит оценки всей бригады (судьям D и E QR-коды не нужны)
+                  </label>
+                )}
+                {newRole === "SUPERVISOR" && newSingle && (
+                  <label className="wide">
+                    Судьи бригады, по одному в строке: {competition.rules === "CUSTOM" ? "E1, E2, E3…" : "сначала судья D, затем E1, E2, E3…"}
+                    <textarea
+                      name="brigade"
+                      rows={5}
+                      placeholder={competition.rules === "CUSTOM" ? "Петрова Н.\nСидорова Т.\nКузнецова Е." : "Петрова Н.\nСидорова Т.\nКузнецова Е.\nСмирнова А."}
+                    />
+                    <span className="muted">
+                      Их фамилии и оценки идут в протокол, поэтому планшет без них не откроется. Можно оставить пустым и завести
+                      каждого отдельно с ролью «Судья D» или «Судья E».
+                    </span>
+                  </label>
+                )}
                 <button type="submit" className="primary">
                   Добавить судью
                 </button>

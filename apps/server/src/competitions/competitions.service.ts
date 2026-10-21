@@ -549,9 +549,8 @@ export class CompetitionsService {
     if (!apparatusFor(competition.discipline).includes(input.apparatus)) {
       throw new BadRequestException(`Снаряда ${input.apparatus} нет в программе ${competition.discipline}`);
     }
-    if (input.enterAllMarks && input.role !== "SUPERVISOR") {
-      throw new BadRequestException("Один планшет на снаряд выдаётся старшему судье");
-    }
+    // «Один планшет» — свойство старшего судьи; у D и E флажок ничего не значит, не мешаем их завести.
+    if (input.role !== "SUPERVISOR") input = { ...input, enterAllMarks: false };
     await this.assertSeatFree(competitionId, input.apparatus, input.role, input.seat);
     const token = newToken();
     const [row] = await this.db

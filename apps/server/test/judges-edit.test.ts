@@ -31,6 +31,10 @@ describe("правка и удаление судей", () => {
     // Повторно на занятое место — понятная ошибка, а не сбой сервера.
     await admin.post(`/competitions/${competition.id}/judges`, { name: "Дубль", apparatus: "BB", role: "E", seat: 1 }).expect(409);
 
+    // Флажок «один планшет» у судьи D/E не мешает его завести: он просто не действует.
+    const extra = (await admin.post(`/competitions/${competition.id}/judges`, { name: "Е4", apparatus: "BB", role: "E", seat: 4, enterAllMarks: true }).expect(201)).body;
+    expect(extra.enterAllMarks).toBe(false);
+
     // До оценок можно переставить судью куда угодно, кроме занятого места.
     const moved = (await admin.patch(`/judges/${e2.id}`, { name: "Петрова Н.", category: "1К", apparatus: "FX", seat: 3 }).expect(200)).body;
     expect(moved).toMatchObject({ name: "Петрова Н.", category: "1К", apparatus: "FX", role: "E", seat: 3 });
