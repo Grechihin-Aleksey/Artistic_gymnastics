@@ -114,6 +114,9 @@ export const createJudgeSchema = z.object({
   enterAllMarks: z.boolean().default(false),
 });
 
+/** Правка судьи: любые поля; снаряд, роль и место — пока у судьи нет оценок. */
+export const updateJudgeSchema = createJudgeSchema.partial().extend({ category: z.string().trim().max(40).nullable().optional() });
+
 export const createPerformanceSchema = z.object({
   gymnastId: z.uuid(),
   apparatus: apparatusSchema,
@@ -476,6 +479,7 @@ export type CreateCompetitionInput = z.infer<typeof createCompetitionSchema>;
 export type CreateTeamInput = z.infer<typeof createTeamSchema>;
 export type CreateGymnastInput = z.infer<typeof createGymnastSchema>;
 export type CreateJudgeInput = z.infer<typeof createJudgeSchema>;
+export type UpdateJudgeInput = z.infer<typeof updateJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;

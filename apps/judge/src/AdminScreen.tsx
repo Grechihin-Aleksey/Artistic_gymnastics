@@ -208,6 +208,31 @@ export function AdminScreen() {
     }
   };
 
+  const saveJudge = async (judge: Judge, changes: Partial<Judge>) => {
+    try {
+      const saved = await apiRequest<Judge>(`/judges/${judge.id}`, { token: adminToken, method: "PATCH", body: changes });
+      setIssued((list) => list.map((j) => (j.id === saved.id ? { ...j, ...saved } : j)));
+      await loadJudges();
+      setError(null);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    }
+  };
+
+  const removeJudge = async (judge: Judge) => {
+    if (!confirm(`Удалить судью ${judge.name} (${APPARATUS_NAMES[judge.apparatus]}, ${judgeLabel(judge.role, judge.seat)})? Его QR-код перестанет работать.`)) return;
+    try {
+      await apiRequest(`/judges/${judge.id}`, { token: adminToken, method: "DELETE" });
+      setIssued((list) => list.filter((j) => j.id !== judge.id));
+      await loadJudges();
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const ready = Boolean(competition && adminToken);
   const pane = (id: Tab) => ({ hidden: tab !== id, className: "admin-pane" });
 
@@ -486,22 +511,14 @@ export function AdminScreen() {
               <table className="panel no-print">
                 <tbody>
                   {judges.map((j) => (
-                    <tr key={j.id}>
-                      <td>{APPARATUS_NAMES[j.apparatus]}</td>
-                      <td>
-                        {judgeLabel(j.role, j.seat)}
-                        {j.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
-                      </td>
-                      <td>
-                        {j.name}
-                        {j.category && <span className="muted"> · {j.category}</span>}
-                      </td>
-                      <td>
-                        <button type="button" className="link" onClick={() => void reissue(j)}>
-                          Новый QR-код
-                        </button>
-                      </td>
-                    </tr>
+                    <JudgeRow
+                      key={j.id}
+                      judge={j}
+                      discipline={competition.discipline}
+                      onSave={(changes) => saveJudge(j, changes)}
+                      onRemove={() => void removeJudge(j)}
+                      onReissue={() => void reissue(j)}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -618,5 +635,115 @@ function QrCard({ judge }: { judge: IssuedJudge }) {
         {judge.name}
       </figcaption>
     </figure>
+  );
+}
+
+/** Строка судьи в списке: просмотр или правка на месте. */
+function JudgeRow({
+  judge,
+  discipline,
+  onSave,
+  onRemove,
+  onReissue,
+}: {
+  judge: Judge;
+  discipline: Discipline;
+  onSave: (changes: Partial<Judge>) => Promise<boolean>;
+  onRemove: () => void;
+  onReissue: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <tr>
+        <td>{APPARATUS_NAMES[judge.apparatus]}</td>
+        <td>
+          {judgeLabel(judge.role, judge.seat)}
+          {judge.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
+        </td>
+        <td>
+          {judge.name}
+          {judge.category && <span className="muted"> · {judge.category}</span>}
+        </td>
+        <td className="judge-actions">
+          <button type="button" className="link" onClick={() => setEditing(true)}>
+            Изменить
+          </button>
+          <button type="button" className="link" onClick={onReissue}>
+            Новый QR-код
+          </button>
+          <button type="button" className="link danger" onClick={onRemove}>
+            Удалить
+          </button>
+        </td>
+      </tr>
+    );
+  }
+  return (
+    <tr className="judge-edit">
+      <td colSpan={4}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            const role = String(form.get("role")) as JudgeRole;
+            void onSave({
+              name: String(form.get("name")).trim(),
+              category: String(form.get("category") ?? "").trim() || null,
+              apparatus: String(form.get("apparatus")),
+              role,
+              seat: Number(form.get("seat")),
+              enterAllMarks: role === "SUPERVISOR" && form.get("enterAllMarks") === "on",
+            }).then((ok) => ok && setEditing(false));
+          }}
+        >
+          <label>
+            ФИО судьи
+            <input name="name" defaultValue={judge.name} required />
+          </label>
+          <label>
+            Категория
+            <input name="category" list="judge-categories" defaultValue={judge.category ?? ""} />
+          </label>
+          <label>
+            Снаряд
+            <select name="apparatus" defaultValue={judge.apparatus}>
+              {apparatusFor(discipline).map((a) => (
+                <option key={a} value={a}>
+                  {APPARATUS_NAMES[a]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Роль
+            <select name="role" defaultValue={judge.role}>
+              {(Object.keys(ROLE_NAMES) as JudgeRole[]).map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_NAMES[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Место в бригаде
+            <input name="seat" type="number" min={1} max={10} defaultValue={judge.seat} required />
+          </label>
+          <label className="check">
+            <input name="enterAllMarks" type="checkbox" defaultChecked={judge.enterAllMarks} />
+            Один планшет на снаряд (для старшего судьи)
+          </label>
+          <div className="buttons">
+            <button type="submit" className="primary">
+              Сохранить
+            </button>
+            <button type="button" onClick={() => setEditing(false)}>
+              Отмена
+            </button>
+          </div>
+          <p className="muted">Если судья уже ставил оценки, менять можно только ФИО и категорию.</p>
+        </form>
+      </td>
+    </tr>
   );
 }
