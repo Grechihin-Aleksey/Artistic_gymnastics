@@ -608,6 +608,7 @@ export function AdminScreen() {
               rules={competition.rules}
               adminToken={adminToken}
               onError={setError}
+              active={tab === "progress"}
             />
             <ProgressPanel
               key={`progress-${competition.id}`}
