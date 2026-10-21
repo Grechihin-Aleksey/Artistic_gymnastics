@@ -1386,3 +1386,24 @@ input.secret {
   flex-basis: 100%;
   margin: 0;
 }
+
+/* После первого опорного прыжка: будет ли второй. */
+.second-ask {
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.8rem;
+}
+.second-ask p {
+  margin: 0 0 0.6rem;
+}
+.second-ask .buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.second-ask .buttons button {
+  flex: 1 1 10rem;
+  min-height: 3rem;
+  font-size: 1.05rem;
+}

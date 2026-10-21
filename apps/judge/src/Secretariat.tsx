@@ -7,6 +7,7 @@ import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, expandScore, judgeLabel, parsePoints, parseScore } from "./labels";
 import { parseRoster, splitByGender, teamFormatWarnings, type TeamFormat } from "./roster";
+import { useCompetitionLive } from "./useLive";
 
 interface Gymnast {
   id: string;
@@ -3685,6 +3686,9 @@ export function ManualScoresPanel({
   useEffect(() => {
     if (active) void load();
   }, [load, active]);
+  // Оценки с планшетов приходят сразу, без перезагрузки страницы.
+  const reload = useCallback(() => void load(), [load]);
+  useCompetitionLive(competitionId, active, reload);
 
   useEffect(() => {
     form.current?.querySelector("input")?.focus();
