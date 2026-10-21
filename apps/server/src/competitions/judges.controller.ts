@@ -1,6 +1,8 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
+import { updateJudgeSchema, type UpdateJudgeInput } from "@ag/shared";
 import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
 import { LiveGateway } from "../live/live.gateway";
+import { ZodPipe } from "../zod.pipe";
 import { CompetitionsService, publicCompetition } from "./competitions.service";
 
 @Controller()
@@ -29,6 +31,18 @@ export class JudgesController {
       competition: publicCompetition(await this.competitions.get(judge.competitionId)),
       panel: await this.competitions.panel(judge.competitionId, judge.apparatus),
     };
+  }
+
+  @Patch("judges/:id")
+  @RequireAccess("admin")
+  update(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(updateJudgeSchema)) body: UpdateJudgeInput) {
+    return this.competitions.updateJudge(id, body);
+  }
+
+  @Delete("judges/:id")
+  @RequireAccess("admin")
+  remove(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.removeJudge(id);
   }
 
   @Post("judges/:id/token")

@@ -1353,3 +1353,36 @@ input.secret {
 .presence-none {
   opacity: 0.55;
 }
+
+/* Список судей: кнопки строки и правка на месте. */
+.judge-actions {
+  white-space: nowrap;
+}
+.judge-actions button + button {
+  margin-left: 0.8rem;
+}
+.judge-edit form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1rem;
+  padding: 0.4rem 0;
+}
+.judge-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.judge-edit label.check {
+  flex-direction: row;
+  align-items: center;
+  flex-basis: 100%;
+}
+.judge-edit .buttons {
+  display: flex;
+  gap: 0.6rem;
+}
+.judge-edit p {
+  flex-basis: 100%;
+  margin: 0;
+}

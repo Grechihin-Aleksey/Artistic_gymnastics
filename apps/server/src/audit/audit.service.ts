@@ -242,11 +242,28 @@ export function describe(
     case "judge.added":
     case "judge.token_reissued": {
       const judge = ctx.judge(d.judgeId);
-      const who = judge ? judgeLabel(judge) : "судья";
+      const who = judge ? judgeLabel(judge) : "судья (позже удалён)";
       return {
         group: "setup",
         ...(judge ? { apparatus: judge.apparatus } : {}),
         text: action === "judge.added" ? `Заведён судья: ${who}` : `Выдан новый QR-код: ${who}, прежний больше не действует`,
+      };
+    }
+    case "judge.updated": {
+      const was = d.before as Judge | undefined;
+      const now = (d.after as Judge | undefined) ?? ctx.judge(d.judgeId);
+      return {
+        group: "setup",
+        ...(now ? { apparatus: now.apparatus } : {}),
+        text: `Изменён судья: ${was ? judgeLabel(was) : "судья"}${now ? ` → ${judgeLabel(now)}` : ""}`,
+      };
+    }
+    case "judge.removed": {
+      const was = d.judge as Judge | undefined;
+      return {
+        group: "setup",
+        ...(was ? { apparatus: was.apparatus } : {}),
+        text: `Удалён судья: ${was ? judgeLabel(was) : "судья"}`,
       };
     }
     case "competition.imported":

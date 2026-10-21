@@ -4,6 +4,7 @@ import type {
   CreateCompetitionInput,
   CreateGymnastInput,
   CreateJudgeInput,
+  UpdateJudgeInput,
   CreateTeamInput,
   ImportGymnastsInput,
   NormativesView,
@@ -17,7 +18,7 @@ import type {
 import { and, asc, eq, inArray, isNull, max, ne } from "drizzle-orm";
 import { hashToken, newToken } from "../auth/tokens";
 import { DB, type Db } from "../db/db.module";
-import { auditLog, categories, competitions, gymnasts, judges, performances, shifts, teams } from "../db/schema";
+import { auditLog, categories, competitions, gymnasts, judges, marks, performances, shifts, teams } from "../db/schema";
 
 export type CompetitionRow = typeof competitions.$inferSelect;
 
@@ -551,6 +552,7 @@ export class CompetitionsService {
     if (input.enterAllMarks && input.role !== "SUPERVISOR") {
       throw new BadRequestException("Один планшет на снаряд выдаётся старшему судье");
     }
+    await this.assertSeatFree(competitionId, input.apparatus, input.role, input.seat);
     const token = newToken();
     const [row] = await this.db
       .insert(judges)
@@ -559,6 +561,95 @@ export class CompetitionsService {
     const { tokenHash: _, ...judge } = row!;
     await this.db.insert(auditLog).values({ competitionId, actor: "admin", action: "judge.added", details: { judgeId: judge.id } });
     return { ...judge, token };
+  }
+
+  private async assertSeatFree(competitionId: string, apparatus: string, role: string, seat: number, exceptId?: string) {
+    const [taken] = await this.db
+      .select({ id: judges.id, name: judges.name })
+      .from(judges)
+      .where(
+        and(
+          eq(judges.competitionId, competitionId),
+          eq(judges.apparatus, apparatus as never),
+          eq(judges.role, role as never),
+          eq(judges.seat, seat),
+          ...(exceptId ? [ne(judges.id, exceptId)] : []),
+        ),
+      )
+      .limit(1);
+    if (taken) throw new ConflictException(`Это место в бригаде уже занято: ${taken.name}`);
+  }
+
+  private async judgeOrThrow(judgeId: string) {
+    const [row] = await this.db.select().from(judges).where(eq(judges.id, judgeId));
+    if (!row) throw new NotFoundException("Судья не найден");
+    return row;
+  }
+
+  private async judgeHasMarks(judgeId: string): Promise<boolean> {
+    const [mark] = await this.db.select({ id: marks.id }).from(marks).where(eq(marks.judgeId, judgeId)).limit(1);
+    return Boolean(mark);
+  }
+
+  /**
+   * Правка судьи. ФИО и категорию можно менять всегда (они идут в протоколы).
+   * Снаряд, роль и место — только пока судья не поставил ни одной оценки, иначе оценки «переедут».
+   */
+  async updateJudge(judgeId: string, input: UpdateJudgeInput) {
+    const before = await this.judgeOrThrow(judgeId);
+    const next = { ...before, ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) };
+    const competition = await this.get(before.competitionId);
+    if (!apparatusFor(competition.discipline).includes(next.apparatus)) {
+      throw new BadRequestException(`Снаряда ${next.apparatus} нет в программе ${competition.discipline}`);
+    }
+    if (next.role !== "SUPERVISOR") next.enterAllMarks = false;
+    const moved = next.apparatus !== before.apparatus || next.role !== before.role || next.seat !== before.seat;
+    if (moved) {
+      if (await this.judgeHasMarks(judgeId)) {
+        throw new ConflictException("У судьи уже есть оценки: снаряд, роль и место менять нельзя, только ФИО и категорию");
+      }
+      await this.assertSeatFree(before.competitionId, next.apparatus, next.role, next.seat, judgeId);
+    }
+    const [row] = await this.db
+      .update(judges)
+      .set({
+        name: next.name,
+        category: next.category || null,
+        apparatus: next.apparatus,
+        role: next.role,
+        seat: next.seat,
+        enterAllMarks: next.enterAllMarks,
+      })
+      .where(eq(judges.id, judgeId))
+      .returning();
+    const { tokenHash: _, ...judge } = row!;
+    await this.db.insert(auditLog).values({
+      competitionId: before.competitionId,
+      actor: "admin",
+      action: "judge.updated",
+      details: {
+        judgeId,
+        before: { name: before.name, apparatus: before.apparatus, role: before.role, seat: before.seat },
+        after: { name: judge.name, apparatus: judge.apparatus, role: judge.role, seat: judge.seat },
+      },
+    });
+    return judge;
+  }
+
+  /** Удалить судью можно, пока у него нет оценок: иначе пропали бы оценки из протоколов. */
+  async removeJudge(judgeId: string) {
+    const row = await this.judgeOrThrow(judgeId);
+    if (await this.judgeHasMarks(judgeId)) {
+      throw new ConflictException("У судьи уже есть оценки, удалить нельзя. Исправьте ФИО или выдайте новый QR-код");
+    }
+    await this.db.delete(judges).where(eq(judges.id, judgeId));
+    await this.db.insert(auditLog).values({
+      competitionId: row.competitionId,
+      actor: "admin",
+      action: "judge.removed",
+      details: { judgeId, judge: { name: row.name, apparatus: row.apparatus, role: row.role, seat: row.seat } },
+    });
+    return { ok: true };
   }
 
   /** Новый токен судьи взамен потерянного; старый перестаёт работать. */
