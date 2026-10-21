@@ -16,6 +16,7 @@ import {
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
+  JudgesPresencePanel,
   SiteBadge,
   SitePanel,
   OfficialsPanel,
@@ -472,6 +473,15 @@ export function AdminScreen() {
               </form>
             )}
 
+            <JudgesPresencePanel
+              key={`presence-judges-${competition.id}-${judges.length}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "judges"}
+            />
+
             {judges.length > 0 && (
               <table className="panel no-print">
                 <tbody>
@@ -515,6 +525,14 @@ export function AdminScreen() {
           </div>
 
           <div {...pane("progress")}>
+            <JudgesPresencePanel
+              key={`presence-${competition.id}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "progress"}
+            />
             <RotationPanel
               key={`rotation-${competition.id}-${drawVersion}`}
               competitionId={competition.id}

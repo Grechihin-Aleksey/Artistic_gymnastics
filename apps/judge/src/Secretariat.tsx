@@ -5,7 +5,7 @@ import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
-import { APPARATUS_NAMES, expandScore, parsePoints, parseScore } from "./labels";
+import { APPARATUS_NAMES, expandScore, judgeLabel, parsePoints, parseScore } from "./labels";
 import { parseRoster, splitByGender, teamFormatWarnings, type TeamFormat } from "./roster";
 
 interface Gymnast {
@@ -4146,6 +4146,121 @@ export function ProgressPanel({
           </div>
         );
       })}
+    </section>
+  );
+}
+
+interface PresenceJudge {
+  id: string;
+  name: string;
+  apparatus: string;
+  role: "SUPERVISOR" | "D" | "E";
+  seat: number;
+  enterAllMarks: boolean;
+}
+
+interface JudgePresence {
+  judgeId: string;
+  online: boolean;
+  since: string | null;
+  lastSeen: string | null;
+}
+
+/** Как часто секретариат переспрашивает, кто на связи. */
+const PRESENCE_POLL_MS = 5_000;
+
+function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * Связь судей: чьи планшеты сейчас подключены к серверу, кто отключился и когда,
+ * кто ещё не подключался. Судьи снаряда, где все оценки вводит старший судья, планшетов не держат.
+ */
+export function JudgesPresencePanel({
+  competitionId,
+  discipline,
+  adminToken,
+  onError,
+  active,
+}: Props & { active: boolean }) {
+  const [judges, setJudges] = useState<PresenceJudge[]>([]);
+  const [presence, setPresence] = useState<Map<string, JudgePresence>>(new Map());
+
+  const load = useCallback(async () => {
+    try {
+      const [list, states] = await Promise.all([
+        apiRequest<PresenceJudge[]>(`/competitions/${competitionId}/judges`, { token: adminToken }),
+        apiRequest<JudgePresence[]>(`/competitions/${competitionId}/judges/presence`, { token: adminToken }),
+      ]);
+      setJudges(list);
+      setPresence(new Map(states.map((p) => [p.judgeId, p])));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, onError]);
+
+  useEffect(() => {
+    if (!active) return;
+    void load();
+    const timer = setInterval(() => void load(), PRESENCE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [active, load]);
+
+  if (judges.length === 0) return null;
+  const singleTablet = new Set(judges.filter((j) => j.role === "SUPERVISOR" && j.enterAllMarks).map((j) => j.apparatus));
+  const needsTablet = (j: PresenceJudge) => !singleTablet.has(j.apparatus) || j.role === "SUPERVISOR";
+  const withTablets = judges.filter(needsTablet);
+  const online = withTablets.filter((j) => presence.get(j.id)?.online).length;
+  const lost = withTablets.filter((j) => !presence.get(j.id)?.online && presence.get(j.id)?.lastSeen).length;
+
+  return (
+    <section className="panel no-print judges-presence">
+      <h2>Связь судей</h2>
+      <p className="wide">
+        <strong className={online === withTablets.length ? "ok-text" : "warning-text"}>
+          На связи {online} из {withTablets.length}
+        </strong>
+        {lost > 0 && <span className="warning-text"> · отключились: {lost}</span>}
+      </p>
+      <div className="wide presence-grid">
+        {apparatusFor(discipline)
+          .filter((a) => judges.some((j) => j.apparatus === a))
+          .map((a) => (
+            <div key={a} className="presence-apparatus">
+              <h3>
+                <ApparatusIcon code={a} />
+                {APPARATUS_NAMES[a]}
+              </h3>
+              <ul>
+                {judges
+                  .filter((j) => j.apparatus === a)
+                  .sort((x, y) => Number(y.role === "SUPERVISOR") - Number(x.role === "SUPERVISOR"))
+                  .map((j) => {
+                    const p = presence.get(j.id);
+                    const state = !needsTablet(j) ? "none" : p?.online ? "online" : p?.lastSeen ? "lost" : "never";
+                    return (
+                      <li key={j.id} className={`presence-${state}`}>
+                        <span className="presence-dot" aria-hidden="true" />
+                        <span className="presence-role">{j.role === "SUPERVISOR" ? "Старший" : judgeLabel(j.role, j.seat)}</span>
+                        <span className="presence-name">{j.name}</span>
+                        <span className="presence-state">
+                          {state === "online" && `на связи${p?.since ? ` с ${clock(p.since)}` : ""}`}
+                          {state === "lost" && `нет связи с ${clock(p!.lastSeen!)}`}
+                          {state === "never" && "не подключался"}
+                          {state === "none" && "без планшета"}
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
+          ))}
+      </div>
+      <p className="muted wide">
+        Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
+        планшет уснул, связь тоже пропадает, верните его на страницу судьи.
+      </p>
     </section>
   );
 }
