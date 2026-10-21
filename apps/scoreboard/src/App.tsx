@@ -28,16 +28,33 @@ export function App() {
   useEffect(() => {
     if (!route.embed || window.parent === window) return;
     // Странице сайта нужна высота виджета, чтобы подогнать под неё рамку.
-    const report = () =>
-      window.parent.postMessage(
-        // Высота содержимого, а не окна: иначе рамка могла бы только расти.
-        { type: "ag-results:height", height: document.body.getBoundingClientRect().height },
-        "*",
-      );
-    const observer = new ResizeObserver(report);
+    let sent = -1;
+    const report = (force = false) => {
+      // Высота содержимого, а не окна: иначе рамка могла бы только расти.
+      const height = Math.ceil(Math.max(document.body.getBoundingClientRect().height, document.body.scrollHeight));
+      if (height === 0 || (height === sent && !force)) return;
+      sent = height;
+      window.parent.postMessage({ type: "ag-results:height", height }, "*");
+    };
+    const observer = new ResizeObserver(() => report());
     observer.observe(document.body);
+    // Safari на iPhone не всегда сообщает об изменении размера внутри рамки
+    // (рамка оставалась высотой в шапку), поэтому ещё следим за содержимым и раз в секунду сверяемся.
+    const mutations = new MutationObserver(() => report());
+    mutations.observe(document.body, { childList: true, subtree: true, characterData: true });
+    const timer = setInterval(report, 1000);
+    const onMessage = (event: MessageEvent) => {
+      if (event.source === window.parent && event.data?.type === "ag-results:measure") report(true);
+    };
+    window.addEventListener("message", onMessage);
+    window.addEventListener("load", () => report(true));
     report();
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+      clearInterval(timer);
+      window.removeEventListener("message", onMessage);
+    };
   }, [route.embed]);
 
   if (!route.competitionId) return <Picker />;
