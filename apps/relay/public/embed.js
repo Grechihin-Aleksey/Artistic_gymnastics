@@ -35,8 +35,11 @@
     var frame = document.createElement("iframe");
     frame.src = base + "/widget/index.html#" + params.toString();
     frame.title = "Результаты соревнований";
-    frame.loading = "lazy";
     frame.style.cssText = "display:block;width:100%;height:420px;border:0;";
+    // Как только рамка загрузилась, просим виджет назвать свою высоту.
+    frame.addEventListener("load", function () {
+      frame.contentWindow.postMessage({ type: "ag-results:measure" }, origin || "*");
+    });
     el.appendChild(frame);
     frames.push(frame);
   }
