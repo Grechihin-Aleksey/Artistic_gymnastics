@@ -5,7 +5,7 @@ import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
-import { APPARATUS_NAMES, parsePoints, parseScore } from "./labels";
+import { APPARATUS_NAMES, expandScore, parsePoints, parseScore } from "./labels";
 import { parseRoster, splitByGender, teamFormatWarnings, type TeamFormat } from "./roster";
 
 interface Gymnast {
@@ -3575,7 +3575,8 @@ interface ManualDraft {
   neutral: string;
 }
 
-const parseField = (text: string, kind: "D" | "E") => parseScore(text.trim().replace(",", "."), kind);
+// Быстрый ввод, как на планшете судьи: «95» — это 9.50, «9» — 9.00.
+const parseField = (text: string, kind: "D" | "E") => parseScore(expandScore(text), kind);
 
 /** Черновик формы по уже утверждённой оценке или пустой. */
 function draftFor(gymnastId: string, eCount: number, perf: PerformanceView | undefined): ManualDraft {
@@ -3720,6 +3721,7 @@ export function ManualScoresPanel({ competitionId, discipline, adminToken, onErr
         value={value}
         className={bad ? "invalid" : undefined}
         onChange={(ev) => onChange(ev.target.value)}
+        onBlur={() => value.trim() && onChange(expandScore(value))}
         onKeyDown={onKey}
       />
     </label>
@@ -3884,7 +3886,7 @@ export function ManualScoresPanel({ competitionId, discipline, adminToken, onErr
         </table>
       </div>
       <p className="muted wide">
-        Enter переходит к следующему полю, в последнем поле сохраняет. После сохранения открывается следующий участник без оценки.
+        Можно набирать без точки: «9» — это 9.00, «95» — 9.50, «125» — 1.25. Enter переходит к следующему полю, в последнем поле сохраняет. После сохранения открывается следующий участник без оценки.
       </p>
     </section>
   );
