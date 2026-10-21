@@ -40,3 +40,24 @@ export function useLive(token: string, onChange: () => void): boolean {
   }, []);
   return connected && online;
 }
+
+/**
+ * Подписка секретариата на соревнование: при вызове, утверждении или возврате оценки на любом снаряде
+ * вызывает onChange, чтобы списки обновлялись без перезагрузки страницы.
+ */
+export function useCompetitionLive(competitionId: string, enabled: boolean, onChange: () => void): void {
+  useEffect(() => {
+    if (!enabled) return;
+    const socket = io("/live", { transports: ["websocket", "polling"] });
+    socket.on("connect", () => {
+      socket.emit(LIVE_EVENTS.join, { competitionId });
+      onChange();
+    });
+    for (const event of [LIVE_EVENTS.called, LIVE_EVENTS.approved, LIVE_EVENTS.reopened, LIVE_EVENTS.rotation, LIVE_EVENTS.finals]) {
+      socket.on(event, onChange);
+    }
+    return () => {
+      socket.close();
+    };
+  }, [competitionId, enabled, onChange]);
+}

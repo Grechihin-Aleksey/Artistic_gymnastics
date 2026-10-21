@@ -278,6 +278,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               rotation={rotation}
               finalLists={finalLists}
               categoryNames={new Map(rulesView?.categories.map((c) => [c.id, c.name]))}
+              justFinished={lastApproved}
               onDone={refresh}
             />
           )}
@@ -600,6 +601,7 @@ function CallPanel({
   rotation,
   finalLists,
   categoryNames,
+  justFinished,
   onDone,
 }: {
   token: string;
@@ -613,9 +615,12 @@ function CallPanel({
   finalLists: FinalsView["lists"] | null;
   /** Названия разрядов: в смене бывают участники разных разрядов. */
   categoryNames: Map<string, string>;
+  /** Последнее утверждённое выступление: после первого прыжка спрашиваем, будет ли второй. */
+  justFinished: PerformanceView | null;
   onDone: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState("");
+  const [noSecond, setNoSecond] = useState<Set<string>>(() => new Set());
   const [showAll, setShowAll] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -678,8 +683,42 @@ function CallPanel({
     }
   };
 
+  // Только что утверждён первый прыжок: старший сразу решает, будет ли второй.
+  const askSecond =
+    apparatus === "VT" &&
+    justFinished !== null &&
+    justFinished.apparatus === "VT" &&
+    justFinished.attempt === 1 &&
+    performances.some((p) => p.id === justFinished.id) &&
+    !secondDone.has(justFinished.gymnastId) &&
+    !noSecond.has(justFinished.id)
+      ? gymnasts.get(justFinished.gymnastId)
+      : undefined;
+
   return (
     <section className="call">
+      {askSecond && (
+        <div className="second-ask">
+          <p>
+            <strong>
+              №{askSecond.bib} {askSecond.lastName} {askSecond.firstName}
+            </strong>{" "}
+            — первый прыжок {justFinished!.score ? justFinished!.score.total.toFixed(3) : ""}. Будет второй прыжок?
+          </p>
+          <div className="buttons">
+            <button type="button" className="primary" disabled={busy} onClick={() => void call(askSecond, 2)}>
+              Да, второй прыжок
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setNoSecond((set) => new Set(set).add(justFinished!.id))}
+            >
+              Нет, следующий участник
+            </button>
+          </div>
+        </div>
+      )}
       {isFinal && (
         <div className="call-shift">
           <span>Финал · порядок по жеребьёвке</span>
