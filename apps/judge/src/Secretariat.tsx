@@ -3640,7 +3640,14 @@ function draftFor(gymnastId: string, eCount: number, perf: PerformanceView | und
  * оценки на бумаге, а секретарь вводит их здесь: оценка сразу утверждается.
  * Здесь же исправляют и удаляют любую оценку; всё попадает в журнал.
  */
-export function ManualScoresPanel({ competitionId, discipline, adminToken, onError, rules }: Props) {
+export function ManualScoresPanel({
+  competitionId,
+  discipline,
+  adminToken,
+  onError,
+  rules,
+  active = true,
+}: Props & { active?: boolean }) {
   const program = apparatusFor(discipline);
   const labels = scoreLabels(rules ?? "FIG");
   const custom = rules === "CUSTOM";
@@ -3674,9 +3681,10 @@ export function ManualScoresPanel({ competitionId, discipline, adminToken, onErr
     }
   }, [competitionId, adminToken, apparatus, onError]);
 
+  // Судей и участников заводят на других вкладках: при возврате сюда перечитываем, иначе блок помнит старую бригаду.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (active) void load();
+  }, [load, active]);
 
   useEffect(() => {
     form.current?.querySelector("input")?.focus();
