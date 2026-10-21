@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import {
   apparatusSchema,
   createPerformanceSchema,
+  manualScoreSchema,
   reopenPerformanceSchema,
   submitMarkSchema,
   tabletScoreSchema,
   type CreatePerformanceInput,
+  type ManualScoreInput,
   type ReopenPerformanceInput,
   type SubmitMarkInput,
   type TabletScoreInput,
@@ -27,6 +29,23 @@ export class PerformancesController {
     @Body(new ZodPipe(createPerformanceSchema)) body: CreatePerformanceInput,
   ) {
     return this.performances.create(principal, id, body);
+  }
+
+  /** Оценки с судейских листов: секретариат вводит или исправляет, когда планшеты без связи. */
+  @Post("competitions/:id/manual-scores")
+  @RequireAccess("admin")
+  scoreManually(
+    @CurrentPrincipal() principal: Principal,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(manualScoreSchema)) body: ManualScoreInput,
+  ) {
+    return this.performances.scoreManually(principal, id, body);
+  }
+
+  @Delete("performances/:id")
+  @RequireAccess("admin")
+  remove(@CurrentPrincipal() principal: Principal, @Param("id", ParseUUIDPipe) id: string) {
+    return this.performances.remove(principal, id);
   }
 
   @Get("competitions/:id/performances")

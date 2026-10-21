@@ -11,6 +11,7 @@ import {
   ClubStandingPanel,
   CeremonyPanel,
   AuditPanel,
+  ManualScoresPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -500,6 +501,14 @@ export function AdminScreen() {
               adminToken={adminToken}
               onError={setError}
             />
+            <ManualScoresPanel
+              key={`manual-${competition.id}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              rules={competition.rules}
+              adminToken={adminToken}
+              onError={setError}
+            />
             <ProgressPanel
               key={`progress-${competition.id}`}
               competitionId={competition.id}
@@ -537,7 +546,13 @@ export function AdminScreen() {
               onError={setError}
             />
             <SiteProtocolsPanel key={`site-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
-            <AuditPanel key={`audit-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+            <AuditPanel
+              key={`audit-${competition.id}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "protocols"}
+            />
           </div>
         </>
       )}

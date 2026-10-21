@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { apparatusFor, type Apparatus, type Discipline } from "@ag/scoring";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
@@ -2289,7 +2289,8 @@ export function SitePanel({
   );
 }
 
-const AUDIT_PAGE = 50;
+/** Больше записей в окне не держим: полный журнал — в PDF и Excel. */
+const AUDIT_SHOWN = 1000;
 
 /** «14:05:31», а для записей не сегодняшнего дня — с датой. */
 function auditTime(iso: string): string {
@@ -2304,10 +2305,9 @@ function auditTime(iso: string): string {
  * Журнал изменений: кто и когда ставил и правил оценки, разбирал запросы,
  * менял участников и настройки. Выгружается для жюри в PDF и Excel.
  */
-export function AuditPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+export function AuditPanel({ competitionId, adminToken, onError, active = true }: Omit<Props, "discipline"> & { active?: boolean }) {
   const [group, setGroup] = useState<AuditGroup | "">("");
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
-  const [limit, setLimit] = useState(AUDIT_PAGE);
 
   const load = useCallback(async () => {
     try {
@@ -2318,9 +2318,10 @@ export function AuditPanel({ competitionId, adminToken, onError }: Omit<Props, "
     }
   }, [competitionId, adminToken, group, onError]);
 
+  // Свежие записи — каждый раз, когда открывают вкладку с журналом.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (active) void load();
+  }, [load, active]);
 
   const download = async (pdf: boolean) => {
     const tab = pdf ? window.open("", "_blank") : null;
@@ -2377,11 +2378,17 @@ export function AuditPanel({ competitionId, adminToken, onError }: Omit<Props, "
               </tr>
             </thead>
             <tbody>
-              {entries.slice(0, limit).map((e) => (
+              {entries.slice(0, AUDIT_SHOWN).map((e) => (
                 <tr key={e.id}>
                   <td className="muted">{auditTime(e.at)}</td>
                   <td>{e.actor}</td>
-                  <td>{e.apparatus ? APPARATUS_NAMES[e.apparatus] : ""}</td>
+                  <td>
+                    {e.apparatus && (
+                      <>
+                        <ApparatusIcon code={e.apparatus} /> {APPARATUS_NAMES[e.apparatus]}
+                      </>
+                    )}
+                  </td>
                   <td>{e.gymnast ?? ""}</td>
                   <td>{e.text}</td>
                 </tr>
@@ -2390,10 +2397,11 @@ export function AuditPanel({ competitionId, adminToken, onError }: Omit<Props, "
           </table>
         </div>
       )}
-      {entries && entries.length > limit && (
-        <button type="button" className="link" onClick={() => setLimit(limit + AUDIT_PAGE * 4)}>
-          Показать ещё ({entries.length - limit})
-        </button>
+      {entries && entries.length > 0 && (
+        <p className="muted wide">
+          Записей: {entries.length}
+          {entries.length > AUDIT_SHOWN ? `, в окне последние ${AUDIT_SHOWN}; все — в PDF и Excel` : ""}.
+        </p>
       )}
     </section>
   );
@@ -3430,6 +3438,335 @@ type ProgressView = "AA" | Apparatus;
  * все участники разряда, а не только выступившие, с оценками по снарядам и местами.
  * Пока экран открыт, данные обновляются каждые 5 секунд.
  */
+interface PanelSeat {
+  id: string;
+  apparatus: Apparatus;
+  role: "D" | "E" | "SUPERVISOR";
+  seat: number;
+}
+
+interface ManualDraft {
+  gymnastId: string;
+  d: string;
+  e: string[];
+  neutral: string;
+}
+
+const parseField = (text: string, kind: "D" | "E") => parseScore(text.trim().replace(",", "."), kind);
+
+/** Черновик формы по уже утверждённой оценке или пустой. */
+function draftFor(gymnastId: string, eCount: number, perf: PerformanceView | undefined): ManualDraft {
+  const marks = perf?.status === "APPROVED" ? perf.marks : [];
+  const e = marks.filter((m) => m.kind === "E").map((m) => fmt(m.value));
+  const d = marks.find((m) => m.kind === "D");
+  const neutral = marks.find((m) => m.kind === "NEUTRAL");
+  return {
+    gymnastId,
+    d: d ? fmt(d.value) : "",
+    e: Array.from({ length: eCount }, (_, i) => e[i] ?? ""),
+    neutral: neutral ? fmt(neutral.value) : "",
+  };
+}
+
+/**
+ * Ввод оценок с судейских листов. Если планшеты потеряли связь, судьи пишут
+ * оценки на бумаге, а секретарь вводит их здесь: оценка сразу утверждается.
+ * Здесь же исправляют и удаляют любую оценку; всё попадает в журнал.
+ */
+export function ManualScoresPanel({ competitionId, discipline, adminToken, onError, rules }: Props) {
+  const program = apparatusFor(discipline);
+  const labels = scoreLabels(rules ?? "FIG");
+  const custom = rules === "CUSTOM";
+  const [apparatus, setApparatus] = useState<Apparatus>(program[0]!);
+  const [attempt, setAttempt] = useState(1);
+  const [shift, setShift] = useState("all");
+  const [search, setSearch] = useState("");
+  const [people, setPeople] = useState<RosterGymnast[]>([]);
+  const [seats, setSeats] = useState<PanelSeat[]>([]);
+  const [perfs, setPerfs] = useState<PerformanceView[]>([]);
+  const [phase, setPhase] = useState<"QUAL" | "FINAL">("QUAL");
+  const [draft, setDraft] = useState<ManualDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const form = useRef<HTMLTableRowElement>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [list, judges, done, competition] = await Promise.all([
+        apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+        apiRequest<PanelSeat[]>(`/competitions/${competitionId}/judges`, { token: adminToken }),
+        apiRequest<PerformanceView[]>(`/competitions/${competitionId}/performances?apparatus=${apparatus}`, { token: adminToken }),
+        apiRequest<{ phase: "QUAL" | "FINAL" }>(`/competitions/${competitionId}`),
+      ]);
+      setPeople(list);
+      setSeats(judges);
+      setPerfs(done);
+      setPhase(competition.phase);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, apparatus, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    form.current?.querySelector("input")?.focus();
+  }, [draft?.gymnastId]);
+
+  const eCount = seats.filter((j) => j.apparatus === apparatus && j.role === "E").length;
+  const hasD = seats.some((j) => j.apparatus === apparatus && (j.role === "D" || j.role === "SUPERVISOR"));
+  const shifts = [...new Set(people.map((g) => g.shift).filter((n): n is number => n !== null))].sort((a, b) => a - b);
+  const byGymnast = new Map(
+    perfs.filter((p) => p.stage === phase && p.attempt === attempt).map((p) => [p.gymnastId, p] as const),
+  );
+  const query = search.trim().toLowerCase();
+  const rows = people
+    .filter((g) => shift === "all" || String(g.shift) === shift)
+    .filter((g) => !query || String(g.bib) === query || g.lastName.toLowerCase().startsWith(query))
+    .sort((a, b) => (a.shift ?? 99) - (b.shift ?? 99) || a.bib - b.bib);
+
+  const open = (g: RosterGymnast) => {
+    setSaved(null);
+    setDraft(draftFor(g.id, eCount, byGymnast.get(g.id)));
+  };
+
+  const d = draft ? (draft.d.trim() === "" && custom ? 0 : parseField(draft.d, "D")) : null;
+  const e = draft ? draft.e.map((v) => parseField(v, "E")) : [];
+  const neutral = draft ? (draft.neutral.trim() === "" ? 0 : parseField(draft.neutral, "E")) : null;
+  const valid = draft !== null && d !== null && neutral !== null && e.every((v) => v !== null);
+  const preview =
+    valid && !custom ? scorePerformance({ d: toPoints(d), eDeductions: e.map((v) => toPoints(v!)), neutral: toPoints(neutral) }) : null;
+
+  const save = async () => {
+    if (!draft || !valid) return;
+    setBusy(true);
+    try {
+      const g = people.find((p) => p.id === draft.gymnastId)!;
+      const view = await apiRequest<PerformanceView>(`/competitions/${competitionId}/manual-scores`, {
+        token: adminToken,
+        method: "POST",
+        body: { gymnastId: draft.gymnastId, apparatus, attempt, d, e, ...(neutral ? { neutral } : {}) },
+      });
+      onError(null);
+      setSaved(`№${g.bib} ${g.lastName}: ${view.score ? fmt(view.score.total) : "—"}`);
+      await load();
+      // Следующий по списку без оценки — чтобы вводить лист подряд.
+      const next = rows.slice(rows.indexOf(g) + 1).find((p) => p.status === "ACTIVE" && !byGymnast.has(p.id));
+      setDraft(next ? draftFor(next.id, eCount, undefined) : null);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (g: RosterGymnast, perf: PerformanceView) => {
+    const total = perf.score ? ` (${fmt(perf.score.total)})` : "";
+    if (!confirm(`Удалить оценку №${g.bib} ${g.lastName} ${g.firstName} на снаряде «${APPARATUS_NAMES[apparatus]}»${total}? Она пропадёт из результатов и протоколов.`)) return;
+    setBusy(true);
+    try {
+      await apiRequest(`/performances/${perf.id}`, { token: adminToken, method: "DELETE" });
+      onError(null);
+      setDraft(null);
+      setSaved(`Оценка №${g.bib} ${g.lastName} удалена`);
+      await load();
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Enter в поле переходит к следующему, в последнем — сохраняет.
+  const onKey = (ev: KeyboardEvent<HTMLInputElement>) => {
+    if (ev.key === "Escape") setDraft(null);
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const inputs = [...(form.current?.querySelectorAll("input") ?? [])];
+    const i = inputs.indexOf(ev.currentTarget);
+    if (i < inputs.length - 1) inputs[i + 1]!.focus();
+    else void save();
+  };
+  const input = (value: string, onChange: (v: string) => void, title: string, bad: boolean) => (
+    <label className="manual-field">
+      {title}
+      <input
+        inputMode="decimal"
+        value={value}
+        className={bad ? "invalid" : undefined}
+        onChange={(ev) => onChange(ev.target.value)}
+        onKeyDown={onKey}
+      />
+    </label>
+  );
+
+  const columns = 6;
+  return (
+    <section className="panel no-print manual-scores">
+      <h2>Ввод оценок с судейских листов</h2>
+      <p className="muted wide">
+        Если планшеты потеряли связь, судьи записывают оценки на листы, а секретарь вводит их здесь. Оценка сразу утверждается и
+        идёт в результаты, на табло и в протоколы. Здесь же можно исправить или удалить любую оценку, всё записывается в журнал.
+      </p>
+      <div className="wide progress-views">
+        {program.map((a) => (
+          <button
+            key={a}
+            type="button"
+            className={apparatus === a ? "active" : undefined}
+            onClick={() => {
+              setApparatus(a);
+              setAttempt(1);
+              setDraft(null);
+              setSaved(null);
+            }}
+          >
+            <ApparatusIcon code={a} /> {APPARATUS_NAMES[a]}
+          </button>
+        ))}
+      </div>
+      <label>
+        Смена
+        <select value={shift} onChange={(ev) => setShift(ev.target.value)}>
+          <option value="all">Все смены</option>
+          {shifts.map((n) => (
+            <option key={n} value={String(n)}>
+              Смена {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Найти
+        <input value={search} placeholder="номер или фамилия" onChange={(ev) => setSearch(ev.target.value)} />
+      </label>
+      {apparatus === "VT" && (
+        <label>
+          Прыжок
+          <select value={attempt} onChange={(ev) => (setAttempt(Number(ev.target.value)), setDraft(null))}>
+            <option value={1}>Первый</option>
+            <option value={2}>Второй</option>
+          </select>
+        </label>
+      )}
+      {(eCount === 0 || (!hasD && !custom)) && (
+        <p className="warning wide">
+          На снаряде «{APPARATUS_NAMES[apparatus]}» не заведены судьи {eCount === 0 ? "E" : "D"}. Заведите бригаду на вкладке
+          «Судьи»: оценки записываются за судьями и попадают в протокол.
+        </p>
+      )}
+      {saved && <p className="wide manual-saved">{saved.startsWith("Оценка") ? saved : `Сохранено: ${saved}`}</p>}
+      <div className="wide table-scroll">
+        <table className="draw-table manual-table">
+          <thead>
+            <tr>
+              <th>№</th>
+              <th>Участник</th>
+              <th>Смена</th>
+              <th className="num">{labels.d}</th>
+              <th className="num">Итог</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((g) => {
+              const perf = byGymnast.get(g.id);
+              const approved = perf?.status === "APPROVED" && perf.score;
+              const editing = draft?.gymnastId === g.id;
+              const out = g.status !== "ACTIVE";
+              return (
+                <Fragment key={g.id}>
+                  <tr className={editing ? "now" : out ? "out" : undefined}>
+                    <td>{g.bib}</td>
+                    <td>
+                      {g.lastName} {g.firstName}
+                    </td>
+                    <td>{g.shift ?? ""}</td>
+                    <td className="num">{approved ? fmt(perf.score!.d) : ""}</td>
+                    <td className="num">
+                      {out ? (
+                        GYMNAST_STATUS_NAMES[g.status]
+                      ) : approved ? (
+                        <strong>{fmt(perf.score!.total)}</strong>
+                      ) : perf ? (
+                        <span className="muted">идёт оценка</span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="manual-actions">
+                      {!out && !editing && (
+                        <button type="button" disabled={busy || eCount === 0} onClick={() => open(g)}>
+                          {approved ? "Исправить" : "Ввести"}
+                        </button>
+                      )}
+                      {perf && !editing && (
+                        <button type="button" className="danger" disabled={busy} onClick={() => void remove(g, perf)}>
+                          Удалить
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {editing && draft && (
+                    <tr ref={form} className="manual-form">
+                      <td colSpan={columns}>
+                        <div className="manual-fields">
+                          {input(draft.d, (v) => setDraft({ ...draft, d: v }), custom ? `${labels.d}` : "D", d === null)}
+                          {draft.e.map((v, i) =>
+                            input(
+                              v,
+                              (next) => setDraft({ ...draft, e: draft.e.map((x, k) => (k === i ? next : x)) }),
+                              `E${i + 1}`,
+                              v !== "" && e[i] === null,
+                            ),
+                          )}
+                          {input(draft.neutral, (v) => setDraft({ ...draft, neutral: v }), "НС", neutral === null)}
+                          <div className="manual-total">
+                            {preview ? (
+                              <>
+                                Итог <strong>{fmt(fromPoints(preview.total))}</strong>
+                                <span className="muted"> · E {fmt(fromPoints(preview.e))}</span>
+                              </>
+                            ) : custom && valid ? (
+                              <span className="muted">Итог посчитает программа по базе разряда</span>
+                            ) : (
+                              <span className="muted">Введите все оценки</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="manual-buttons">
+                          <button type="button" className="primary" disabled={!valid || busy} onClick={() => void save()}>
+                            Сохранить и утвердить
+                          </button>
+                          <button type="button" onClick={() => setDraft(null)}>
+                            Отмена
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={columns} className="muted">
+                  Нет участников
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted wide">
+        Enter переходит к следующему полю, в последнем поле сохраняет. После сохранения открывается следующий участник без оценки.
+      </p>
+    </section>
+  );
+}
+
 export function ProgressPanel({
   competitionId,
   discipline,

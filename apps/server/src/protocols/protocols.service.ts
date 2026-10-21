@@ -12,6 +12,7 @@ import {
   type Apparatus,
 } from "@ag/scoring";
 import {
+  APPARATUS_ICONS,
   APPARATUS_NAMES,
   GYMNAST_STATUS_NAMES,
   birthYear,
@@ -27,6 +28,8 @@ import {
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
   Content,
+  ContentColumns,
+  ContentSvg,
   TableCell,
   TDocumentDefinitions,
 } from "pdfmake/interfaces";
@@ -218,6 +221,7 @@ export class ProtocolsService {
           rows.length === 0 ? emptyNote() : table(body),
           ...notes.map((n) => ({ text: n, style: "note" }) as Content),
         ],
+        apparatus,
       ),
     );
   }
@@ -239,7 +243,7 @@ export class ProtocolsService {
         th("Место"),
         th("№"),
         th("Участник"),
-        ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")),
+        ...program.map((a) => apparatusTh(a)),
         th("Сумма", "right"),
         ...(withNormatives ? [th("Вып. разряд")] : []),
       ],
@@ -421,7 +425,7 @@ export class ProtocolsService {
       ...entries.map((e): TableCell[] => [
         { text: auditTime(e.at), noWrap: true },
         { text: e.actor },
-        { text: e.apparatus ? APPARATUS_NAMES[e.apparatus]! : "" },
+        e.apparatus ? withIcon(e.apparatus, APPARATUS_NAMES[e.apparatus]!, 9) : "",
         { text: e.gymnast ?? "" },
         { text: e.text },
       ]),
@@ -663,7 +667,7 @@ export class ProtocolsService {
         .sort((a, b) => order[a.role] - order[b.role] || a.seat - b.seat);
       if (panel.length === 0) continue;
       content.push(
-        { text: APPARATUS_NAMES[apparatus]!, style: "section" },
+        { ...withIcon(apparatus, APPARATUS_NAMES[apparatus]!, 13), style: "section" },
         table(
           [
             head(),
@@ -744,7 +748,7 @@ export class ProtocolsService {
       [
         th("Место"),
         th("Команда / участник"),
-        ...program.map((a) => th(APPARATUS_NAMES[a]!, "right")),
+        ...program.map((a) => apparatusTh(a)),
         th("Сумма", "right"),
       ],
     ];
@@ -1010,12 +1014,10 @@ export class ProtocolsService {
             [th("Ротация"), ...shiftRows.map((s) => th(`Смена ${s.number}`))],
             ...program.map((_, r) => [
               String(r + 1),
-              ...shiftRows.map(
-                (s) =>
-                  APPARATUS_NAMES[
-                    shiftApparatus(competition.discipline, s.startApparatus, r)
-                  ]!,
-              ),
+              ...shiftRows.map((s) => {
+                const a = shiftApparatus(competition.discipline, s.startApparatus, r);
+                return withIcon(a, APPARATUS_NAMES[a]!, 10);
+              }),
             ]),
           ],
           -1,
@@ -1025,7 +1027,7 @@ export class ProtocolsService {
         const members = people.filter((g) => g.shift === s.number);
         content.push(
           {
-            text: `Смена ${s.number} · начинает: ${APPARATUS_NAMES[s.startApparatus]}`,
+            ...withIcon(s.startApparatus, `Смена ${s.number} · начинает: ${APPARATUS_NAMES[s.startApparatus]}`, 13),
             style: "section",
           },
           members.length === 0
@@ -1214,6 +1216,7 @@ export class ProtocolsService {
         competition,
         `${stage === "FINAL" ? "Финал, судейская ведомость" : "Судейская ведомость"}: ${APPARATUS_NAMES[apparatus]}`,
         content,
+        apparatus,
       ),
     );
   }
@@ -1281,13 +1284,17 @@ export class ProtocolsService {
     },
     title: string,
     content: Content[],
+    /** Снаряд протокола: его значок стоит перед заголовком. */
+    apparatus?: string,
   ): TDocumentDefinitions {
     const sign = (role: string, o: Official | null | undefined) =>
       `${role} ______________________${o ? ` ${officialLabel(o)}` : ""}`;
     const heading: Content[] = [
       { text: competition.name, style: "competition" },
       {
-        text: `${title} · ${DISCIPLINE_NAMES[competition.discipline]}`,
+        ...(apparatus
+          ? withIcon(apparatus, `${title} · ${DISCIPLINE_NAMES[competition.discipline]}`, 15)
+          : { text: `${title} · ${DISCIPLINE_NAMES[competition.discipline]}` }),
         style: "title",
       },
       { text: `Сформирован ${printed()}`, style: "meta" },
@@ -1343,6 +1350,36 @@ export const auditTime = (iso: string) =>
 
 function th(text: string, alignment: "left" | "right" = "left"): TableCell {
   return { text, style: "th", alignment };
+}
+
+/** Значок снаряда для PDF — тот же рисунок, что в программе и на табло. */
+function apparatusSvg(code: string, size: number): ContentSvg | null {
+  const d = APPARATUS_ICONS[code];
+  if (!d) return null;
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="${d}" fill="none" stroke="#222222" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    width: size,
+    height: size,
+  };
+}
+
+/** Значок и текст в одну строку. */
+function withIcon(code: string, text: string, size: number): ContentColumns {
+  const icon = apparatusSvg(code, size);
+  return {
+    columns: [...(icon ? [icon] : []), { text, width: "auto" }],
+    columnGap: Math.round(size / 3),
+  };
+}
+
+/** Заголовок столбца снаряда: значок над названием, по правому краю, как числа. */
+function apparatusTh(code: string): TableCell {
+  const icon = apparatusSvg(code, 12);
+  return {
+    stack: [...(icon ? [{ ...icon, alignment: "right" as const, margin: [0, 0, 0, 2] as [number, number, number, number] }] : []), { text: APPARATUS_NAMES[code]! }],
+    style: "th",
+    alignment: "right",
+  };
 }
 
 function gymnastStack(

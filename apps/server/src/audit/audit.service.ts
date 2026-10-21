@@ -95,7 +95,8 @@ export class AuditService {
         actor: actorLabel(row.actor, judgeById),
         group: described.group,
         action: row.action,
-        apparatus: perf?.apparatus ?? described.apparatus ?? null,
+        // У удалённого выступления снаряд и участник сохранены в самой записи.
+        apparatus: perf?.apparatus ?? described.apparatus ?? (typeof details.apparatus === "string" ? (details.apparatus as Apparatus) : null),
         gymnast: gymnastId ? (personById.get(gymnastId) ?? deleted) : deleted,
         text: perf?.apparatus === "VT" && perf.attempt > 1 ? `${described.text} (прыжок ${perf.attempt})` : described.text,
       };
@@ -143,6 +144,21 @@ export function describe(
       const text = [part("D", labels.d), part("E", "сбавки E"), part("NEUTRAL", "нейтральная")].filter(Boolean).join("; ");
       return { group: "marks", text: `Оценки бригады введены с планшета старшего судьи: ${text}` };
     }
+    case "marks.entered_manually": {
+      const marks = (d.marks as { judgeId: string; kind: string; value: number }[] | undefined) ?? [];
+      const part = (k: string, title: string) => {
+        const values = marks.filter((m) => m.kind === k).map((m) => fmt(m.value));
+        return values.length > 0 ? `${title} ${values.join(", ")}` : null;
+      };
+      const text = [part("D", labels.d), part("E", "сбавки E"), part("NEUTRAL", "нейтральная")].filter(Boolean).join("; ");
+      const was = typeof d.previousTotal === "number" ? `, прежний итог ${fmt(d.previousTotal)}` : "";
+      return { group: "marks", text: `Оценки введены секретариатом с судейского листа: ${text}${was}` };
+    }
+    case "performance.deleted":
+      return {
+        group: "marks",
+        text: `Выступление удалено вместе с оценками${typeof d.previousTotal === "number" ? `, итог был ${fmt(d.previousTotal)}` : ""}`,
+      };
     case "performance.approved":
       return {
         group: "marks",
