@@ -1190,8 +1190,14 @@ export class ProtocolsService {
             people.filter((g) => g.shift === s.number),
             r,
           );
+          // Разряды смены — в порядке разрядов соревнования.
+          const inShift = new Set(members.map((g) => g.categoryId));
+          const names = [...categoryNames].filter(([id]) => inShift.has(id)).map(([, name]) => name);
           content.push(
-            { text: `Ротация ${r + 1} · смена ${s.number}`, style: "section" },
+            {
+              text: `Ротация ${r + 1} · смена ${s.number}${names.length > 0 ? ` · ${names.join(", ")}` : ""}`,
+              style: "section",
+            },
             sheet(members),
           );
         }
@@ -1210,6 +1216,22 @@ export class ProtocolsService {
           ? "Треб. — сбавки за невыполненные требования программы. НС — нейтральная сбавка. Итог = база − Треб. − средняя сбавка E − НС."
           : "НС — нейтральная сбавка.",
       style: "note",
+    });
+    // Подпись старшего судьи снаряда: он отвечает за оценки бригады на бумаге.
+    const [supervisor] = await this.db
+      .select({ name: judges.name, category: judges.category })
+      .from(judges)
+      .where(
+        and(
+          eq(judges.competitionId, competitionId),
+          eq(judges.apparatus, apparatus),
+          eq(judges.role, "SUPERVISOR"),
+        ),
+      )
+      .limit(1);
+    content.push({
+      margin: [0, 24, 0, 0],
+      text: `Старший судья на снаряде ______________________${supervisor ? ` ${officialLabel(supervisor)}` : ""}`,
     });
     return renderPdf(
       this.document(
@@ -1237,7 +1259,8 @@ export class ProtocolsService {
       this.db
         .select()
         .from(categories)
-        .where(eq(categories.competitionId, competitionId)),
+        .where(eq(categories.competitionId, competitionId))
+        .orderBy(asc(categories.position)),
       this.teamNames(competitionId),
     ]);
     return {
