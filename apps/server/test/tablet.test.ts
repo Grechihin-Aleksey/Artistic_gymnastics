@@ -22,7 +22,10 @@ beforeAll(async () => {
   );
   const judge = (name: string, role: string, seat: number, enterAllMarks = false) =>
     admin.post(`/competitions/${competitionId}/judges`, { name, apparatus: "BB", role, seat, enterAllMarks });
-  await judge("Смирнова", "E", 1, true).expect(400);
+  // Флажок «один планшет» у судьи E ничего не значит: судья заводится обычным, без планшета снаряда.
+  const e = (await judge("Смирнова", "E", 1, true).expect(201)).body;
+  expect(e.enterAllMarks).toBe(false);
+  await admin.delete(`/judges/${e.id}`).expect(200);
   tablet = (await judge("Кузнецова", "SUPERVISOR", 1, true).expect(201)).body.token;
 });
 
