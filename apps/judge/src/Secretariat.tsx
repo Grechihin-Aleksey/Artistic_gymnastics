@@ -92,14 +92,22 @@ const categoryParam = (c: Category | undefined) => (c ? (c.id ?? "none") : "");
 export function RotationPanel({ competitionId, discipline, adminToken, onError }: Props) {
   const [view, setView] = useState<RotationView | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
+  // Разряды смены: id участника → название его разряда.
+  const [categoryOf, setCategoryOf] = useState<Map<string, string>>(new Map());
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [rotation, perfs] = await Promise.all([
+      const [rotation, perfs, people, categoryList] = await Promise.all([
         apiRequest<RotationView>(`/competitions/${competitionId}/rotation`),
         apiRequest<PerformanceView[]>(`/competitions/${competitionId}/performances`, { token: adminToken }),
+        apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/categories`),
       ]);
       setView(rotation);
+      const names = new Map(categoryList.map((c) => [c.id, c.name]));
+      setCategoryOf(new Map(people.flatMap((g) => (g.categoryId && names.has(g.categoryId) ? [[g.id, names.get(g.categoryId)!] as const] : []))));
+      setCategoryOrder(categoryList.map((c) => c.name));
       setDone(
         new Set(perfs.filter((p) => p.status === "APPROVED" && p.attempt === 1).map((p) => `${p.gymnastId}:${p.apparatus}`)),
       );
@@ -120,6 +128,8 @@ export function RotationPanel({ competitionId, discipline, adminToken, onError }
     ...s,
     performed: s.gymnastIds.filter((id) => done.has(`${id}:${s.apparatus}`)).length,
   }));
+  const categoriesIn = (ids: string[]) =>
+    categoryOrder.filter((name) => ids.some((id) => categoryOf.get(id) === name)).join(", ");
   const unfinished = progress.filter((s) => s.performed < s.gymnastIds.length);
 
   const setRotation = async (rotation: number) => {
@@ -161,6 +171,7 @@ export function RotationPanel({ competitionId, discipline, adminToken, onError }
         <thead>
           <tr>
             <th>Смена</th>
+            <th>Разряды</th>
             <th>Начинает на</th>
             <th>Сейчас на снаряде</th>
             <th>Выступили</th>
@@ -170,6 +181,7 @@ export function RotationPanel({ competitionId, discipline, adminToken, onError }
           {progress.map((s) => (
             <tr key={s.number}>
               <td>{s.number}</td>
+              <td>{categoriesIn(s.gymnastIds)}</td>
               <td>
                 <select
                   value={s.startApparatus}
@@ -1498,7 +1510,7 @@ export function ShiftsPanel({
   onChanged,
 }: Omit<Props, "discipline"> & { onChanged: () => void }) {
   const [people, setPeople] = useState<RosterGymnast[]>([]);
-  const [categoryCount, setCategoryCount] = useState(0);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [started, setStarted] = useState(false);
   const [mode, setMode] = useState<"none" | "split">("none");
   const [count, setCount] = useState("2");
@@ -1509,11 +1521,11 @@ export function ShiftsPanel({
     try {
       const [list, categoryList, draw] = await Promise.all([
         apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
-        apiRequest<{ id: string }[]>(`/competitions/${competitionId}/categories`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/categories`),
         apiRequest<DrawView>(`/competitions/${competitionId}/draw`, { token: adminToken }),
       ]);
       setPeople(list);
-      setCategoryCount(categoryList.length);
+      setCategories(categoryList);
       setStarted(draw.started);
       const shifts = new Set(list.map((g) => g.shift).filter((n) => n !== null));
       setMode(shifts.size > 0 ? "split" : "none");
@@ -1528,9 +1540,16 @@ export function ShiftsPanel({
   }, [load]);
 
   if (people.length === 0) return null;
-  const sizes = new Map<number, number>();
-  for (const g of people) if (g.shift !== null) sizes.set(g.shift, (sizes.get(g.shift) ?? 0) + 1);
-  const current = [...sizes].sort((a, b) => a[0] - b[0]);
+  const categoryCount = categories.length;
+  const numbers = [...new Set(people.map((g) => g.shift).filter((n): n is number => n !== null))].sort((a, b) => a - b);
+  // Какие разряды в каждой смене и сколько в них участников — в порядке разрядов.
+  const current = numbers.map((number) => {
+    const members = people.filter((g) => g.shift === number);
+    const parts = [...categories, { id: null, name: "без разряда" }]
+      .map((c) => ({ name: c.name, size: members.filter((g) => (g.categoryId ?? null) === c.id).length }))
+      .filter((c) => c.size > 0);
+    return { number, size: members.length, parts };
+  });
   const withoutShift = people.filter((g) => g.shift === null).length;
   const n = Number(count);
   const valid = mode === "none" || (Number.isInteger(n) && n >= 1 && n <= 20);
@@ -1562,15 +1581,39 @@ export function ShiftsPanel({
   return (
     <section className="panel no-print shifts-panel">
       <h2>Смены</h2>
-      <p className="wide">
-        Сейчас:{" "}
-        <strong>
-          {current.length === 0
-            ? "без смен, все выступают вместе"
-            : current.map(([number, size]) => `смена ${number} — ${size} уч.`).join(", ")}
-        </strong>
-        {current.length > 0 && withoutShift > 0 && <span className="warning-text"> · без смены: {withoutShift} уч.</span>}
-      </p>
+      {current.length === 0 ? (
+        <p className="wide">
+          Сейчас: <strong>без смен, все выступают вместе</strong>
+        </p>
+      ) : (
+        <div className="wide table-scroll">
+          <table className="draw-table shift-summary">
+            <thead>
+              <tr>
+                <th>Смена</th>
+                <th className="num">Участников</th>
+                <th>Разряды</th>
+              </tr>
+            </thead>
+            <tbody>
+              {current.map((s) => (
+                <tr key={s.number}>
+                  <td>{s.number}</td>
+                  <td className="num">{s.size}</td>
+                  <td>{s.parts.map((c) => `${c.name} (${c.size})`).join(", ")}</td>
+                </tr>
+              ))}
+              {withoutShift > 0 && (
+                <tr>
+                  <td className="warning-text">без смены</td>
+                  <td className="num warning-text">{withoutShift}</td>
+                  <td className="muted">укажите смену в карточке участника или разделите заново</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="wide shift-modes">
         <label className="check">
           <input type="radio" name="shift-mode" checked={mode === "none"} onChange={() => setMode("none")} />
