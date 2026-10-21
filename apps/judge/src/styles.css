@@ -1294,3 +1294,8 @@ select {
 .shifts-panel select {
   min-width: 19em;
 }
+
+/* Токен секретариата скрыт точками, но это не поле пароля для браузера. */
+input.secret {
+  -webkit-text-security: disc;
+}

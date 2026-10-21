@@ -337,6 +337,14 @@ td {
 
 .num {
   text-align: right;
+  white-space: nowrap;
+}
+
+/* Номер в строке имени и сбавки под итогом видны только на телефоне. */
+.bib-inline,
+.pen-inline,
+.ap-line {
+  display: none;
 }
 
 .rank {
@@ -365,14 +373,42 @@ td {
 
 @media (max-width: 640px) {
   table {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
   th,
   td {
-    padding: 0.4rem 0.35rem;
+    padding: 0.4rem 0.25rem;
   }
   .rank {
-    width: 2.5rem;
+    width: 2rem;
+  }
+  /* На узком экране таблица снаряда не должна быть шире экрана:
+     номер переезжает к имени, сбавки — под итог. */
+  .content {
+    padding: 0.8rem 0.6rem;
+  }
+  .bib,
+  .pen,
+  .ap {
+    display: none;
+  }
+  .name-col .ap-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.1rem 0.7rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .ap-line .app-icon {
+    margin-right: 0.2rem;
+  }
+  .bib-inline {
+    display: inline;
+  }
+  .pen-inline {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 400;
   }
   .name-col .muted {
     display: block;
