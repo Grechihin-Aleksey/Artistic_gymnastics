@@ -1280,3 +1280,17 @@ select {
 .manual-table {
   width: 100%;
 }
+
+.shift-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.warning-text {
+  color: var(--warn);
+}
+
+.shifts-panel select {
+  min-width: 19em;
+}

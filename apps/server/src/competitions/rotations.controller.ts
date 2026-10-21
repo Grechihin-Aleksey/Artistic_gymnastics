@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Put } from "@nestjs/common";
 import {
+  distributeShiftsSchema,
   drawSchema,
   setRotationSchema,
   setShiftStartSchema,
+  type DistributeShiftsInput,
   type DrawInput,
   type SetRotationInput,
   type SetShiftStartInput,
@@ -36,6 +38,12 @@ export class RotationsController {
   @RequireAccess("admin")
   draw(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(drawSchema)) body: DrawInput) {
     return this.rotations.draw(id, body);
+  }
+
+  @Post("shifts/distribute")
+  @RequireAccess("admin")
+  distribute(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(distributeShiftsSchema)) body: DistributeShiftsInput) {
+    return this.rotations.distribute(id, body);
   }
 
   @Put("shifts/:number")

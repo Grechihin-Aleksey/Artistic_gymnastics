@@ -414,6 +414,15 @@ export const parseEntriesSchema = z.object({
  * одной команды при keepTeams выходят подряд. Ручная — секретарь сам ставит номера.
  * Порядок выхода в смене — по возрастанию номеров.
  */
+/**
+ * Деление участников на смены: 0 — без смен, все выступают вместе.
+ * byCategory — разряды целиком, иначе поровну; команда всегда в одной смене.
+ */
+export const distributeShiftsSchema = z.object({
+  shifts: z.number().int().min(0).max(20),
+  byCategory: z.boolean().default(true),
+});
+
 export const drawSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("random"),
@@ -489,6 +498,7 @@ export type CreateFinalsInput = z.infer<typeof createFinalsSchema>;
 export type SetPhaseInput = z.infer<typeof setPhaseSchema>;
 export type ReplaceFinalistInput = z.infer<typeof replaceFinalistSchema>;
 export type DrawInput = z.infer<typeof drawSchema>;
+export type DistributeShiftsInput = z.infer<typeof distributeShiftsSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;

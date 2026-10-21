@@ -1488,6 +1488,129 @@ interface DrawGymnast extends RosterGymnast {
 }
 
 /**
+ * Смены: секретариат делит участников на смены (разряды целиком или поровну)
+ * или убирает смены, и тогда все выступают вместе. Только до первых оценок.
+ */
+export function ShiftsPanel({
+  competitionId,
+  adminToken,
+  onError,
+  onChanged,
+}: Omit<Props, "discipline"> & { onChanged: () => void }) {
+  const [people, setPeople] = useState<RosterGymnast[]>([]);
+  const [categoryCount, setCategoryCount] = useState(0);
+  const [started, setStarted] = useState(false);
+  const [mode, setMode] = useState<"none" | "split">("none");
+  const [count, setCount] = useState("2");
+  const [byCategory, setByCategory] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [list, categoryList, draw] = await Promise.all([
+        apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+        apiRequest<{ id: string }[]>(`/competitions/${competitionId}/categories`),
+        apiRequest<DrawView>(`/competitions/${competitionId}/draw`, { token: adminToken }),
+      ]);
+      setPeople(list);
+      setCategoryCount(categoryList.length);
+      setStarted(draw.started);
+      const shifts = new Set(list.map((g) => g.shift).filter((n) => n !== null));
+      setMode(shifts.size > 0 ? "split" : "none");
+      if (shifts.size > 0) setCount(String(shifts.size));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (people.length === 0) return null;
+  const sizes = new Map<number, number>();
+  for (const g of people) if (g.shift !== null) sizes.set(g.shift, (sizes.get(g.shift) ?? 0) + 1);
+  const current = [...sizes].sort((a, b) => a[0] - b[0]);
+  const withoutShift = people.filter((g) => g.shift === null).length;
+  const n = Number(count);
+  const valid = mode === "none" || (Number.isInteger(n) && n >= 1 && n <= 20);
+
+  const apply = async () => {
+    const shifts = mode === "none" ? 0 : n;
+    const question =
+      shifts === 0
+        ? "Убрать смены? Все участники будут выступать вместе, судьи увидят на снаряде весь список."
+        : `Разделить ${people.length} уч. на ${shifts} ${shifts === 1 ? "смену" : shifts < 5 ? "смены" : "смен"} (${byCategory ? "разряды целиком" : "поровну"})? Смены из таблицы заменятся.`;
+    if (!confirm(question)) return;
+    setBusy(true);
+    try {
+      await apiRequest<RotationView>(`/competitions/${competitionId}/shifts/distribute`, {
+        token: adminToken,
+        method: "POST",
+        body: { shifts, byCategory },
+      });
+      onError(null);
+      await load();
+      onChanged();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel no-print shifts-panel">
+      <h2>Смены</h2>
+      <p className="wide">
+        Сейчас:{" "}
+        <strong>
+          {current.length === 0
+            ? "без смен, все выступают вместе"
+            : current.map(([number, size]) => `смена ${number} — ${size} уч.`).join(", ")}
+        </strong>
+        {current.length > 0 && withoutShift > 0 && <span className="warning-text"> · без смены: {withoutShift} уч.</span>}
+      </p>
+      <div className="wide shift-modes">
+        <label className="check">
+          <input type="radio" name="shift-mode" checked={mode === "none"} onChange={() => setMode("none")} />
+          Без смен: все участники выступают вместе, судьи на снаряде видят весь список
+        </label>
+        <label className="check">
+          <input type="radio" name="shift-mode" checked={mode === "split"} onChange={() => setMode("split")} />
+          Разделить на смены: смены переходят со снаряда на снаряд по ротациям
+        </label>
+      </div>
+      {mode === "split" && (
+        <>
+          <label>
+            Сколько смен
+            <input inputMode="numeric" value={count} onChange={(e) => setCount(e.target.value)} />
+          </label>
+          <label>
+            Как делить
+            <select value={byCategory ? "category" : "even"} onChange={(e) => setByCategory(e.target.value === "category")}>
+              <option value="category">Разряды целиком{categoryCount > 0 ? ` (разрядов: ${categoryCount})` : ""}</option>
+              <option value="even">Поровну, команда не разрывается</option>
+            </select>
+          </label>
+        </>
+      )}
+      <div className="buttons wide">
+        <button type="button" className="primary" disabled={!valid || busy || started} onClick={() => void apply()}>
+          {mode === "none" ? "Убрать смены" : "Разделить на смены"}
+        </button>
+      </div>
+      <p className="muted wide">
+        {started
+          ? "Соревнование уже идёт: после первых оценок смены не меняют."
+          : "Смены можно задать и в таблице участников (столбец «Смена»). Отдельному участнику смену меняют в его карточке."}
+      </p>
+    </section>
+  );
+}
+
+/**
  * Жеребьёвка стартовых номеров до начала соревнований: случайная или ручная.
  * Порядок выхода в смене — по возрастанию номеров.
  */

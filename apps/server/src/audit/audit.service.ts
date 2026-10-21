@@ -184,6 +184,14 @@ export function describe(
       const changed = bibs.filter((b) => b.from !== b.to).length;
       return { group: "roster", text: `Жеребьёвка номеров (${action === "draw.random" ? "случайная" : "ручная"}): изменено номеров — ${changed}` };
     }
+    case "shifts.distributed":
+      return {
+        group: "roster",
+        text:
+          d.shifts === 0
+            ? "Смены убраны: все участники выступают вместе"
+            : `Участники разделены на смены: ${String(d.shifts)}, ${d.byCategory ? "разряды целиком" : "поровну"}`,
+      };
     case "gymnast.added":
       return { group: "roster", text: "Участник добавлен" };
     case "gymnasts.imported":
