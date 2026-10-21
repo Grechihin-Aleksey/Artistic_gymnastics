@@ -1,10 +1,22 @@
 import { Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
 import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
+import { LiveGateway } from "../live/live.gateway";
 import { CompetitionsService, publicCompetition } from "./competitions.service";
 
 @Controller()
 export class JudgesController {
-  constructor(private readonly competitions: CompetitionsService) {}
+  constructor(
+    private readonly competitions: CompetitionsService,
+    private readonly live: LiveGateway,
+  ) {}
+
+  /** Секретариат видит, чьи планшеты на связи с сервером. */
+  @Get("competitions/:id/judges/presence")
+  @RequireAccess("admin")
+  async presence(@Param("id", ParseUUIDPipe) id: string) {
+    const judges = await this.competitions.listJudges(id);
+    return this.live.presence(judges.map((j) => j.id));
+  }
 
   /** Страница судьи узнаёт по токену, кто она и на каком снаряде. */
   @Get("me")
