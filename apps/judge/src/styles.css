@@ -1495,3 +1495,43 @@ input.secret {
   min-height: 3rem;
   font-size: 1.05rem;
 }
+
+/* Жеребьёвка по сменам и судьи по снарядам: сворачиваемые блоки на всю ширину панели. */
+.draw-shift,
+.judges-list details {
+  border-bottom: 1px solid var(--line);
+  padding: 4px 0;
+}
+
+.draw-shift > summary,
+.judges-list summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.draw-shift-bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.draw-table.draw-list {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.draw-table.draw-list th:nth-child(1) {
+  width: 110px;
+}
+
+.draw-table.draw-list th:nth-child(2),
+.draw-table.draw-list th:nth-child(3) {
+  width: 32%;
+}
+
+.judges-list > details {
+  grid-column: 1 / -1;
+}
+
+.judges-list table {
+  width: 100%;
+}

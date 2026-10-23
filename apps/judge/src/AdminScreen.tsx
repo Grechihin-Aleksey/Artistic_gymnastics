@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
@@ -552,20 +552,21 @@ export function AdminScreen() {
             />
 
             {judges.length > 0 && (
-              <table className="panel no-print">
-                <tbody>
-                  {judges.map((j) => (
-                    <JudgeRow
-                      key={j.id}
-                      judge={j}
-                      discipline={competition.discipline}
-                      onSave={(changes) => saveJudge(j, changes)}
-                      onRemove={() => void removeJudge(j)}
-                      onReissue={() => void reissue(j)}
-                    />
-                  ))}
-                </tbody>
-              </table>
+              <JudgesByApparatus
+                judges={judges}
+                discipline={competition.discipline}
+                renderRow={(j) => (
+                  <JudgeRow
+                    key={j.id}
+                    judge={j}
+                    grouped
+                    discipline={competition.discipline}
+                    onSave={(changes) => saveJudge(j, changes)}
+                    onRemove={() => void removeJudge(j)}
+                    onReissue={() => void reissue(j)}
+                  />
+                )}
+              />
             )}
 
             {issued.length > 0 && (
@@ -684,14 +685,72 @@ function QrCard({ judge }: { judge: IssuedJudge }) {
 }
 
 /** Строка судьи в списке: просмотр или правка на месте. */
+const ROLE_ORDER: Record<JudgeRole, number> = { SUPERVISOR: 0, D: 1, E: 2 };
+
+/**
+ * Судьи по снарядам: каждый снаряд сворачивается, в заголовке — состав бригады.
+ * На большом турнире список иначе растягивается на несколько экранов.
+ */
+function JudgesByApparatus({
+  judges,
+  discipline,
+  renderRow,
+}: {
+  judges: Judge[];
+  discipline: Discipline;
+  renderRow: (judge: Judge) => ReactNode;
+}) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const groups = apparatusFor(discipline)
+    .map((apparatus) => ({
+      apparatus,
+      panel: judges
+        .filter((j) => j.apparatus === apparatus)
+        .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.seat - b.seat),
+    }))
+    .filter((g) => g.panel.length > 0);
+  const single = groups.length === 1;
+  return (
+    <div className="panel no-print judges-list">
+      {groups.map(({ apparatus, panel }) => (
+        <details
+          key={apparatus}
+          open={single || open.has(apparatus)}
+          onToggle={(ev) => {
+            const isOpen = ev.currentTarget.open;
+            setOpen((set) => {
+              if (set.has(apparatus) === isOpen) return set;
+              const next = new Set(set);
+              if (isOpen) next.add(apparatus);
+              else next.delete(apparatus);
+              return next;
+            });
+          }}
+        >
+          <summary>
+            <strong>{APPARATUS_NAMES[apparatus]}</strong>
+            <span className="muted"> · {panel.map((j) => judgeLabel(j.role, j.seat)).join(", ")}</span>
+          </summary>
+          <table>
+            <tbody>{panel.map(renderRow)}</tbody>
+          </table>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function JudgeRow({
   judge,
+  grouped = false,
   discipline,
   onSave,
   onRemove,
   onReissue,
 }: {
   judge: Judge;
+  /** В списке по снарядам снаряд уже указан в заголовке. */
+  grouped?: boolean;
   discipline: Discipline;
   onSave: (changes: Partial<Judge>) => Promise<boolean>;
   onRemove: () => void;
@@ -701,7 +760,7 @@ function JudgeRow({
   if (!editing) {
     return (
       <tr>
-        <td>{APPARATUS_NAMES[judge.apparatus]}</td>
+        {!grouped && <td>{APPARATUS_NAMES[judge.apparatus]}</td>}
         <td>
           {judgeLabel(judge.role, judge.seat)}
           {judge.enterAllMarks && <span className="muted"> · планшет снаряда</span>}
