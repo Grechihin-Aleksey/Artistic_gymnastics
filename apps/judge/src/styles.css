@@ -1031,6 +1031,67 @@ select {
 .progress-table {
   width: 100%;
   border-collapse: collapse;
+  /* Ширина колонок задана заранее, поэтому у всех разрядов они стоят ровно одна под другой. */
+  table-layout: fixed;
+}
+
+.progress-table col.c-place,
+.progress-table col.c-shift {
+  width: 70px;
+}
+
+.progress-table col.c-bib {
+  width: 56px;
+}
+
+.progress-table col.c-club {
+  width: 22%;
+}
+
+.progress-table col.c-num {
+  width: 96px;
+}
+
+.progress-table.progress-aa {
+  min-width: 980px;
+}
+
+.progress-table.progress-one {
+  min-width: 760px;
+}
+
+.progress-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-category {
+  border-bottom: 1px solid var(--line);
+}
+
+.progress-category > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.progress-category > summary::-webkit-details-marker {
+  display: none;
+}
+
+.progress-category > summary h3 {
+  display: inline-block;
+}
+
+.progress-category > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.2em;
+  color: var(--accent);
+  transition: transform 0.15s;
+}
+
+.progress-category[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .progress-table th,
@@ -1232,10 +1293,30 @@ select {
 }
 
 .manual-table tr.manual-group th {
-  padding-top: 18px;
+  padding-top: 12px;
   text-align: left;
+}
+
+.manual-table tr.manual-group button {
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font: inherit;
   font-size: 1.05em;
+  font-weight: 600;
   color: var(--accent);
+  cursor: pointer;
+}
+
+.manual-table tr.manual-group button::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.2em;
+  transition: transform 0.15s;
+}
+
+.manual-table tr.manual-group.open button::before {
+  transform: rotate(90deg);
 }
 
 .manual-table tr.manual-form td {

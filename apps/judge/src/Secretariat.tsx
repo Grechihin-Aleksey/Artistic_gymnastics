@@ -3656,6 +3656,8 @@ export function ManualScoresPanel({
   const [attempt, setAttempt] = useState(1);
   const [shift, setShift] = useState("all");
   const [category, setCategory] = useState("all");
+  // Развёрнутые разряды; по умолчанию свёрнуты, чтобы длинный список не уходил вниз на много экранов.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [people, setPeople] = useState<DrawGymnast[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
@@ -3722,6 +3724,14 @@ export function ManualScoresPanel({
         a.bib - b.bib,
     );
 
+  const toggleGroup = (group: string) =>
+    setOpenGroups((set) => {
+      const next = new Set(set);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+
   const open = (g: RosterGymnast) => {
     setSaved(null);
     setDraft(draftFor(g.id, eCount, byGymnast.get(g.id)));
@@ -3749,6 +3759,7 @@ export function ManualScoresPanel({
       await load();
       // Следующий по списку без оценки — чтобы вводить лист подряд.
       const next = rows.slice(rows.indexOf(g) + 1).find((p) => p.status === "ACTIVE" && !byGymnast.has(p.id));
+      if (next) setOpenGroups((set) => new Set(set).add(next.categoryId ?? "none"));
       setDraft(next ? draftFor(next.id, eCount, undefined) : null);
     } catch (err) {
       onError((err as Error).message);
@@ -3887,45 +3898,60 @@ export function ManualScoresPanel({
               const approved = perf?.status === "APPROVED" && perf.score;
               const editing = draft?.gymnastId === g.id;
               const out = g.status !== "ACTIVE";
+              const group = g.categoryId ?? "none";
+              // При поиске и при выбранном разряде список показывается целиком.
+              const folded = byCategory && category === "all" && !query && !openGroups.has(group);
+              const inGroup = newGroup ? rows.filter((r) => (r.categoryId ?? "none") === group) : [];
+              const entered = inGroup.filter((r) => byGymnast.get(r.id)?.status === "APPROVED").length;
               return (
                 <Fragment key={g.id}>
                   {newGroup && (
-                    <tr className="manual-group">
-                      <th colSpan={columns}>{(g.categoryId && categoryName.get(g.categoryId)) || "Без разряда"}</th>
+                    <tr className={folded ? "manual-group" : "manual-group open"}>
+                      <th colSpan={columns}>
+                        <button type="button" onClick={() => toggleGroup(group)}>
+                          {(g.categoryId && categoryName.get(g.categoryId)) || "Без разряда"}
+                          <span className="muted">
+                            {" "}
+                            · введено {entered} из {inGroup.length}
+                          </span>
+                        </button>
+                      </th>
                     </tr>
                   )}
-                  <tr className={editing ? "now" : out ? "out" : undefined}>
-                    <td>{g.bib}</td>
-                    <td>
-                      {g.lastName} {g.firstName}
-                    </td>
-                    <td>{g.shift ?? ""}</td>
-                    <td className="num">{approved ? fmt(perf.score!.d) : ""}</td>
-                    <td className="num">
-                      {out ? (
-                        GYMNAST_STATUS_NAMES[g.status]
-                      ) : approved ? (
-                        <strong>{fmt(perf.score!.total)}</strong>
-                      ) : perf ? (
-                        <span className="muted">идёт оценка</span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="manual-actions">
-                      {!out && !editing && (
-                        <button type="button" disabled={busy || eCount === 0} onClick={() => open(g)}>
-                          {approved ? "Исправить" : "Ввести"}
-                        </button>
-                      )}
-                      {perf && !editing && (
-                        <button type="button" className="danger" disabled={busy} onClick={() => void remove(g, perf)}>
-                          Удалить
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  {editing && draft && (
+                  {!folded && (
+                    <tr className={editing ? "now" : out ? "out" : undefined}>
+                      <td>{g.bib}</td>
+                      <td>
+                        {g.lastName} {g.firstName}
+                      </td>
+                      <td>{g.shift ?? ""}</td>
+                      <td className="num">{approved ? fmt(perf.score!.d) : ""}</td>
+                      <td className="num">
+                        {out ? (
+                          GYMNAST_STATUS_NAMES[g.status]
+                        ) : approved ? (
+                          <strong>{fmt(perf.score!.total)}</strong>
+                        ) : perf ? (
+                          <span className="muted">идёт оценка</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="manual-actions">
+                        {!out && !editing && (
+                          <button type="button" disabled={busy || eCount === 0} onClick={() => open(g)}>
+                            {approved ? "Исправить" : "Ввести"}
+                          </button>
+                        )}
+                        {perf && !editing && (
+                          <button type="button" className="danger" disabled={busy} onClick={() => void remove(g, perf)}>
+                            Удалить
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  {!folded && editing && draft && (
                     <tr ref={form} className="manual-form">
                       <td colSpan={columns}>
                         <div className="manual-fields">
@@ -4000,6 +4026,8 @@ export function ProgressPanel({
   const [shift, setShift] = useState("all");
   const [view, setView] = useState<ProgressView>("AA");
   const [updated, setUpdated] = useState<Date | null>(null);
+  // Развёрнутые разряды. Таблица обновляется каждые 5 секунд, выбор при этом сохраняется.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const program = apparatusFor(discipline);
 
   const load = useCallback(async () => {
@@ -4030,6 +4058,17 @@ export function ProgressPanel({
     snap.live.flatMap((l) => (l.current ? [[l.current.gymnast.id, l.apparatus] as const] : [])),
   );
   const categories = snap.categories.filter((c) => category === "all" || (c.id ?? "none") === category);
+  // Один разряд на экране — он раскрыт всегда, сворачивать нечего.
+  const single = categories.length === 1;
+  const isOpen = (key: string) => single || expanded.has(key);
+  const toggle = (key: string, open: boolean) =>
+    setExpanded((prev) => {
+      if (prev.has(key) === open) return prev;
+      const next = new Set(prev);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
 
   return (
     <section className="panel no-print progress">
@@ -4087,6 +4126,16 @@ export function ProgressPanel({
         ))}
       </div>
       {updated && <p className="muted wide">Обновлено в {updated.toLocaleTimeString("ru-RU")}, обновляется само каждые 5 секунд.</p>}
+      {!single && categories.length > 0 && (
+        <div className="wide progress-views">
+          <button type="button" onClick={() => setExpanded(new Set(categories.map((c) => c.id ?? "none")))}>
+            Развернуть все
+          </button>
+          <button type="button" onClick={() => setExpanded(new Set())}>
+            Свернуть все
+          </button>
+        </div>
+      )}
 
       {categories.map((c) => {
         const inCategory = people.filter((g) => (g.categoryId ?? null) === c.id);
@@ -4103,16 +4152,34 @@ export function ProgressPanel({
           view === "AA"
             ? inCategory.filter((g) => aa.get(g.id)?.complete).length
             : inCategory.filter((g) => app.has(g.id)).length;
+        const key = c.id ?? "none";
         return (
-          <div key={c.id ?? "none"} className="wide">
-            <h3>
-              {c.name || "Без разряда"}{" "}
-              <span className="muted">
-                · {view === "AA" ? "все снаряды прошли" : "выступили"}: {done} из {inCategory.length}
-              </span>
-            </h3>
+          <details
+            key={key}
+            className="wide progress-category"
+            open={isOpen(key)}
+            onToggle={(ev) => !single && toggle(key, ev.currentTarget.open)}
+          >
+            <summary>
+              <h3>
+                {c.name || "Без разряда"}{" "}
+                <span className="muted">
+                  · {view === "AA" ? "все снаряды прошли" : "выступили"}: {done} из {inCategory.length}
+                </span>
+              </h3>
+            </summary>
             <div className="table-scroll">
-              <table className="draw-table progress-table">
+              <table className={`draw-table progress-table ${view === "AA" ? "progress-aa" : "progress-one"}`}>
+                <colgroup>
+                  <col className="c-place" />
+                  <col className="c-bib" />
+                  <col />
+                  <col className="c-club" />
+                  <col className="c-shift" />
+                  {(view === "AA" ? [...program, "sum"] : ["d", "e", "n", "t"]).map((k) => (
+                    <col key={k} className="c-num" />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Место</th>
@@ -4191,7 +4258,7 @@ export function ProgressPanel({
                 </tbody>
               </table>
             </div>
-          </div>
+          </details>
         );
       })}
     </section>
