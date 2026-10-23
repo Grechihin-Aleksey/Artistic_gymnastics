@@ -1666,6 +1666,7 @@ export function DrawPanel({
 }: Omit<Props, "discipline"> & { onDrawn: () => void }) {
   const [view, setView] = useState<DrawView | null>(null);
   const [people, setPeople] = useState<DrawGymnast[]>([]);
+  const [openShifts, setOpenShifts] = useState<Set<string>>(new Set());
   const [teams, setTeams] = useState<Map<string, string>>(new Map());
   const [categories, setCategories] = useState<Map<string, string>>(new Map());
   const [edits, setEdits] = useState<Record<string, string>>({});
@@ -1728,6 +1729,14 @@ export function DrawPanel({
   };
 
   if (!view || people.length === 0) return null;
+  // Список по сменам: каждую смену можно свернуть, чтобы большой турнир не растягивался на много экранов.
+  const shiftGroups: { key: string; title: string; members: DrawGymnast[] }[] = [];
+  for (const g of people) {
+    const key = g.shift === null ? "none" : String(g.shift);
+    const last = shiftGroups[shiftGroups.length - 1];
+    if (last?.key === key) last.members.push(g);
+    else shiftGroups.push({ key, title: g.shift === null ? "Без смены" : `Смена ${g.shift}`, members: [g] });
+  }
   const first = Number(firstBib);
   const firstValid = Number.isInteger(first) && first >= 1 && first <= 100_000;
 
@@ -1776,39 +1785,69 @@ export function DrawPanel({
             Вручную <span className="muted">— впишите номера и сохраните</span>
           </h3>
         )}
-        <table className="draw-table">
-          <thead>
-            <tr>
-              <th>Смена</th>
-              <th>№</th>
-              <th>Участник</th>
-              <th>Клуб · команда</th>
-              <th>Разряд</th>
-            </tr>
-          </thead>
-          <tbody>
-            {people.map((g) => (
-              <tr key={g.id} className={repeated.includes(g) || invalid.includes(g) ? "invalid" : undefined}>
-                <td className="muted">{g.shift ?? "—"}</td>
-                <td>
-                  <input
-                    inputMode="numeric"
-                    disabled={locked}
-                    value={bibOf(g)}
-                    onChange={(e) => setEdits((all) => ({ ...all, [g.id]: e.target.value }))}
-                  />
-                </td>
-                <td>
-                  {g.lastName} {g.firstName}
-                </td>
-                <td className="muted">
-                  {[g.club, g.teamId ? teams.get(g.teamId) : null].filter(Boolean).join(" · ")}
-                </td>
-                <td className="muted">{g.categoryId ? categories.get(g.categoryId) : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {shiftGroups.map(({ key, title, members }) => {
+          const bad = members.some((g) => repeated.includes(g) || invalid.includes(g));
+          const shiftCategories = [
+            ...new Set(members.map((g) => (g.categoryId ? categories.get(g.categoryId) : null)).filter(Boolean)),
+          ];
+          return (
+            <details
+              key={key}
+              className="draw-shift"
+              open={shiftGroups.length === 1 || bad || openShifts.has(key)}
+              onToggle={(ev) => {
+                const open = ev.currentTarget.open;
+                setOpenShifts((set) => {
+                  if (set.has(key) === open) return set;
+                  const next = new Set(set);
+                  if (open) next.add(key);
+                  else next.delete(key);
+                  return next;
+                });
+              }}
+            >
+              <summary>
+                <strong>{title}</strong>
+                <span className="muted">
+                  {" "}
+                  · {members.length} уч.{shiftCategories.length > 0 ? ` · ${shiftCategories.join(", ")}` : ""}
+                </span>
+                {bad && <span className="draw-shift-bad"> · проверьте номера</span>}
+              </summary>
+              <table className="draw-table draw-list">
+                <thead>
+                  <tr>
+                    <th>№</th>
+                    <th>Участник</th>
+                    <th>Клуб · команда</th>
+                    <th>Разряд</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((g) => (
+                    <tr key={g.id} className={repeated.includes(g) || invalid.includes(g) ? "invalid" : undefined}>
+                      <td>
+                        <input
+                          inputMode="numeric"
+                          disabled={locked}
+                          value={bibOf(g)}
+                          onChange={(e) => setEdits((all) => ({ ...all, [g.id]: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        {g.lastName} {g.firstName}
+                      </td>
+                      <td className="muted">
+                        {[g.club, g.teamId ? teams.get(g.teamId) : null].filter(Boolean).join(" · ")}
+                      </td>
+                      <td className="muted">{g.categoryId ? categories.get(g.categoryId) : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          );
+        })}
         {repeated.length > 0 && (
           <div className="alert">
             Номера повторяются: {[...new Set(repeated.map((g) => bibOf(g).trim()))].map((b) => `№${b}`).join(", ")}
@@ -3656,8 +3695,8 @@ export function ManualScoresPanel({
   const [attempt, setAttempt] = useState(1);
   const [shift, setShift] = useState("all");
   const [category, setCategory] = useState("all");
-  // Развёрнутые разряды; по умолчанию свёрнуты, чтобы длинный список не уходил вниз на много экранов.
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  // Свёрнутые разряды. По умолчанию всё раскрыто: секретарь сразу видит участников и кнопки «Ввести».
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [people, setPeople] = useState<DrawGymnast[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
@@ -3725,7 +3764,7 @@ export function ManualScoresPanel({
     );
 
   const toggleGroup = (group: string) =>
-    setOpenGroups((set) => {
+    setClosedGroups((set) => {
       const next = new Set(set);
       if (next.has(group)) next.delete(group);
       else next.add(group);
@@ -3759,7 +3798,12 @@ export function ManualScoresPanel({
       await load();
       // Следующий по списку без оценки — чтобы вводить лист подряд.
       const next = rows.slice(rows.indexOf(g) + 1).find((p) => p.status === "ACTIVE" && !byGymnast.has(p.id));
-      if (next) setOpenGroups((set) => new Set(set).add(next.categoryId ?? "none"));
+      if (next)
+        setClosedGroups((set) => {
+          const open = new Set(set);
+          open.delete(next.categoryId ?? "none");
+          return open;
+        });
       setDraft(next ? draftFor(next.id, eCount, undefined) : null);
     } catch (err) {
       onError((err as Error).message);
@@ -3900,7 +3944,7 @@ export function ManualScoresPanel({
               const out = g.status !== "ACTIVE";
               const group = g.categoryId ?? "none";
               // При поиске и при выбранном разряде список показывается целиком.
-              const folded = byCategory && category === "all" && !query && !openGroups.has(group);
+              const folded = byCategory && category === "all" && !query && closedGroups.has(group);
               const inGroup = newGroup ? rows.filter((r) => (r.categoryId ?? "none") === group) : [];
               const entered = inGroup.filter((r) => byGymnast.get(r.id)?.status === "APPROVED").length;
               return (
