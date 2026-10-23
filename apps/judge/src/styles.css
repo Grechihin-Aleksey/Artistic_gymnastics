@@ -1115,8 +1115,15 @@ select {
   padding: 6px 10px 6px 0;
 }
 
-.progress-table .num {
-  text-align: right;
+/* Место, номер, смена и оценки — по центру колонки, так их проще сравнивать глазами. */
+.progress-table .num,
+.progress-table th:nth-child(-n + 2),
+.progress-table td:nth-child(-n + 2),
+.progress-table th:nth-child(5),
+.progress-table td:nth-child(5) {
+  text-align: center;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .progress-table tr.now td {
