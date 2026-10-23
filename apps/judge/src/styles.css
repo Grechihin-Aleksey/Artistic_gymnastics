@@ -1231,6 +1231,13 @@ select {
   border-color: var(--bad);
 }
 
+.manual-table tr.manual-group th {
+  padding-top: 18px;
+  text-align: left;
+  font-size: 1.05em;
+  color: var(--accent);
+}
+
 .manual-table tr.manual-form td {
   background: var(--bg);
   padding: 10px;
