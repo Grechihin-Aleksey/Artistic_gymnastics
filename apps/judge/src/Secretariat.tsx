@@ -3655,8 +3655,10 @@ export function ManualScoresPanel({
   const [apparatus, setApparatus] = useState<Apparatus>(program[0]!);
   const [attempt, setAttempt] = useState(1);
   const [shift, setShift] = useState("all");
+  const [category, setCategory] = useState("all");
   const [search, setSearch] = useState("");
-  const [people, setPeople] = useState<RosterGymnast[]>([]);
+  const [people, setPeople] = useState<DrawGymnast[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [seats, setSeats] = useState<PanelSeat[]>([]);
   const [perfs, setPerfs] = useState<PerformanceView[]>([]);
   const [phase, setPhase] = useState<"QUAL" | "FINAL">("QUAL");
@@ -3667,13 +3669,15 @@ export function ManualScoresPanel({
 
   const load = useCallback(async () => {
     try {
-      const [list, judges, done, competition] = await Promise.all([
-        apiRequest<RosterGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+      const [list, cats, judges, done, competition] = await Promise.all([
+        apiRequest<DrawGymnast[]>(`/competitions/${competitionId}/gymnasts`),
+        apiRequest<{ id: string; name: string }[]>(`/competitions/${competitionId}/categories`),
         apiRequest<PanelSeat[]>(`/competitions/${competitionId}/judges`, { token: adminToken }),
         apiRequest<PerformanceView[]>(`/competitions/${competitionId}/performances?apparatus=${apparatus}`, { token: adminToken }),
         apiRequest<{ phase: "QUAL" | "FINAL" }>(`/competitions/${competitionId}`),
       ]);
       setPeople(list);
+      setCategories(cats);
       setSeats(judges);
       setPerfs(done);
       setPhase(competition.phase);
@@ -3701,10 +3705,22 @@ export function ManualScoresPanel({
     perfs.filter((p) => p.stage === phase && p.attempt === attempt).map((p) => [p.gymnastId, p] as const),
   );
   const query = search.trim().toLowerCase();
+  // Разряды — отдельными блоками в порядке, как они заведены; внутри разряда — по сменам и порядку выхода.
+  const byCategory = categories.length > 1;
+  const categoryRank = new Map(categories.map((c, i) => [c.id, i] as const));
+  const categoryName = new Map(categories.map((c) => [c.id, c.name] as const));
+  const rankOf = (g: RosterGymnast) => (g.categoryId ? categoryRank.get(g.categoryId) ?? 999 : 999);
   const rows = people
     .filter((g) => shift === "all" || String(g.shift) === shift)
+    .filter((g) => category === "all" || (g.categoryId ?? "none") === category)
     .filter((g) => !query || String(g.bib) === query || g.lastName.toLowerCase().startsWith(query))
-    .sort((a, b) => (a.shift ?? 99) - (b.shift ?? 99) || a.bib - b.bib);
+    .sort(
+      (a, b) =>
+        (byCategory ? rankOf(a) - rankOf(b) : 0) ||
+        (a.shift ?? 99) - (b.shift ?? 99) ||
+        (a.startOrder ?? Number.MAX_SAFE_INTEGER) - (b.startOrder ?? Number.MAX_SAFE_INTEGER) ||
+        a.bib - b.bib,
+    );
 
   const open = (g: RosterGymnast) => {
     setSaved(null);
@@ -3818,6 +3834,20 @@ export function ManualScoresPanel({
           ))}
         </select>
       </label>
+      {byCategory && (
+        <label>
+          Разряд
+          <select value={category} onChange={(ev) => (setCategory(ev.target.value), setDraft(null))}>
+            <option value="all">Все разряды</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+            {people.some((g) => !g.categoryId) && <option value="none">Без разряда</option>}
+          </select>
+        </label>
+      )}
       <label>
         Найти
         <input value={search} placeholder="номер или фамилия" onChange={(ev) => setSearch(ev.target.value)} />
@@ -3851,13 +3881,19 @@ export function ManualScoresPanel({
             </tr>
           </thead>
           <tbody>
-            {rows.map((g) => {
+            {rows.map((g, i) => {
               const perf = byGymnast.get(g.id);
+              const newGroup = byCategory && (i === 0 || rows[i - 1]!.categoryId !== g.categoryId);
               const approved = perf?.status === "APPROVED" && perf.score;
               const editing = draft?.gymnastId === g.id;
               const out = g.status !== "ACTIVE";
               return (
                 <Fragment key={g.id}>
+                  {newGroup && (
+                    <tr className="manual-group">
+                      <th colSpan={columns}>{(g.categoryId && categoryName.get(g.categoryId)) || "Без разряда"}</th>
+                    </tr>
+                  )}
                   <tr className={editing ? "now" : out ? "out" : undefined}>
                     <td>{g.bib}</td>
                     <td>
