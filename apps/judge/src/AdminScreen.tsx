@@ -688,8 +688,8 @@ function QrCard({ judge }: { judge: IssuedJudge }) {
 const ROLE_ORDER: Record<JudgeRole, number> = { SUPERVISOR: 0, D: 1, E: 2 };
 
 /**
- * Судьи по снарядам: каждый снаряд сворачивается, в заголовке — состав бригады.
- * На большом турнире список иначе растягивается на несколько экранов.
+ * Судьи по снарядам: карточки в три колонки на компьютере, в две на планшете, в одну на телефоне.
+ * Каждый снаряд сворачивается, в заголовке — состав бригады.
  */
 function JudgesByApparatus({
   judges,
@@ -700,7 +700,7 @@ function JudgesByApparatus({
   discipline: Discipline;
   renderRow: (judge: Judge) => ReactNode;
 }) {
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [closed, setClosed] = useState<Set<string>>(new Set());
   const groups = apparatusFor(discipline)
     .map((apparatus) => ({
       apparatus,
@@ -709,19 +709,18 @@ function JudgesByApparatus({
         .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.seat - b.seat),
     }))
     .filter((g) => g.panel.length > 0);
-  const single = groups.length === 1;
   return (
     <div className="panel no-print judges-list">
       {groups.map(({ apparatus, panel }) => (
         <details
           key={apparatus}
-          open={single || open.has(apparatus)}
+          open={!closed.has(apparatus)}
           onToggle={(ev) => {
-            const isOpen = ev.currentTarget.open;
-            setOpen((set) => {
-              if (set.has(apparatus) === isOpen) return set;
+            const isClosed = !ev.currentTarget.open;
+            setClosed((set) => {
+              if (set.has(apparatus) === isClosed) return set;
               const next = new Set(set);
-              if (isOpen) next.add(apparatus);
+              if (isClosed) next.add(apparatus);
               else next.delete(apparatus);
               return next;
             });
@@ -758,6 +757,19 @@ function JudgeRow({
 }) {
   const [editing, setEditing] = useState(false);
   if (!editing) {
+    const actions = (
+      <>
+        <button type="button" className="link" onClick={() => setEditing(true)}>
+          Изменить
+        </button>
+        <button type="button" className="link" onClick={onReissue}>
+          Новый QR-код
+        </button>
+        <button type="button" className="link danger" onClick={onRemove}>
+          Удалить
+        </button>
+      </>
+    );
     return (
       <tr>
         {!grouped && <td>{APPARATUS_NAMES[judge.apparatus]}</td>}
@@ -768,18 +780,10 @@ function JudgeRow({
         <td>
           {judge.name}
           {judge.category && <span className="muted"> · {judge.category}</span>}
+          {/* В карточке снаряда кнопки идут строкой под ФИО, иначе узкая колонка вытягивает их столбиком. */}
+          {grouped && <div className="judge-actions">{actions}</div>}
         </td>
-        <td className="judge-actions">
-          <button type="button" className="link" onClick={() => setEditing(true)}>
-            Изменить
-          </button>
-          <button type="button" className="link" onClick={onReissue}>
-            Новый QR-код
-          </button>
-          <button type="button" className="link danger" onClick={onRemove}>
-            Удалить
-          </button>
-        </td>
+        {!grouped && <td className="judge-actions">{actions}</td>}
       </tr>
     );
   }
