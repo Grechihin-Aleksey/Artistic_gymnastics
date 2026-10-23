@@ -1052,8 +1052,23 @@ select {
   width: 96px;
 }
 
+/* В многоборье оценки шире и с отступом между собой, имя и клуб уступают им место. */
+.progress-table.progress-aa col.c-club {
+  width: 16%;
+}
+
+.progress-table.progress-aa col.c-num {
+  width: 120px;
+}
+
+.progress-table.progress-aa th.num,
+.progress-table.progress-aa td.num {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
 .progress-table.progress-aa {
-  min-width: 980px;
+  min-width: 1100px;
 }
 
 .progress-table.progress-one {
@@ -1497,8 +1512,7 @@ input.secret {
 }
 
 /* Жеребьёвка по сменам и судьи по снарядам: сворачиваемые блоки на всю ширину панели. */
-.draw-shift,
-.judges-list details {
+.draw-shift {
   border-bottom: 1px solid var(--line);
   padding: 4px 0;
 }
@@ -1542,8 +1556,57 @@ input.secret {
   width: 64px;
 }
 
+/* Судьи по снарядам: три колонки на компьютере, две на планшете, одна на телефоне. */
+.admin .panel.judges-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
 .judges-list > details {
-  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 12px 8px;
+  min-width: 0;
+}
+
+.judges-list .judge-actions {
+  white-space: normal;
+}
+
+.judges-list td:first-child {
+  width: 3.5em;
+  vertical-align: top;
+}
+
+/* Кнопки строкой под ФИО; на узком экране переносятся по ровному левому краю. */
+.judges-list .judge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 4px;
+  font-size: 0.9em;
+}
+
+.judges-list .judge-actions button,
+.judges-list .judge-actions button + button {
+  margin: 0;
+  padding: 2px 0;
+  min-height: 0;
+  width: auto;
+}
+
+@media (max-width: 1100px) {
+  .admin .panel.judges-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .admin .panel.judges-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .judges-list table {
