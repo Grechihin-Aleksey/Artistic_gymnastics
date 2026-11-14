@@ -47,6 +47,24 @@ select {
   color: inherit;
 }
 
+/*
+ * Обычная кнопка: рамка, скругление и та же высота, что у главной (44 px).
+ * :where не добавляет веса, поэтому своё оформление отдельных кнопок сильнее.
+ */
+:where(button:not(.link)) {
+  min-height: 44px;
+  padding: 6px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+:where(button:not(.link):disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .screen {
   min-height: 100vh;
   display: flex;
@@ -261,6 +279,15 @@ select {
 .primary:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* В секретариате главная кнопка той же высоты, что и обычные рядом с ней. */
+.admin :where(.primary) {
+  width: auto;
+  min-height: 44px;
+  padding: 6px 20px;
+  font-size: 16px;
+  margin-bottom: 0;
 }
 
 .supervisor table {

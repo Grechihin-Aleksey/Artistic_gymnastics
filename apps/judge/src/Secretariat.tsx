@@ -689,9 +689,9 @@ export function NewCompetitionForm({
       <label>
         Программа
         <select name="discipline" defaultValue="WAG">
-          <option value="WAG">Женщины (4 снаряда)</option>
-          <option value="MAG">Мужчины (6 снарядов)</option>
-          <option value="MIXED">Девочки и мальчики (4 и 6 снарядов)</option>
+          <option value="WAG">Женская (4 снаряда)</option>
+          <option value="MAG">Мужская (6 снарядов)</option>
+          <option value="MIXED">Женская и мужская (4 и 6)</option>
         </select>
       </label>
       <label>
@@ -844,8 +844,8 @@ export function DemoCompetitionForm<J>({
       <label>
         Программа
         <select name="discipline" defaultValue="WAG">
-          <option value="WAG">Женщины (4 снаряда)</option>
-          <option value="MAG">Мужчины (6 снарядов)</option>
+          <option value="WAG">Женская (4 снаряда)</option>
+          <option value="MAG">Мужская (6 снарядов)</option>
         </select>
       </label>
       <label>
