@@ -3620,6 +3620,7 @@ export function TransferPanel({
           Выгрузить в файл
         </button>
       </div>
+      <CloudBackupLine adminToken={adminToken} />
       <label className="wide">
         Чтобы удалить турнир, введите его название: {name}
         <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoComplete="off" />
@@ -3636,6 +3637,70 @@ export function TransferPanel({
         <p className="muted">Перед удалением выгрузите турнир в файл, если он ещё понадобится.</p>
       </div>
     </section>
+  );
+}
+
+interface CloudBackupStatus {
+  enabled: boolean;
+  bucket: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
+
+/** Строка о копии базы в облачное хранилище S3 и кнопка «Отправить сейчас». */
+function CloudBackupLine({ adminToken }: { adminToken: string }) {
+  const [status, setStatus] = useState<CloudBackupStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      apiRequest<CloudBackupStatus>("/cloud-backup", { token: adminToken })
+        .then((s) => alive && setStatus(s))
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(() => void load(), 60_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [adminToken]);
+
+  if (!status) return null;
+  if (!status.enabled) {
+    return (
+      <p className="muted wide">
+        Копия в облако не настроена. Чтобы копия базы уходила в хранилище S3 (например, на Beget), заполните строки S3_ в файле .env
+        и перезапустите программу.
+      </p>
+    );
+  }
+  const time = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  const failed = status.lastError && (!status.lastSuccessAt || status.lastErrorAt! > status.lastSuccessAt);
+  const sendNow = async () => {
+    setBusy(true);
+    try {
+      setStatus(await apiRequest<CloudBackupStatus>("/cloud-backup", { token: adminToken, method: "POST" }));
+    } catch (e) {
+      setStatus((s) => s && { ...s, lastError: (e as Error).message, lastErrorAt: new Date().toISOString() });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="wide cloud-backup">
+      <p className={failed ? "warning" : "muted"}>
+        {failed
+          ? `Копия в облако (${status.bucket}) не ушла ${time(status.lastErrorAt!)}: ${status.lastError}. Программа повторит попытку сама.`
+          : status.lastSuccessAt
+            ? `Копия в облако (${status.bucket}) отправлена ${time(status.lastSuccessAt)}.`
+            : `Копия в облако (${status.bucket}) уйдёт через минуту после запуска, затем каждые 15 минут.`}
+      </p>
+      <button type="button" disabled={busy} onClick={() => void sendNow()}>
+        {busy ? "Отправляю…" : "Отправить сейчас"}
+      </button>
+    </div>
   );
 }
 
