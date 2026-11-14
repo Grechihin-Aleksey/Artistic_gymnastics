@@ -1265,6 +1265,27 @@ select {
   flex: 1 1 100%;
 }
 
+.site-panel .site-embed input {
+  flex: 1 1 320px;
+  min-width: 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 14px;
+}
+
+.site-panel details.site-embed {
+  display: block;
+}
+
+.site-panel details.site-embed > summary {
+  cursor: pointer;
+}
+
+.site-panel details.site-embed textarea {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+}
+
 .site-panel .site-embed textarea {
   flex: 1 1 320px;
   min-width: 0;

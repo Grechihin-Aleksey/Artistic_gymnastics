@@ -42,6 +42,8 @@
 <script src="https://АДРЕС-РЕТРАНСЛЯТОРА/embed.js" async></script>
 ```
 
+На сайте на WordPress удобнее плагин «Табло результатов» (`downloads/ag-results-wordpress.zip`): табло вставляется шорткодом `[ag_results id="ID соревнования" theme="dark"]`, и редактору не нужны права администратора. Готовый шорткод есть в секретариате. Установка описана в [apps/relay/README.md](apps/relay/README.md#плагин-wordpress-табло-шорткодом).
+
 ID соревнования виден в адресе табло после `#c=`. `data-view`: `auto` (экраны по очереди), `now` (сейчас на снарядах), `aa` (многоборье), `teams` (команды) или код снаряда (`FX`, `VT`, `BB`…). `data-theme`: `light` или `dark`.
 
 ## Разработка
