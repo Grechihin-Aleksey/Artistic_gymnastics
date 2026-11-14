@@ -1645,3 +1645,9 @@ input.secret {
   min-height: 44px;
   padding: 6px 14px;
 }
+
+.tablet .recheck {
+  margin-top: 12px;
+  min-height: 48px;
+  padding: 0 20px;
+}
