@@ -96,6 +96,8 @@ export function AdminScreen() {
   const [newRole, setNewRole] = useState<JudgeRole>("D");
   const [newSingle, setNewSingle] = useState(false);
   const [issued, setIssued] = useState<IssuedJudge[]>([]);
+  /** Судьи, чей код не восстановить (выдан до обновления): им нужен «Новый QR-код». */
+  const [lostCodes, setLostCodes] = useState<Judge[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => tabFromHash() ?? "competition");
   // Растёт после загрузки участников: в правилах появляются новые разряды.
@@ -221,11 +223,30 @@ export function AdminScreen() {
     }
   };
 
+  /** Все QR-коды для печати, прежние: перевыпускать не нужно, планшеты остаются в работе. */
+  const showAllCodes = async () => {
+    if (!competition) return;
+    try {
+      const codes = await apiRequest<(Judge & { token: string | null })[]>(`/competitions/${competition.id}/judges/codes`, {
+        token: adminToken,
+      });
+      // Если на снаряде один планшет, судьям D и E коды не нужны: оценки за них вводит старший.
+      const tabletApparatus = new Set(codes.filter((j) => j.enterAllMarks).map((j) => j.apparatus));
+      const needed = codes.filter((j) => j.role === "SUPERVISOR" || !tabletApparatus.has(j.apparatus));
+      setIssued(needed.filter((j): j is IssuedJudge => j.token !== null));
+      setLostCodes(needed.filter((j) => j.token === null));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const reissue = async (judge: Judge) => {
     if (!confirm(`Выдать ${judge.name} новый QR-код? Старый перестанет работать.`)) return;
     try {
       const fresh = await apiRequest<IssuedJudge>(`/judges/${judge.id}/token`, { token: adminToken, method: "POST" });
       setIssued((list) => [...list.filter((j) => j.id !== judge.id), fresh]);
+      setLostCodes((list) => list.filter((j) => j.id !== judge.id));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -335,6 +356,7 @@ export function AdminScreen() {
               onError={setError}
               onCreated={(id) => {
                 setIssued([]);
+                setLostCodes([]);
                 void loadCompetitions(id);
               }}
             />
@@ -348,6 +370,7 @@ export function AdminScreen() {
               onError={setError}
               onImported={(id) => {
                 setIssued([]);
+                setLostCodes([]);
                 void loadCompetitions(id);
               }}
             />
@@ -407,6 +430,7 @@ export function AdminScreen() {
               onError={setError}
               onDeleted={() => {
                 setIssued([]);
+                setLostCodes([]);
                 setCompetitionId("");
                 void loadCompetitions();
               }}
@@ -572,13 +596,32 @@ export function AdminScreen() {
               />
             )}
 
+            {judges.length > 0 && (
+              <div className="no-print qr-actions">
+                <button type="button" onClick={() => void showAllCodes()}>
+                  Показать QR-коды всех судей
+                </button>
+                <span className="muted">
+                  Для перепечатки: коды прежние, планшеты продолжают работать. Если на снаряде один планшет, показывается
+                  только код старшего судьи.
+                </span>
+              </div>
+            )}
+            {lostCodes.length > 0 && (
+              <p className="warning no-print">
+                Эти коды выданы до обновления программы, и показать их снова нельзя:{" "}
+                {lostCodes.map((j) => `${j.name} (${APPARATUS_NAMES[j.apparatus]})`).join(", ")}. Нажмите у них «Новый QR-код»
+                один раз, дальше их коды можно будет перепечатывать.
+              </p>
+            )}
+
             {issued.length > 0 && (
               <>
                 <div className="no-print">
                   <button type="button" className="primary" onClick={() => print()}>
                     Печать QR-кодов
                   </button>
-                  <p className="muted">Код показывается один раз. Если планшет потерян, выдайте новый код.</p>
+                  <p className="muted">Если планшет потерян, выдайте судье новый код: старый перестанет работать.</p>
                 </div>
                 <div className="qr-grid">
                   {issued.map((j) => (

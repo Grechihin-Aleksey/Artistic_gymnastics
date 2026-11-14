@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 export function newToken(): string {
   return randomBytes(24).toString("base64url");
@@ -12,4 +12,31 @@ export function sameToken(a: string, b: string): boolean {
   const ha = Buffer.from(hashToken(a), "hex");
   const hb = Buffer.from(hashToken(b), "hex");
   return timingSafeEqual(ha, hb);
+}
+
+/**
+ * Токен судьи в зашифрованном виде, чтобы секретариат мог перепечатать QR-код
+ * без перевыпуска. Ключ — из токена секретариата: копия базы (в том числе в
+ * облаке) без файла .env кодов не раскрывает. AES-256-GCM: iv.tag.шифр в base64url.
+ */
+const sealKey = (adminToken: string) => createHash("sha256").update(`judge-token:${adminToken}`).digest();
+
+export function sealToken(token: string, adminToken: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealKey(adminToken), iv);
+  const data = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  return [iv, cipher.getAuthTag(), data].map((b) => b.toString("base64url")).join(".");
+}
+
+/** Токен из зашифрованного вида; null, если зашифрован другим токеном секретариата или повреждён. */
+export function openToken(sealed: string | null, adminToken: string): string | null {
+  if (!sealed) return null;
+  try {
+    const [iv, tag, data] = sealed.split(".").map((p) => Buffer.from(p, "base64url"));
+    const decipher = createDecipheriv("aes-256-gcm", sealKey(adminToken), iv!);
+    decipher.setAuthTag(tag!);
+    return Buffer.concat([decipher.update(data!), decipher.final()]).toString("utf8");
+  } catch {
+    return null;
+  }
 }

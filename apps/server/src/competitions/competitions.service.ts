@@ -16,7 +16,8 @@ import type {
   UpdateGymnastInput,
 } from "@ag/shared";
 import { and, asc, eq, inArray, isNull, max, ne } from "drizzle-orm";
-import { hashToken, newToken } from "../auth/tokens";
+import { hashToken, newToken, openToken, sealToken } from "../auth/tokens";
+import { APP_CONFIG, type AppConfig } from "../config";
 import { DB, type Db } from "../db/db.module";
 import { auditLog, categories, competitions, gymnasts, judges, marks, performances, shifts, teams } from "../db/schema";
 
@@ -45,9 +46,21 @@ function sortKeys(record: Partial<Record<string, number>>) {
 const PNG = [0x89, 0x50, 0x4e, 0x47];
 const JPEG = [0xff, 0xd8, 0xff];
 
+/** Судья без секретов входа. */
+export function withoutSecrets<T extends { tokenHash: string; tokenSealed: string | null }>({
+  tokenHash: _hash,
+  tokenSealed: _sealed,
+  ...judge
+}: T): Omit<T, "tokenHash" | "tokenSealed"> {
+  return judge;
+}
+
 @Injectable()
 export class CompetitionsService {
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+  ) {}
 
   async create(input: CreateCompetitionInput): Promise<CompetitionRow> {
     const format = input.teamFormat ?? { roster: 5, perApparatus: 4, counting: 3 };
@@ -558,9 +571,9 @@ export class CompetitionsService {
     const token = newToken();
     const [row] = await this.db
       .insert(judges)
-      .values({ competitionId, ...input, tokenHash: hashToken(token) })
+      .values({ competitionId, ...input, tokenHash: hashToken(token), tokenSealed: sealToken(token, this.config.adminToken) })
       .returning();
-    const { tokenHash: _, ...judge } = row!;
+    const judge = withoutSecrets(row!);
     await this.db.insert(auditLog).values({ competitionId, actor: "admin", action: "judge.added", details: { judgeId: judge.id } });
     return { ...judge, token };
   }
@@ -624,7 +637,7 @@ export class CompetitionsService {
       })
       .where(eq(judges.id, judgeId))
       .returning();
-    const { tokenHash: _, ...judge } = row!;
+    const judge = withoutSecrets(row!);
     await this.db.insert(auditLog).values({
       competitionId: before.competitionId,
       actor: "admin",
@@ -659,11 +672,11 @@ export class CompetitionsService {
     const token = newToken();
     const [row] = await this.db
       .update(judges)
-      .set({ tokenHash: hashToken(token) })
+      .set({ tokenHash: hashToken(token), tokenSealed: sealToken(token, this.config.adminToken) })
       .where(eq(judges.id, judgeId))
       .returning();
     if (!row) throw new NotFoundException("Судья не найден");
-    const { tokenHash: _, ...judge } = row;
+    const judge = withoutSecrets(row);
     await this.db
       .insert(auditLog)
       .values({ competitionId: row.competitionId, actor: "admin", action: "judge.token_reissued", details: { judgeId: row.id } });
@@ -680,12 +693,26 @@ export class CompetitionsService {
     return rows;
   }
 
+  /**
+   * Судьи с токенами для печати QR-кодов. token null — код выдан до того, как
+   * коды стали сохраняться, или при другом токене секретариата: нужен «Новый QR-код».
+   */
+  async judgeCodes(competitionId: string) {
+    await this.get(competitionId);
+    const rows = await this.db
+      .select()
+      .from(judges)
+      .where(eq(judges.competitionId, competitionId))
+      .orderBy(asc(judges.apparatus), asc(judges.role), asc(judges.seat));
+    return rows.map((row) => ({ ...withoutSecrets(row), token: openToken(row.tokenSealed, this.config.adminToken) }));
+  }
+
   async listJudges(competitionId: string) {
     const rows = await this.db
       .select()
       .from(judges)
       .where(eq(judges.competitionId, competitionId))
       .orderBy(asc(judges.apparatus), asc(judges.role), asc(judges.seat));
-    return rows.map(({ tokenHash: _, ...judge }) => judge);
+    return rows.map(withoutSecrets);
   }
 }

@@ -1632,3 +1632,16 @@ input.secret {
   margin: 0;
   flex: 1 1 280px;
 }
+
+.qr-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.qr-actions button {
+  min-height: 44px;
+  padding: 6px 14px;
+}
