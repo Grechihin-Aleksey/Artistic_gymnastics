@@ -88,6 +88,53 @@ function loginUrl(token: string): string {
   return `${location.origin}/judge/#token=${encodeURIComponent(token)}`;
 }
 
+/** Секретариат открыт по адресу localhost: ссылки и QR-коды с ним не откроются на других устройствах. */
+const LOCAL_ONLY = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+
+/**
+ * Копирует текст в буфер обмена. В сети зала страница открыта по http, а там navigator.clipboard нет,
+ * поэтому запасной путь — скрытое поле и команда «копировать».
+ */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Пробуем запасной путь.
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+}
+
+function judgeTitle(judge: Judge): string {
+  return `${APPARATUS_NAMES[judge.apparatus]}, ${judgeLabel(judge.role, judge.seat)}`;
+}
+
+/** Таблица ссылок для Excel: точка с запятой и BOM, чтобы русский Excel открыл её по колонкам и без «кракозябр». */
+function linksCsv(list: IssuedJudge[]): string {
+  const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const rows = [
+    ["Снаряд", "Роль", "ФИО", "Категория", "Ссылка для входа"],
+    ...list.map((j) => [APPARATUS_NAMES[j.apparatus] ?? j.apparatus, judgeLabel(j.role, j.seat), j.name, j.category ?? "", loginUrl(j.token)]),
+  ];
+  return "\uFEFF" + rows.map((r) => r.map(cell).join(";")).join("\r\n") + "\r\n";
+}
+
 /** Секретариат: судьи и их QR-коды, протоколы, запросы тренеров на пересмотр D. */
 export function AdminScreen() {
   const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem(ADMIN_KEY) ?? "");
@@ -99,6 +146,10 @@ export function AdminScreen() {
   const [issued, setIssued] = useState<IssuedJudge[]>([]);
   /** Судьи, чей код не восстановить (выдан до обновления): им нужен «Новый QR-код». */
   const [lostCodes, setLostCodes] = useState<Judge[]>([]);
+  /** Ссылки судей текстом: для компьютеров без камеры, чтобы разослать судьям. */
+  const [links, setLinks] = useState<IssuedJudge[]>([]);
+  /** Сообщение после копирования ссылки. */
+  const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => tabFromHash() ?? "competition");
   // Растёт после загрузки участников: в правилах появляются новые разряды.
@@ -224,22 +275,86 @@ export function AdminScreen() {
     }
   };
 
-  /** Все QR-коды для печати, прежние: перевыпускать не нужно, планшеты остаются в работе. */
+  /** Прежние коды всех судей: перевыпускать не нужно, планшеты остаются в работе. */
+  const loadCodes = async () => {
+    const codes = await apiRequest<(Judge & { token: string | null })[]>(`/competitions/${competition!.id}/judges/codes`, {
+      token: adminToken,
+    });
+    // Если на снаряде один планшет, судьям D и E коды не нужны: оценки за них вводит старший.
+    const tabletApparatus = new Set(codes.filter((j) => j.enterAllMarks).map((j) => j.apparatus));
+    const needed = codes.filter((j) => j.role === "SUPERVISOR" || !tabletApparatus.has(j.apparatus));
+    setLostCodes(needed.filter((j) => j.token === null));
+    return { codes, needed: needed.filter((j): j is IssuedJudge => j.token !== null) };
+  };
+
+  /** Все QR-коды для печати. */
   const showAllCodes = async () => {
     if (!competition) return;
     try {
-      const codes = await apiRequest<(Judge & { token: string | null })[]>(`/competitions/${competition.id}/judges/codes`, {
-        token: adminToken,
-      });
-      // Если на снаряде один планшет, судьям D и E коды не нужны: оценки за них вводит старший.
-      const tabletApparatus = new Set(codes.filter((j) => j.enterAllMarks).map((j) => j.apparatus));
-      const needed = codes.filter((j) => j.role === "SUPERVISOR" || !tabletApparatus.has(j.apparatus));
-      setIssued(needed.filter((j): j is IssuedJudge => j.token !== null));
-      setLostCodes(needed.filter((j) => j.token === null));
+      const { needed } = await loadCodes();
+      setIssued(needed);
+      setLinks([]);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
+  };
+
+  /** Все ссылки списком: для судей за компьютером без камеры. */
+  const showAllLinks = async () => {
+    if (!competition) return;
+    try {
+      const { needed } = await loadCodes();
+      // Как в списке судей: снаряды по порядку соревнований, в бригаде старший, затем D и E.
+      const order: readonly string[] = apparatusFor(competition.discipline);
+      setLinks(
+        [...needed].sort(
+          (a, b) =>
+            order.indexOf(a.apparatus) - order.indexOf(b.apparatus) ||
+            ROLE_ORDER[a.role] - ROLE_ORDER[b.role] ||
+            a.seat - b.seat,
+        ),
+      );
+      setIssued([]);
+      setCopied(null);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  /** Ссылка одного судьи в буфер обмена. */
+  const copyLink = async (judge: Judge) => {
+    if (!competition) return;
+    try {
+      const { codes } = await loadCodes();
+      const token = codes.find((j) => j.id === judge.id)?.token;
+      if (!token) {
+        setError(`Ссылку ${judge.name} показать нельзя: код выдан до обновления программы. Нажмите у судьи «Новый QR-код» один раз.`);
+        return;
+      }
+      const url = loginUrl(token);
+      const ok = await copyText(url);
+      setCopied(ok ? `Ссылка для ${judge.name} (${judgeTitle(judge)}) скопирована: ${url}` : `Скопируйте ссылку для ${judge.name} вручную: ${url}`);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const copyAllLinks = async () => {
+    const text = links.map((j) => `${judgeTitle(j)} — ${j.name}: ${loginUrl(j.token)}`).join("\n");
+    setCopied((await copyText(text)) ? `Скопированы ссылки всех судей (${links.length}).` : "Не удалось скопировать: выделите таблицу и скопируйте вручную.");
+  };
+
+  const downloadLinks = () => {
+    const url = URL.createObjectURL(new Blob([linksCsv(links)], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    // Латинское имя файла, как у протоколов: кириллицу в имени некоторые браузеры заменяют на «download».
+    a.download = "judge-links.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   const reissue = async (judge: Judge) => {
@@ -247,6 +362,7 @@ export function AdminScreen() {
     try {
       const fresh = await apiRequest<IssuedJudge>(`/judges/${judge.id}/token`, { token: adminToken, method: "POST" });
       setIssued((list) => [...list.filter((j) => j.id !== judge.id), fresh]);
+      setLinks((list) => list.map((j) => (j.id === fresh.id ? { ...j, ...fresh } : j)));
       setLostCodes((list) => list.filter((j) => j.id !== judge.id));
     } catch (e) {
       setError((e as Error).message);
@@ -257,6 +373,7 @@ export function AdminScreen() {
     try {
       const saved = await apiRequest<Judge>(`/judges/${judge.id}`, { token: adminToken, method: "PATCH", body: changes });
       setIssued((list) => list.map((j) => (j.id === saved.id ? { ...j, ...saved } : j)));
+      setLinks((list) => list.map((j) => (j.id === saved.id ? { ...j, ...saved } : j)));
       await loadJudges();
       setError(null);
       return true;
@@ -271,6 +388,7 @@ export function AdminScreen() {
     try {
       await apiRequest(`/judges/${judge.id}`, { token: adminToken, method: "DELETE" });
       setIssued((list) => list.filter((j) => j.id !== judge.id));
+      setLinks((list) => list.filter((j) => j.id !== judge.id));
       await loadJudges();
       setError(null);
     } catch (e) {
@@ -592,6 +710,7 @@ export function AdminScreen() {
                     onSave={(changes) => saveJudge(j, changes)}
                     onRemove={() => void removeJudge(j)}
                     onReissue={() => void reissue(j)}
+                    onCopyLink={() => void copyLink(j)}
                   />
                 )}
               />
@@ -602,18 +721,79 @@ export function AdminScreen() {
                 <button type="button" onClick={() => void showAllCodes()}>
                   Показать QR-коды всех судей
                 </button>
+                <button type="button" onClick={() => void showAllLinks()}>
+                  Ссылки всех судей (для компьютеров)
+                </button>
                 <span className="muted">
-                  Для перепечатки: коды прежние, планшеты продолжают работать. Если на снаряде один планшет, показывается
-                  только код старшего судьи.
+                  Коды и ссылки прежние, планшеты продолжают работать. Если у судьи компьютер без камеры, отправьте ему
+                  ссылку: он откроет её в браузере вместо QR-кода. Если на снаряде один планшет, нужен только код старшего
+                  судьи.
                 </span>
               </div>
             )}
+            {judges.length > 0 && LOCAL_ONLY && (
+              <p className="warning no-print">
+                Секретариат открыт по адресу {location.host}: с такими QR-кодами и ссылками планшеты и компьютеры судей не
+                подключатся. Откройте секретариат по адресу из окна «Запуск» (вида http://192.168…:3000/judge/#/admin).
+              </p>
+            )}
+            {copied && <p className="notice no-print copied-link">{copied}</p>}
             {lostCodes.length > 0 && (
               <p className="warning no-print">
                 Эти коды выданы до обновления программы, и показать их снова нельзя:{" "}
                 {lostCodes.map((j) => `${j.name} (${APPARATUS_NAMES[j.apparatus]})`).join(", ")}. Нажмите у них «Новый QR-код»
                 один раз, дальше их коды можно будет перепечатывать.
               </p>
+            )}
+
+            {links.length > 0 && (
+              <div className="judge-links">
+                <div className="no-print qr-actions">
+                  <button type="button" className="primary" onClick={downloadLinks}>
+                    Скачать таблицу (Excel)
+                  </button>
+                  <button type="button" onClick={() => void copyAllLinks()}>
+                    Копировать все ссылки
+                  </button>
+                  <button type="button" onClick={() => print()}>
+                    Печать
+                  </button>
+                  <button type="button" onClick={() => setLinks([])}>
+                    Скрыть
+                  </button>
+                </div>
+                <p className="muted no-print">
+                  Судья открывает свою ссылку в браузере (Chrome, Edge, Яндекс) на компьютере, подключённом к той же сети, что и
+                  этот ноутбук. Ссылка — как пароль: отправляйте каждому только его строку.
+                </p>
+                <h2 className="print-only">{competition.name}: ссылки для входа судей</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Снаряд</th>
+                      <th>Роль</th>
+                      <th>ФИО</th>
+                      <th>Ссылка для входа</th>
+                      <th className="no-print" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {links.map((j) => (
+                      <tr key={j.id + j.token}>
+                        <td>{APPARATUS_NAMES[j.apparatus]}</td>
+                        <td>{judgeLabel(j.role, j.seat)}</td>
+                        <td>{j.name}</td>
+                        <td className="link-cell">{loginUrl(j.token)}</td>
+                        <td className="no-print">
+                          <button type="button" className="link" onClick={() => void copyLink(j)}>
+                            Копировать
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             {issued.length > 0 && (
@@ -804,6 +984,7 @@ function JudgeRow({
   onSave,
   onRemove,
   onReissue,
+  onCopyLink,
 }: {
   judge: Judge;
   /** В списке по снарядам снаряд уже указан в заголовке. */
@@ -812,6 +993,7 @@ function JudgeRow({
   onSave: (changes: Partial<Judge>) => Promise<boolean>;
   onRemove: () => void;
   onReissue: () => void;
+  onCopyLink: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   if (!editing) {
@@ -822,6 +1004,9 @@ function JudgeRow({
         </button>
         <button type="button" className="link" onClick={onReissue}>
           Новый QR-код
+        </button>
+        <button type="button" className="link" onClick={onCopyLink} title="Для судьи за компьютером без камеры">
+          Копировать ссылку
         </button>
         <button type="button" className="link danger" onClick={onRemove}>
           Удалить
