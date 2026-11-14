@@ -131,6 +131,27 @@ describe("многоборье", () => {
     ]);
   });
 
+  it("если равны и сумма без низшей оценки, отбрасывает следующую низшую", () => {
+    const ranked = rankAllAround("WAG", [
+      // 52 и 40 без низшей у обеих; без двух низших: 27 у Ани и 28 у Веры.
+      { id: "anna", scores: { VT: score(14), UB: score(13), BB: score(13), FX: score(12) } },
+      { id: "vera", scores: { VT: score(15), UB: score(13), BB: score(12), FX: score(12) } },
+    ]);
+    expect(ranked.map((r) => [r.item.id, r.rank])).toEqual([
+      ["vera", 1],
+      ["anna", 2],
+    ]);
+    expect(ranked[0]?.item.tieBreaks).toEqual([p(40), p(28), p(15)]);
+  });
+
+  it("делит место, только если совпали все суммы", () => {
+    const ranked = rankAllAround("WAG", [
+      { id: "anna", scores: { VT: score(14), UB: score(13), BB: score(12), FX: score(13) } },
+      { id: "vera", scores: { VT: score(13), UB: score(14), BB: score(13), FX: score(12) } },
+    ]);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 1]);
+  });
+
   it("у мужчин считает шесть снарядов", () => {
     const [first] = rankAllAround("MAG", [
       {

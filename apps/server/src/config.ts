@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { S3Target } from "./backup/s3";
 
 export interface AppConfig {
   databaseUrl: string;
@@ -17,6 +18,15 @@ export interface AppConfig {
   exportInterval?: number;
   /** Как часто самому забирать онлайн-заявки с сайта, секунды; 0 — только по кнопке. */
   entriesSyncInterval?: number;
+  /** Облачное хранилище S3 для копий базы и турниров; без него копии остаются только на ноутбуке. */
+  s3?: S3Target & {
+    /** Как часто отправлять, секунды. */
+    interval: number;
+    /** Папка внутри бакета. */
+    prefix: string;
+    /** Где лежат копии базы, которые делает контейнер backup. */
+    backupDir: string;
+  };
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -40,6 +50,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     exportDir: env.EXPORT_DIR || undefined,
     exportInterval: Number(env.EXPORT_INTERVAL ?? 1800),
     entriesSyncInterval: Number(env.ENTRIES_SYNC_INTERVAL ?? 300),
+    s3: loadS3(env),
+  };
+}
+
+function loadS3(env: NodeJS.ProcessEnv): AppConfig["s3"] {
+  const required = ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY"] as const;
+  const given = required.filter((name) => env[name]);
+  if (given.length === 0) return undefined;
+  if (given.length < required.length) {
+    const missing = required.filter((name) => !env[name]);
+    throw new Error(`Для копии в облако не хватает переменных: ${missing.join(", ")}`);
+  }
+  return {
+    endpoint: env.S3_ENDPOINT!,
+    bucket: env.S3_BUCKET!,
+    accessKey: env.S3_ACCESS_KEY!,
+    secretKey: env.S3_SECRET_KEY!,
+    region: env.S3_REGION || "ru-1",
+    prefix: env.S3_PREFIX ?? "gymnastics",
+    interval: Number(env.S3_INTERVAL ?? 900),
+    backupDir: env.BACKUP_DIR || "/backups",
   };
 }
 

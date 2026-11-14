@@ -3,6 +3,8 @@ import { APP_GUARD } from "@nestjs/core";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
 import { AuthGuard, AuthService } from "./auth/auth";
+import { CloudBackupController } from "./backup/cloud-backup.controller";
+import { CloudBackupService } from "./backup/cloud-backup.service";
 import { CompetitionsController } from "./competitions/competitions.controller";
 import { CompetitionsService } from "./competitions/competitions.service";
 import { JudgesController } from "./competitions/judges.controller";
@@ -64,6 +66,7 @@ export class AppModule {
         SiteController,
         SeriesController,
         TransferController,
+        CloudBackupController,
       ],
       providers: [
         AuthService,
@@ -81,6 +84,7 @@ export class AppModule {
         SeriesService,
         TransferService,
         AutoExportService,
+        CloudBackupService,
         LiveGateway,
         RelayPublisher,
       ],

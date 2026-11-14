@@ -386,7 +386,8 @@ select {
 .admin .ceremony-panel button,
 .admin .rules button:not(.link):not(.primary),
 .admin .actions button,
-.admin .rotation .buttons button {
+.admin .rotation .buttons button,
+.admin .cloud-backup button {
   min-height: 44px;
   padding: 6px 14px;
   font-size: 15px;
@@ -1618,4 +1619,16 @@ input.secret {
 
 .judges-list table {
   width: 100%;
+}
+
+.cloud-backup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cloud-backup p {
+  margin: 0;
+  flex: 1 1 280px;
 }
