@@ -255,6 +255,8 @@ export interface OnlineEntriesView {
   link: string | null;
   /** Когда последний раз забирали заявки с ретранслятора. */
   syncedAt: string | null;
+  /** Как часто зал сам забирает заявки, секунды; 0 — только по кнопке. */
+  autoSync: number;
   entries: (ReceivedOnlineEntry & { status: OnlineEntryStatus; note: string | null; decidedAt: string | null })[];
 }
 

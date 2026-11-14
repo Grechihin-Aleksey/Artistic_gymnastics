@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import type { INestApplication } from "@nestjs/common";
 import type { OnlineEntriesView, OnlineEntryCall, ReceivedOnlineEntry } from "@ag/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { OnlineEntriesService } from "../src/online-entries/online-entries.service";
 import { ADMIN_TOKEN, api, startApp } from "./helpers";
 
 const RELAY_TOKEN = "relay-token-0123456789";
@@ -30,7 +31,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => relay.listen(0, "127.0.0.1", r));
   const port = (relay.address() as AddressInfo).port;
-  ({ app } = await startApp({ relayUrl: `http://127.0.0.1:${port}/site/`, relayToken: RELAY_TOKEN }));
+  ({ app } = await startApp({ relayUrl: `http://127.0.0.1:${port}/site/`, relayToken: RELAY_TOKEN, entriesSyncInterval: 300 }));
   admin = api(app, ADMIN_TOKEN);
   competitionId = (await admin.post("/competitions", { name: "Кубок города", discipline: "WAG" }).expect(201)).body.id;
   await admin
@@ -120,6 +121,31 @@ describe("онлайн-заявки клубов", () => {
       "Отклонена онлайн-заявка клуба «Старт»: Нет медицинского допуска",
       "Принята онлайн-заявка клуба «Олимп»: 2 чел. добавлено в список",
     ]);
+  });
+
+  it("сам забирает заявки, пока приём открыт, и отправляет решения после закрытия", async () => {
+    const service = app.get(OnlineEntriesService);
+    const late = entry("Звезда", [{ lastName: "Яковлева", firstName: "Яна", category: "КМС" }]);
+    submitted.push(late);
+    expect(await service.autoSync()).toEqual([competitionId]);
+    let view = (await admin.get(base()).expect(200)).body as OnlineEntriesView;
+    expect(view.autoSync).toBe(300);
+    expect(view.entries.find((e) => e.id === late.id)).toMatchObject({ status: "NEW", club: "Звезда" });
+
+    // Без связи автоматический забор молчит и ждёт следующего раза.
+    down = true;
+    expect(await service.autoSync()).toEqual([]);
+    down = false;
+
+    // Приём закрыт: забирать нечего, пока секретарь не принял новое решение.
+    await admin.put(`${base()}/settings`, { open: false }).expect(200);
+    expect(await service.autoSync()).toEqual([]);
+    down = true;
+    view = (await admin.post(`${base()}/${late.id}/reject`, { note: "Поздно" }).expect(201)).body;
+    down = false;
+    expect(await service.autoSync()).toEqual([competitionId]);
+    expect(published.at(-1)!.decisions?.[late.id]).toMatchObject({ status: "REJECTED", note: "Поздно" });
+    expect(await service.autoSync()).toEqual([]);
   });
 
   it("говорит, если сайта нет или он не отвечает", async () => {
