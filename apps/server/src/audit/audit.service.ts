@@ -237,6 +237,16 @@ export function describe(
       return { group: "setup", text: "Награждение выведено на табло" };
     case "ceremony.hidden":
       return { group: "setup", text: "Награждение убрано с табло" };
+    case "board.switch":
+      return {
+        group: "setup",
+        text:
+          d.mode === "auto"
+            ? `Табло чередует части турнира каждые ${String(d.every)} с`
+            : d.mode === "show"
+              ? `На табло выведена ${d.discipline === "MAG" ? "мужская" : "женская"} программа`
+              : "Части турнира переключают на самом табло",
+      };
     case "rules.changed":
       return { group: "setup", text: `Изменены правила судейства: ${d.rules === "CUSTOM" ? "свои (база по разряду)" : "FIG"}` };
     case "judge.added":

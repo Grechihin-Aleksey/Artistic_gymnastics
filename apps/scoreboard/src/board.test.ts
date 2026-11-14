@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isRelay, parseRoute, routeHash } from "./route";
 import { buildSlides, pageCount, pageRows } from "./slides";
 import { clubList, clubResults } from "./club";
+import { nextPart } from "./hallSwitch";
 
 describe("адрес табло", () => {
   it("читает соревнование и вид, по умолчанию авто", () => {
@@ -122,5 +123,27 @@ describe("несколько соревнований в одной рамке",
     expect(parseRoute(routeHash(route))).toEqual(route);
     expect(parseRoute(routeHash({ ...route, competitionId: "girls" })).competitionId).toBe("girls");
     expect(parseRoute("#c=girls,boys&i=7").competitionId).toBe("girls");
+  });
+});
+
+describe("части турнира на табло в зале", () => {
+  const at = "2026-11-14T12:00:00.000Z";
+  const group = ["girls", "boys"];
+  it("чередование идёт по кругу только по таймеру", () => {
+    const sw = { mode: "auto" as const, every: 30, at };
+    expect(nextPart(sw, group, "girls", "timer")).toBe("boys");
+    expect(nextPart(sw, group, "boys", "timer")).toBe("girls");
+    expect(nextPart(sw, group, "girls", "command")).toBeNull();
+  });
+  it("выбранная часть выводится по команде и не мешает переключателю", () => {
+    const sw = { mode: "show" as const, show: "boys", every: 30, at };
+    expect(nextPart(sw, group, "girls", "command")).toBe("boys");
+    expect(nextPart(sw, group, "boys", "command")).toBeNull();
+    expect(nextPart(sw, group, "girls", "timer")).toBeNull();
+    expect(nextPart({ ...sw, show: "other" }, group, "girls", "command")).toBeNull();
+  });
+  it("без настройки и в режиме «на табло» ничего не меняется", () => {
+    expect(nextPart(null, group, "girls", "timer")).toBeNull();
+    expect(nextPart({ mode: "board", every: 30, at }, group, "girls", "timer")).toBeNull();
   });
 });

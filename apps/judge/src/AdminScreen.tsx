@@ -10,6 +10,7 @@ import {
   NormativesPanel,
   ClubStandingPanel,
   CeremonyPanel,
+  HallBoardPanel,
   AuditPanel,
   ShiftsPanel,
   ManualScoresPanel,
@@ -633,6 +634,17 @@ export function AdminScreen() {
           </div>
 
           <div {...pane("progress")}>
+            {partner && (
+              <HallBoardPanel
+                key={`hall-board-${competition.id}`}
+                competitionId={competition.id}
+                parts={[competition, partner]
+                  .sort((a, b) => (a.discipline === "WAG" ? -1 : b.discipline === "WAG" ? 1 : 0))
+                  .map((c) => ({ id: c.id, label: PART_NAMES[c.discipline] ?? c.name }))}
+                adminToken={adminToken}
+                onError={setError}
+              />
+            )}
             <JudgesPresencePanel
               key={`presence-${competition.id}`}
               competitionId={competition.id}

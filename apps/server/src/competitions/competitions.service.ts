@@ -12,6 +12,8 @@ import type {
   SetNormativesInput,
   ClubStandingSettings,
   SetOfficialsInput,
+  BoardSwitch,
+  SetBoardSwitchInput,
   SetRulesInput,
   UpdateGymnastInput,
 } from "@ag/shared";
@@ -215,6 +217,28 @@ export class CompetitionsService {
       .where(eq(competitions.id, competitionId))
       .returning();
     return publicCompetition(row!);
+  }
+
+  /**
+   * Как табло в зале переключает части турнира. Настройка одна на турнир,
+   * поэтому пишется в обе части. Возвращает id частей, чтобы оповестить их табло.
+   */
+  async setBoardSwitch(competitionId: string, input: SetBoardSwitchInput): Promise<{ boardSwitch: BoardSwitch; parts: string[] }> {
+    const competition = await this.get(competitionId);
+    if (!competition.pairId) throw new BadRequestException("У соревнования одна часть: переключать на табло нечего");
+    const parts = await this.db
+      .select({ id: competitions.id, discipline: competitions.discipline })
+      .from(competitions)
+      .where(eq(competitions.pairId, competition.pairId));
+    const ids = parts.map((p) => p.id);
+    const discipline = parts.find((p) => p.id === input.show)?.discipline;
+    if (input.mode === "show" && !ids.includes(input.show!)) throw new BadRequestException("Это не часть этого турнира");
+    const boardSwitch: BoardSwitch = { ...input, at: new Date().toISOString() };
+    await this.db.transaction(async (tx) => {
+      await tx.update(competitions).set({ boardSwitch }).where(eq(competitions.pairId, competition.pairId!));
+      await tx.insert(auditLog).values({ competitionId, actor: "admin", action: "board.switch", details: { ...boardSwitch, discipline } });
+    });
+    return { boardSwitch, parts: ids };
   }
 
   async setClubStanding(competitionId: string, input: ClubStandingSettings) {

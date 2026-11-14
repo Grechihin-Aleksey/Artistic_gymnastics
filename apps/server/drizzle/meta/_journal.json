@@ -141,6 +141,13 @@
       "when": 1794652751483,
       "tag": "0019_judge_token_sealed",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794665047331,
+      "tag": "0020_board_switch",
+      "breakpoints": true
     }
   ]
 }

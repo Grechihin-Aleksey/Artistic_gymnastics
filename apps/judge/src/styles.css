@@ -1678,3 +1678,34 @@ input.secret {
   min-height: 48px;
   padding: 0 20px;
 }
+
+/* Табло турнира из двух частей: кнопки частей, чередование и ручной режим в один ряд. */
+.admin .hall-board .buttons {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin .hall-board button {
+  min-height: 44px;
+  padding: 6px 16px;
+  font-size: 15px;
+}
+
+.admin .hall-board .primary {
+  width: auto;
+  margin: 0;
+}
+
+.admin .hall-board label.inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin .hall-board label.inline select {
+  width: auto;
+}

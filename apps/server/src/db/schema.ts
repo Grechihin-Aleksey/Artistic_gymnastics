@@ -9,7 +9,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex } from "@ag/shared";
+import type { BoardSwitch, Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES, VAULT_RULES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -69,6 +69,8 @@ export const competitions = pgTable("competitions", {
   finalPerClub: integer("final_per_club"),
   /** Девочки и мальчики одного турнира: обе части хранят один и тот же pairId. */
   pairId: uuid("pair_id"),
+  /** Табло турнира из двух частей: как переключаются части. null — на самом табло. Одинаково у обеих частей. */
+  boardSwitch: jsonb("board_switch").$type<BoardSwitch>(),
   /** Пробный турнир для репетиции: на сайт не уходит, удаляется одной кнопкой. */
   trial: boolean("trial").notNull().default(false),
   createdAt: createdAt(),

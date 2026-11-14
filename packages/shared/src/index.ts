@@ -415,6 +415,23 @@ export const ceremonySchema = z
 /** null — убрать награждение с табло. */
 export const setCeremonySchema = z.object({ ceremony: ceremonySchema.nullable() });
 
+/**
+ * Табло в зале у турнира из двух частей (женская и мужская программы).
+ * board — часть выбирают переключателем на самом табло; auto — табло само
+ * чередует части каждые every секунд; show — секретариат вывел часть show.
+ */
+export const BOARD_SWITCH_MODES = ["board", "auto", "show"] as const;
+export const setBoardSwitchSchema = z
+  .object({
+    mode: z.enum(BOARD_SWITCH_MODES),
+    show: z.uuid().optional(),
+    every: z.number().int().min(10).max(600).default(30),
+  })
+  .refine((b) => (b.mode === "show") === (b.show !== undefined), {
+    message: "Часть указывается только вместе с режимом show",
+    path: ["show"],
+  });
+
 /** Файл заявки Excel (.xlsx) в base64. */
 export const parseEntriesSchema = z.object({
   file: z.string().min(1).max(6_000_000).regex(/^[A-Za-z0-9+/]+=*$/, "Нужен файл в base64"),
@@ -508,6 +525,9 @@ export type RejectOnlineEntryInput = z.infer<typeof rejectOnlineEntrySchema>;
 export type ClubStandingSettings = z.infer<typeof setClubStandingSchema>;
 export type Ceremony = z.infer<typeof ceremonySchema>;
 export type SetCeremonyInput = z.infer<typeof setCeremonySchema>;
+export type SetBoardSwitchInput = z.infer<typeof setBoardSwitchSchema>;
+/** Сохранённая настройка табло: at меняется при каждом нажатии, по нему табло узнаёт новую команду. */
+export type BoardSwitch = SetBoardSwitchInput & { at: string };
 export type Official = z.infer<typeof officialSchema>;
 export type SetOfficialsInput = z.infer<typeof setOfficialsSchema>;
 export type ParseEntriesInput = z.infer<typeof parseEntriesSchema>;
@@ -630,6 +650,8 @@ export const LIVE_EVENTS = {
   finals: "competition.finals",
   /** Сервер → все: секретариат вывел награждение на табло или убрал его. */
   ceremony: "competition.ceremony",
+  /** Сервер → все: секретариат поменял, какую часть турнира показывает табло. */
+  boardSwitch: "competition.boardSwitch",
 } as const;
 
 export function competitionRoom(competitionId: string): string {

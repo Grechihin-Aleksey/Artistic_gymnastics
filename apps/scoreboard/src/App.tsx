@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Board } from "./Board";
+import { useHallSwitch } from "./hallSwitch";
 import { isRelay, parseRoute, routeHash, type Route } from "./route";
 
 interface Competition {
@@ -56,6 +57,11 @@ export function App() {
       window.removeEventListener("message", onMessage);
     };
   }, [route.embed]);
+
+  const go = useCallback((competitionId: string) => {
+    location.hash = switchHash(parseRoute(location.hash), competitionId);
+  }, []);
+  useHallSwitch(route.group, route.competitionId, go, !route.embed && !isRelay(location.pathname));
 
   if (!route.competitionId) return <Picker />;
   return (
