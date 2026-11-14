@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, expandScore, judgeLabel, parsePoints, parseScore } from "./labels";
@@ -2792,6 +2792,119 @@ export function CeremonyPanel({ competitionId, discipline, adminToken, onError }
           </button>
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * Табло в зале у турнира из двух частей: показывать их по очереди или ту,
+ * которую выбрал секретарь. Переключатель на самом табло работает всегда.
+ */
+export function HallBoardPanel({
+  competitionId,
+  parts,
+  adminToken,
+  onError,
+}: {
+  competitionId: string;
+  /** Части турнира в порядке кнопок: id и подпись («Девочки», «Мальчики»). */
+  parts: { id: string; label: string }[];
+  adminToken: string;
+  onError: (message: string | null) => void;
+}) {
+  const [current, setCurrent] = useState<BoardSwitch | null>(null);
+  const [every, setEvery] = useState(30);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiRequest<{ boardSwitch?: BoardSwitch | null }>(`/competitions/${competitionId}`)
+      .then((c) => {
+        setCurrent(c.boardSwitch ?? null);
+        if (c.boardSwitch?.mode === "auto") setEvery(c.boardSwitch.every);
+      })
+      .catch(() => setCurrent(null));
+  }, [competitionId]);
+
+  const send = async (input: SetBoardSwitchInput) => {
+    setBusy(true);
+    try {
+      const result = await apiRequest<{ boardSwitch: BoardSwitch }>(`/competitions/${competitionId}/board-switch`, {
+        token: adminToken,
+        method: "PUT",
+        body: input,
+      });
+      setCurrent(result.boardSwitch);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mode = current?.mode ?? "board";
+  const status =
+    mode === "auto"
+      ? `табло показывает части по очереди, каждую по ${current!.every} с`
+      : mode === "show"
+        ? `на табло выведена часть «${parts.find((p) => p.id === current!.show)?.label ?? "?"}»`
+        : "часть выбирают переключателем на самом табло";
+
+  return (
+    <section className="panel no-print hall-board">
+      <h2>Табло в зале</h2>
+      <p className="muted wide">
+        В турнире две части. Табло может показывать их по очереди или ту часть, которую вы выберете здесь. Переключатель
+        над табло тоже работает: им можно сменить часть вручную в любой момент.
+      </p>
+      <p className="wide">Сейчас {status}.</p>
+      <div className="buttons wide">
+        {parts.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={mode === "show" && current?.show === p.id ? "primary" : undefined}
+            disabled={busy}
+            onClick={() => void send({ mode: "show", show: p.id, every })}
+          >
+            Показать: {p.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={mode === "auto" ? "primary" : undefined}
+          disabled={busy}
+          onClick={() => void send({ mode: "auto", every })}
+        >
+          Чередовать
+        </button>
+        <label className="inline">
+          каждые
+          <select
+            value={every}
+            disabled={busy}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              setEvery(next);
+              if (mode === "auto") void send({ mode: "auto", every: next });
+            }}
+          >
+            {[15, 30, 60, 120].map((s) => (
+              <option key={s} value={s}>
+                {s < 60 ? `${s} с` : `${s / 60} мин`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className={mode === "board" ? "primary" : undefined}
+          disabled={busy}
+          onClick={() => void send({ mode: "board", every })}
+        >
+          Вручную на табло
+        </button>
+      </div>
     </section>
   );
 }

@@ -5,6 +5,7 @@ import { AuditService } from "./audit/audit.service";
 import { AuthGuard, AuthService } from "./auth/auth";
 import { CloudBackupController } from "./backup/cloud-backup.controller";
 import { CloudBackupService } from "./backup/cloud-backup.service";
+import { BoardSwitchController } from "./competitions/board-switch.controller";
 import { CompetitionsController } from "./competitions/competitions.controller";
 import { CompetitionsService } from "./competitions/competitions.service";
 import { JudgesController } from "./competitions/judges.controller";
@@ -52,6 +53,7 @@ export class AppModule {
       ],
       controllers: [
         CompetitionsController,
+        BoardSwitchController,
         JudgesController,
         RotationsController,
         PerformancesController,
