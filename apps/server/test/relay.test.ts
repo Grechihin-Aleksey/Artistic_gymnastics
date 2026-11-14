@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import type { INestApplication } from "@nestjs/common";
 import type { BoardSnapshot, RelayIngest } from "@ag/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { RelayPublisher } from "../src/relay/relay.publisher";
 import { ADMIN_TOKEN, api, startApp } from "./helpers";
 
 const RELAY_TOKEN = "relay-token-0123456789";
@@ -112,5 +113,21 @@ describe("отправка на сайт", () => {
     expect(received.some((r) => r.path === `/ingest/${competition.id}` && r.body.snapshot.competition.name === "Новый")).toBe(true);
     expect((await admin.get("/site").expect(200)).body).toMatchObject({ enabled: true, error: null });
     await api(app).get(`/competitions/${competition.id}/site`).expect(401);
+  });
+
+  it("пробный турнир на сайт не уходит", async () => {
+    const admin = api(app, ADMIN_TOKEN);
+    const trial = (await admin.post("/competitions", { name: "Пробный турнир", discipline: "WAG", trial: true }).expect(201)).body;
+    const real = (await admin.post("/competitions", { name: "Первенство", discipline: "WAG" }).expect(201)).body;
+    expect(trial.trial).toBe(true);
+    expect(real.trial).toBe(false);
+    const publisher = app.get(RelayPublisher);
+    publisher.notify(trial.id);
+    publisher.notify(real.id);
+    await waitFor(() => received.find((r) => r.path === `/ingest/${real.id}`));
+    expect(received.some((r) => r.path === `/ingest/${trial.id}`)).toBe(false);
+    const refused = (await admin.post(`/competitions/${trial.id}/site`).expect(502)).body;
+    expect(refused.message).toContain("пробный турнир на сайт не отправляется");
+    expect(received.some((r) => r.path === `/ingest/${trial.id}`)).toBe(false);
   });
 });

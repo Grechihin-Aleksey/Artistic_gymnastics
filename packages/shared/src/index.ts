@@ -49,6 +49,8 @@ export const createCompetitionSchema = z.object({
   rules: z.enum(RULES).default("FIG"),
   /** Вторая часть того же турнира (девочки к мальчикам или наоборот): у неё другая программа. */
   pairWith: z.string().uuid().optional(),
+  /** Пробный турнир для репетиции: на сайт не уходит, удаляется одной кнопкой. */
+  trial: z.boolean().default(false),
 });
 
 export const createTeamSchema = z.object({

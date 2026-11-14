@@ -775,9 +775,10 @@ export function DemoCompetitionForm<J>({
     try {
       const date = new Date().toLocaleDateString("ru-RU");
       const { id } = await call<CompetitionCreated>("/competitions", {
-        name: `Пробный турнир ${date} — удалить после проверки`,
+        name: `Пробный турнир ${date}`,
         discipline,
         rules,
+        trial: true,
       });
       await call(`/competitions/${id}/gymnasts/import`, {
         rows: DEMO_PEOPLE[discipline].map(([lastName, firstName], i) => ({
@@ -835,7 +836,8 @@ export function DemoCompetitionForm<J>({
     >
       <p className="muted wide">
         Для репетиции накануне: 8 участников двух разрядов в двух сменах, на каждом снаряде старший судья с одним
-        планшетом на всю бригаду и два судьи E. Всё как на настоящем турнире: вызов, оценки, табло, протоколы.
+        планшетом на всю бригаду и два судьи E. Всё как на настоящем турнире: вызов, оценки, табло, протоколы. На сайт
+        пробный турнир не уходит, а удаляется одной кнопкой.
       </p>
       <label>
         Программа
@@ -857,7 +859,8 @@ export function DemoCompetitionForm<J>({
       {done && (
         <p className="wide">
           Пробный турнир создан и выбран. QR-коды старших судей уже на экране «Судьи»: по одному планшету на снаряд,
-          другим судьям коды не нужны. После репетиции удалите турнир кнопкой «Удалить турнир» ниже на этом экране.
+          другим судьям коды не нужны. На сайт пробный турнир не уходит. После репетиции удалите его кнопкой «Удалить
+          пробный турнир» ниже на этом экране.
         </p>
       )}
     </form>
@@ -3554,12 +3557,15 @@ export function ImportCompetitionForm({
 export function TransferPanel({
   competitionId,
   name,
+  trial = false,
   adminToken,
   onError,
   onDeleted,
 }: {
   competitionId: string;
   name: string;
+  /** Пробный турнир: удаляется одной кнопкой, без ввода названия. */
+  trial?: boolean;
   adminToken: string;
   onError: (message: string | null) => void;
   onDeleted: () => void;
@@ -3594,7 +3600,10 @@ export function TransferPanel({
   };
 
   const remove = async () => {
-    if (!window.confirm(`Удалить турнир «${name}» со всеми участниками, судьями, оценками и журналом? Отменить это нельзя.`)) return;
+    const question = trial
+      ? `Удалить пробный турнир «${name}» со всеми пробными участниками, судьями и оценками?`
+      : `Удалить турнир «${name}» со всеми участниками, судьями, оценками и журналом? Отменить это нельзя.`;
+    if (!window.confirm(question)) return;
     setBusy(true);
     try {
       await apiRequest(`/competitions/${competitionId}`, { token: adminToken, method: "DELETE" });
@@ -3620,21 +3629,32 @@ export function TransferPanel({
           Выгрузить в файл
         </button>
       </div>
-      <label className="wide">
-        Чтобы удалить турнир, введите его название: {name}
-        <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoComplete="off" />
-      </label>
-      <div className="wide">
-        <button
-          type="button"
-          className="primary danger"
-          disabled={busy || confirmName.trim() !== name.trim()}
-          onClick={() => void remove()}
-        >
-          Удалить турнир
-        </button>
-        <p className="muted">Перед удалением выгрузите турнир в файл, если он ещё понадобится.</p>
-      </div>
+      {trial ? (
+        <div className="wide">
+          <button type="button" className="primary danger" disabled={busy} onClick={() => void remove()}>
+            Удалить пробный турнир
+          </button>
+          <p className="muted">Это пробный турнир для репетиции: на сайт он не уходил, удаляется одной кнопкой.</p>
+        </div>
+      ) : (
+        <>
+          <label className="wide">
+            Чтобы удалить турнир, введите его название: {name}
+            <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoComplete="off" />
+          </label>
+          <div className="wide">
+            <button
+              type="button"
+              className="primary danger"
+              disabled={busy || confirmName.trim() !== name.trim()}
+              onClick={() => void remove()}
+            >
+              Удалить турнир
+            </button>
+            <p className="muted">Перед удалением выгрузите турнир в файл, если он ещё понадобится.</p>
+          </div>
+        </>
+      )}
     </section>
   );
 }

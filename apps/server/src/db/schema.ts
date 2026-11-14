@@ -66,6 +66,8 @@ export const competitions = pgTable("competitions", {
   finalPerClub: integer("final_per_club"),
   /** Девочки и мальчики одного турнира: обе части хранят один и тот же pairId. */
   pairId: uuid("pair_id"),
+  /** Пробный турнир для репетиции: на сайт не уходит, удаляется одной кнопкой. */
+  trial: boolean("trial").notNull().default(false),
   createdAt: createdAt(),
 });
 
