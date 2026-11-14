@@ -5,6 +5,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnModuleDestroy,
+  type OnModuleInit,
 } from "@nestjs/common";
 import type {
   OnlineEntryDecision,
@@ -14,7 +16,7 @@ import type {
   RejectOnlineEntryInput,
   SetOnlineEntriesInput,
 } from "@ag/shared";
-import { and, asc, eq, max } from "drizzle-orm";
+import { and, asc, eq, isNotNull, max } from "drizzle-orm";
 import { newToken } from "../auth/tokens";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { APP_CONFIG, relayHeaders, type AppConfig } from "../config";
@@ -27,11 +29,17 @@ const REQUEST_TIMEOUT_MS = 10_000;
 /**
  * Онлайн-заявки клубов. Сайт для клубов — облачный ретранслятор: зал публикует
  * на нём приём заявок и забирает присланное по кнопке секретаря. Связь из зала
- * бывает плохой, поэтому всё по запросу, а принятое живёт в базе зала.
+ * бывает плохой, поэтому принятое живёт в базе зала. Пока у ноутбука есть
+ * интернет, зал сам забирает заявки раз в ENTRIES_SYNC_INTERVAL секунд и заодно
+ * отправляет на сайт решения секретаря; без связи просто ждёт следующего раза.
  */
 @Injectable()
-export class OnlineEntriesService {
+export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger("OnlineEntries");
+  private timer: NodeJS.Timeout | null = null;
+  private syncing = false;
+  /** Соревнования, у которых последняя автоматическая попытка не удалась: чтобы не писать в журнал каждый раз. */
+  private readonly failing = new Set<string>();
 
   constructor(
     @Inject(DB) private readonly db: Db,
@@ -39,6 +47,56 @@ export class OnlineEntriesService {
     private readonly competitions: CompetitionsService,
     private readonly results: ResultsService,
   ) {}
+
+  private get interval(): number {
+    return this.enabled ? Math.max(0, this.config.entriesSyncInterval ?? 0) : 0;
+  }
+
+  onModuleInit(): void {
+    if (this.interval === 0) return;
+    this.timer = setInterval(() => void this.autoSync(), Math.max(60, this.interval) * 1000);
+    this.timer.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * Забрать заявки по всем соревнованиям, где приём открыт или есть решения,
+   * ещё не отправленные на сайт. Возвращает соревнования, по которым удалось.
+   */
+  async autoSync(): Promise<string[]> {
+    if (!this.enabled || this.syncing) return [];
+    this.syncing = true;
+    const done: string[] = [];
+    try {
+      const rows = await this.db
+        .select({ id: competitions.id, open: competitions.entriesOpen, syncedAt: competitions.entriesSyncedAt })
+        .from(competitions)
+        .where(isNotNull(competitions.entryKey));
+      for (const c of rows) {
+        if (!c.open) {
+          const [last] = await this.db
+            .select({ at: max(onlineEntries.decidedAt) })
+            .from(onlineEntries)
+            .where(eq(onlineEntries.competitionId, c.id));
+          if (!last?.at || (c.syncedAt && last.at <= c.syncedAt)) continue;
+        }
+        try {
+          await this.sync(c.id);
+          done.push(c.id);
+          if (this.failing.delete(c.id)) this.log.log("связь с сайтом восстановилась, заявки забраны");
+        } catch (e) {
+          if (!this.failing.has(c.id)) this.log.warn(`не удалось забрать заявки: ${(e as Error).message}`);
+          this.failing.add(c.id);
+        }
+      }
+    } finally {
+      this.syncing = false;
+    }
+    return done;
+  }
 
   private get enabled(): boolean {
     return Boolean(this.config.relayUrl && this.config.relayToken);
@@ -64,6 +122,7 @@ export class OnlineEntriesService {
           ? `${this.relayUrl("entry/index.html").toString()}#c=${competitionId}&k=${competition.entryKey}`
           : null,
       syncedAt: competition.entriesSyncedAt?.toISOString() ?? null,
+      autoSync: this.interval,
       entries: rows.map((r) => ({
         ...r.entry,
         id: r.id,

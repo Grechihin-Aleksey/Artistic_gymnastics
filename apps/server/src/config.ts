@@ -15,6 +15,8 @@ export interface AppConfig {
   exportDir?: string;
   /** Как часто выгружать, секунды. */
   exportInterval?: number;
+  /** Как часто самому забирать онлайн-заявки с сайта, секунды; 0 — только по кнопке. */
+  entriesSyncInterval?: number;
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -37,6 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     relayToken: env.RELAY_TOKEN || undefined,
     exportDir: env.EXPORT_DIR || undefined,
     exportInterval: Number(env.EXPORT_INTERVAL ?? 1800),
+    entriesSyncInterval: Number(env.ENTRIES_SYNC_INTERVAL ?? 300),
   };
 }
 

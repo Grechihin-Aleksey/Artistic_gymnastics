@@ -2104,6 +2104,18 @@ export function OnlineEntriesPanel({
     void run("");
   }, [run]);
 
+  // Зал сам забирает заявки; раз в минуту тихо обновляем список, чтобы новые были видны без кнопки.
+  const autoSync = view?.autoSync ?? 0;
+  useEffect(() => {
+    if (!autoSync) return;
+    const timer = setInterval(() => {
+      apiRequest<OnlineEntriesView>(`/competitions/${competitionId}/online-entries`, { token: adminToken })
+        .then(setView)
+        .catch(() => undefined);
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [autoSync, competitionId, adminToken]);
+
   if (!view) return null;
   if (!view.enabled) {
     return (
@@ -2134,8 +2146,11 @@ export function OnlineEntriesPanel({
     <section className="panel no-print online-entries">
       <h2>Онлайн-заявки клубов</h2>
       <p className="muted wide">
-        Откройте приём и отправьте клубам ссылку: заявку заполняют на сайте с телефона или компьютера. Присланное попадает
-        сюда по кнопке «Забрать заявки», а в список участников — только после «Принять в список».
+        Откройте приём и отправьте клубам ссылку: заявку заполняют на сайте с телефона или компьютера.{" "}
+        {view.autoSync
+          ? `Присланное попадает сюда само каждые ${Math.round(view.autoSync / 60)} мин, пока у ноутбука есть интернет, или сразу по кнопке «Забрать заявки». Решения по заявкам уходят на сайт так же.`
+          : "Присланное попадает сюда по кнопке «Забрать заявки»."}{" "}
+        В список участников заявка попадает только после «Принять в список».
       </p>
       <p className="wide">
         {view.open ? (
