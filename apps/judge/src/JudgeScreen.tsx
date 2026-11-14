@@ -107,6 +107,15 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   const [rulesView, setRulesView] = useState<RulesView | null>(null);
   const [finals, setFinals] = useState<FinalsView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Бригада снаряда: секретариат может завести судей уже после входа, тогда планшет подхватит их сам. */
+  const [panel, setPanel] = useState<PanelJudge[]>(me.panel ?? []);
+  const refreshPanel = useCallback(async () => {
+    try {
+      setPanel((await apiRequest<Me>("/me", { token })).panel ?? []);
+    } catch {
+      // нет связи — попробуем в следующий раз
+    }
+  }, [token]);
   const rules = rulesView?.rules ?? competition.rules;
   const deductions = rulesView?.deductions ?? competition.deductions ?? [];
 
@@ -231,7 +240,8 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               key={current.id}
               token={token}
               performance={current}
-              panel={me.panel ?? []}
+              panel={panel}
+              onRecheck={refreshPanel}
               rules={rules}
               deductions={deductions}
               scorer={scorer}
@@ -464,10 +474,13 @@ function TabletScoring({
   deductions,
   scorer,
   onDone,
+  onRecheck,
 }: {
   token: string;
   performance: PerformanceView;
   panel: PanelJudge[];
+  /** Заново спросить у сервера бригаду снаряда. */
+  onRecheck: () => Promise<void>;
   rules: Rules | undefined;
   deductions: Deduction[];
   scorer: Scorer;
@@ -476,6 +489,26 @@ function TabletScoring({
   const custom = rules === "CUSTOM";
   const eJudges = panel.filter((j) => j.role === "E").sort((a, b) => a.seat - b.seat);
   const dJudge = panel.find((j) => j.role === "D");
+  const needD = !dJudge && !custom;
+  const needE = eJudges.length === 0;
+  const incomplete = needD || needE;
+  const missing = needD && needE ? "судей D и E" : needD ? "судью D" : "судей E";
+  const missingRoles = needD && needE ? "«Судья D» и «Судья E»" : needD ? "«Судья D»" : "«Судья E»";
+  const [checking, setChecking] = useState(false);
+  const recheck = useCallback(async () => {
+    setChecking(true);
+    try {
+      await onRecheck();
+    } finally {
+      setChecking(false);
+    }
+  }, [onRecheck]);
+  // Пока бригады нет, тихо переспрашиваем сервер: судей заведут — оценки откроются без перезахода.
+  useEffect(() => {
+    if (!incomplete) return;
+    const timer = setInterval(() => void onRecheck(), 5000);
+    return () => clearInterval(timer);
+  }, [incomplete, onRecheck]);
   const [d, setD] = useState("");
   const [e, setE] = useState<string[]>(() => eJudges.map(() => ""));
   const [neutral, setNeutral] = useState("");
@@ -527,14 +560,17 @@ function TabletScoring({
     else void approve();
   };
 
-  if ((!dJudge && !custom) || eJudges.length === 0) {
+  if (incomplete) {
     return (
       <section className="tablet">
         <div className="alert">
-          Секретариат ещё не завёл судей {custom ? "E" : "D и E"} этого снаряда. Их фамилии и оценки идут в протокол.
-          Заведите их в секретариате на вкладке «Судьи»: снаряд этот же, роль «Судья {custom ? "E" : "D» и «Судья E"}», QR-коды им
-          не нужны. Потом обновите эту страницу.
+          Секретариат ещё не завёл {missing} этого снаряда: фамилии и оценки судей идут в протокол. Заведите их в секретариате
+          на вкладке «Судьи»: снаряд этот же, роль {missingRoles}, QR-коды им не нужны. Планшет проверяет каждые 5 секунд и
+          откроет оценки сам, выходить не нужно.
         </div>
+        <button type="button" className="recheck" disabled={checking} onClick={() => void recheck()}>
+          {checking ? "Проверяю…" : "Проверить снова"}
+        </button>
       </section>
     );
   }

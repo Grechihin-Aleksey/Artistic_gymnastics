@@ -749,7 +749,7 @@ const DEMO_PEOPLE: Record<Discipline, [string, string][]> = {
 
 /**
  * Пробный турнир для репетиции накануне: 8 участников двух разрядов в двух сменах,
- * на каждом снаряде старший судья с одним планшетом и два судьи E. После проверки его удаляют.
+ * на каждом снаряде старший судья с одним планшетом, судья D (по FIG) и два судьи E. После проверки его удаляют.
  */
 export function DemoCompetitionForm<J>({
   adminToken,
@@ -813,6 +813,8 @@ export function DemoCompetitionForm<J>({
           seat: 1,
           enterAllMarks: true,
         }));
+        // По FIG на планшете нужен и судья D: его фамилия и оценка идут в протокол.
+        if (rules !== "CUSTOM") await call(`/competitions/${id}/judges`, { name: "Судья D", apparatus, role: "D", seat: 1 });
         for (const seat of [1, 2]) await call(`/competitions/${id}/judges`, { name: `Судья E${seat}`, apparatus, role: "E", seat });
       }
       await call(`/competitions/${id}/rotation`, { rotation: 0 });
@@ -836,7 +838,7 @@ export function DemoCompetitionForm<J>({
     >
       <p className="muted wide">
         Для репетиции накануне: 8 участников двух разрядов в двух сменах, на каждом снаряде старший судья с одним
-        планшетом на всю бригаду и два судьи E. Всё как на настоящем турнире: вызов, оценки, табло, протоколы. На сайт
+        планшетом на всю бригаду, судья D (по FIG) и два судьи E. Всё как на настоящем турнире: вызов, оценки, табло, протоколы. На сайт
         пробный турнир не уходит, а удаляется одной кнопкой.
       </p>
       <label>
