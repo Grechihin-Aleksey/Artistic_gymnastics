@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from "@nestjs/common";
 import type { PerformanceView, RelayIngest } from "@ag/shared";
+import { CompetitionsService } from "../competitions/competitions.service";
 import { APP_CONFIG, relayHeaders, type AppConfig } from "../config";
 import { ResultsService } from "../results/results.service";
 
@@ -46,6 +47,7 @@ export class RelayPublisher implements OnModuleDestroy {
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly results: ResultsService,
+    private readonly competitions: CompetitionsService,
   ) {
     if (this.enabled) {
       this.resync = setInterval(() => {
@@ -88,11 +90,11 @@ export class RelayPublisher implements OnModuleDestroy {
   /** Отправить соревнование на сайт сейчас, не дожидаясь первой оценки; ошибка уходит вызывающему. */
   async publishNow(competitionId: string): Promise<RelayStatus> {
     if (!this.enabled) return this.status(competitionId);
+    if ((await this.competitions.get(competitionId)).trial) throw new Error("пробный турнир на сайт не отправляется");
     const entry = this.pending.get(competitionId) ?? { approved: [] };
     this.pending.delete(competitionId);
     try {
-      await this.send(competitionId, entry);
-      this.delivered(competitionId);
+      if (await this.send(competitionId, entry)) this.delivered(competitionId);
     } catch (e) {
       this.pending.set(competitionId, entry);
       this.lastError = (e as Error).message;
@@ -130,8 +132,7 @@ export class RelayPublisher implements OnModuleDestroy {
       for (const [competitionId, entry] of [...this.pending]) {
         this.pending.delete(competitionId);
         try {
-          await this.send(competitionId, entry);
-          this.delivered(competitionId);
+          if (await this.send(competitionId, entry)) this.delivered(competitionId);
           if (this.failures > 0) this.log.log("Связь с ретранслятором восстановлена");
           this.failures = 0;
         } catch (e) {
@@ -161,7 +162,9 @@ export class RelayPublisher implements OnModuleDestroy {
     this.lastError = null;
   }
 
-  private async send(competitionId: string, entry: Pending): Promise<void> {
+  /** Отправить снимок на сайт; пробный турнир не отправляется (false), чтобы репетиция не попала к зрителям. */
+  private async send(competitionId: string, entry: Pending): Promise<boolean> {
+    if ((await this.competitions.get(competitionId)).trial) return false;
     const cutoff = Date.now() - FLASH_TTL_MS;
     const body: RelayIngest = {
       snapshot: await this.results.snapshot(competitionId),
@@ -180,6 +183,7 @@ export class RelayPublisher implements OnModuleDestroy {
       throw new Error("нет связи с сайтом: проверьте интернет и адрес RELAY_URL");
     }
     if (!response.ok) throw new Error(relayRefusal(response.status));
+    return true;
   }
 }
 

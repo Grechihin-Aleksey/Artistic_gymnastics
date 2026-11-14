@@ -83,6 +83,7 @@ export class CompetitionsService {
           publishJudgeMarks: input.publishJudgeMarks,
           rules: input.rules,
           pairId,
+          trial: input.trial,
         })
         .returning();
       return row!;

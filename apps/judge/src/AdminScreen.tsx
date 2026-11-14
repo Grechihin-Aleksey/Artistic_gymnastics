@@ -43,6 +43,8 @@ interface Competition {
   officials?: { chiefJudge: Official | null; chiefSecretary: Official | null };
   /** Девочки и мальчики одного турнира: у обеих частей один pairId. */
   pairId?: string | null;
+  /** Пробный турнир для репетиции. */
+  trial?: boolean;
 }
 
 const PART_NAMES: Record<string, string> = { WAG: "Девочки", MAG: "Мальчики" };
@@ -400,6 +402,7 @@ export function AdminScreen() {
               key={`transfer-${competition.id}`}
               competitionId={competition.id}
               name={competition.name}
+              trial={competition.trial ?? false}
               adminToken={adminToken}
               onError={setError}
               onDeleted={() => {
