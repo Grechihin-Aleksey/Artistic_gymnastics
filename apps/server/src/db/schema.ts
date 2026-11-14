@@ -168,6 +168,8 @@ export const judges = pgTable(
     enterAllMarks: boolean("enter_all_marks").notNull().default(false),
     /** SHA-256 токена входа; сам токен показывается один раз при создании. */
     tokenHash: text("token_hash").notNull().unique(),
+    /** Тот же токен, зашифрованный ключом из токена секретариата: для перепечатки QR-кода. */
+    tokenSealed: text("token_sealed"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("judges_seat_unique").on(t.competitionId, t.apparatus, t.role, t.seat)],

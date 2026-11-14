@@ -134,6 +134,13 @@
       "when": 1794651754218,
       "tag": "0018_competition_trial",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794652751483,
+      "tag": "0019_judge_token_sealed",
+      "breakpoints": true
     }
   ]
 }

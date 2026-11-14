@@ -3,7 +3,7 @@ import { updateJudgeSchema, type UpdateJudgeInput } from "@ag/shared";
 import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
 import { LiveGateway } from "../live/live.gateway";
 import { ZodPipe } from "../zod.pipe";
-import { CompetitionsService, publicCompetition } from "./competitions.service";
+import { CompetitionsService, publicCompetition, withoutSecrets } from "./competitions.service";
 
 @Controller()
 export class JudgesController {
@@ -20,12 +20,19 @@ export class JudgesController {
     return this.live.presence(judges.map((j) => j.id));
   }
 
+  /** QR-коды всех судей для печати: без перевыпуска, прежние коды продолжают работать. */
+  @Get("competitions/:id/judges/codes")
+  @RequireAccess("admin")
+  codes(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.judgeCodes(id);
+  }
+
   /** Страница судьи узнаёт по токену, кто она и на каком снаряде. */
   @Get("me")
   @RequireAccess("judge")
   async me(@CurrentPrincipal() principal: Principal) {
     if (principal.kind !== "judge") throw new Error("unreachable");
-    const { tokenHash: _, ...judge } = principal.judge;
+    const judge = withoutSecrets(principal.judge);
     return {
       judge,
       competition: publicCompetition(await this.competitions.get(judge.competitionId)),
