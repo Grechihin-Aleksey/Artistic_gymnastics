@@ -1675,6 +1675,7 @@ export function DrawPanel({
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [firstBib, setFirstBib] = useState("1");
   const [keepTeams, setKeepTeams] = useState(true);
+  const [byGroup, setByGroup] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -1742,6 +1743,15 @@ export function DrawPanel({
   }
   const first = Number(firstBib);
   const firstValid = Number.isInteger(first) && first >= 1 && first <= 100_000;
+  const hasShifts = people.some((g) => g.shift !== null);
+  // Шаг как на сервере: 100, а если в смене (разряде) больше 100 человек — 1000.
+  const groupSizes = new Map<string, number>();
+  for (const g of people) {
+    const key = String(hasShifts ? g.shift : g.categoryId);
+    groupSizes.set(key, (groupSizes.get(key) ?? 0) + 1);
+  }
+  let step = 100;
+  while (step < Math.max(...groupSizes.values())) step *= 10;
 
   return (
     <section className="panel no-print draw">
@@ -1766,14 +1776,29 @@ export function DrawPanel({
             <input type="checkbox" checked={keepTeams} onChange={(e) => setKeepTeams(e.target.checked)} />
             Участники одной команды выступают подряд
           </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={byGroup}
+              onChange={(e) => {
+                setByGroup(e.target.checked);
+                if (e.target.checked && firstBib === "1") setFirstBib("101");
+                if (!e.target.checked && firstBib === "101") setFirstBib("1");
+              }}
+            />
+            {hasShifts ? "Каждая смена" : "Каждый разряд"} с новой {step === 100 ? "сотни" : "тысячи"}:{" "}
+            {firstValid ? `${first}, ${first + step}, ${first + 2 * step}…` : `101, ${100 + step + 1}…`}
+          </label>
           <button
             type="button"
             className="primary"
             disabled={busy || !firstValid}
             onClick={() =>
               void run(
-                { mode: "random", firstBib: first, keepTeams },
-                `Провести жеребьёвку? Все ${people.length} уч. получат новые номера с №${first} в случайном порядке внутри своей смены.`,
+                { mode: "random", firstBib: first, keepTeams, byGroup },
+                byGroup
+                  ? `Провести жеребьёвку? Все ${people.length} уч. получат новые номера в случайном порядке: ${hasShifts ? "первая смена" : "первый разряд"} с №${first}, ${hasShifts ? "вторая" : "второй"} с №${first + step} и так далее.`
+                  : `Провести жеребьёвку? Все ${people.length} уч. получат новые номера с №${first} в случайном порядке внутри своей смены.`,
               )
             }
           >
@@ -3629,6 +3654,7 @@ export function TransferPanel({
           Выгрузить в файл
         </button>
       </div>
+      <CloudBackupLine adminToken={adminToken} />
       {trial ? (
         <div className="wide">
           <button type="button" className="primary danger" disabled={busy} onClick={() => void remove()}>
@@ -3656,6 +3682,70 @@ export function TransferPanel({
         </>
       )}
     </section>
+  );
+}
+
+interface CloudBackupStatus {
+  enabled: boolean;
+  bucket: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
+
+/** Строка о копии базы в облачное хранилище S3 и кнопка «Отправить сейчас». */
+function CloudBackupLine({ adminToken }: { adminToken: string }) {
+  const [status, setStatus] = useState<CloudBackupStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      apiRequest<CloudBackupStatus>("/cloud-backup", { token: adminToken })
+        .then((s) => alive && setStatus(s))
+        .catch(() => undefined);
+    void load();
+    const timer = setInterval(() => void load(), 60_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [adminToken]);
+
+  if (!status) return null;
+  if (!status.enabled) {
+    return (
+      <p className="muted wide">
+        Копия в облако не настроена. Чтобы копия базы уходила в хранилище S3 (например, на Beget), заполните строки S3_ в файле .env
+        и перезапустите программу.
+      </p>
+    );
+  }
+  const time = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  const failed = status.lastError && (!status.lastSuccessAt || status.lastErrorAt! > status.lastSuccessAt);
+  const sendNow = async () => {
+    setBusy(true);
+    try {
+      setStatus(await apiRequest<CloudBackupStatus>("/cloud-backup", { token: adminToken, method: "POST" }));
+    } catch (e) {
+      setStatus((s) => s && { ...s, lastError: (e as Error).message, lastErrorAt: new Date().toISOString() });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="wide cloud-backup">
+      <p className={failed ? "warning" : "muted"}>
+        {failed
+          ? `Копия в облако (${status.bucket}) не ушла ${time(status.lastErrorAt!)}: ${status.lastError}. Программа повторит попытку сама.`
+          : status.lastSuccessAt
+            ? `Копия в облако (${status.bucket}) отправлена ${time(status.lastSuccessAt)}.`
+            : `Копия в облако (${status.bucket}) уйдёт через минуту после запуска, затем каждые 15 минут.`}
+      </p>
+      <button type="button" disabled={busy} onClick={() => void sendNow()}>
+        {busy ? "Отправляю…" : "Отправить сейчас"}
+      </button>
+    </div>
   );
 }
 
