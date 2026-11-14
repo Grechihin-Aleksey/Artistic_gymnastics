@@ -133,6 +133,7 @@ export class CompetitionsService {
     );
     return {
       rules: competition.rules,
+      vaultRule: competition.vaultRule,
       deductions: publicCompetition(competition).deductions,
       categories: rows.map((c) => ({
         id: c.id,
@@ -175,6 +176,7 @@ export class CompetitionsService {
         .update(competitions)
         .set({
           rules: input.rules,
+          vaultRule: input.vaultRule,
           deductions: input.deductions.map((d) => ({ name: d.name, value: toPoints(d.value) })),
         })
         .where(eq(competitions.id, competitionId));

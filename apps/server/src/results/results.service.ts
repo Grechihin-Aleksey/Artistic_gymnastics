@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, UnprocessableEntityException }
 import {
   apparatusFor,
   averageVaults,
+  bestVault,
   fromPoints,
   rankAllAround,
   rankApparatus,
@@ -19,6 +20,7 @@ import {
   type ClubStandingView,
   type LiveApparatus,
   type Stage,
+  type VaultRule,
 } from "@ag/shared";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { CompetitionsService } from "../competitions/competitions.service";
@@ -27,7 +29,7 @@ import { auditLog, categories, competitions, gymnasts, judges, marks, performanc
 
 type GymnastRow = typeof gymnasts.$inferSelect;
 
-export type VaultMode = "first" | "average";
+export type VaultMode = "first" | "average" | "best";
 
 const toView = (s: ScoreBreakdown) => ({
   d: fromPoints(s.d),
@@ -95,13 +97,19 @@ export class ResultsService {
 
   /**
    * Оценка участника за снаряд. Для опорного прыжка в режиме "average"
-   * берётся среднее двух попыток, если обе утверждены.
+   * берётся среднее двух попыток, если обе утверждены, в режиме "best" — лучшая.
    */
   private static pick(attempts: Map<number, ScoreBreakdown>, mode: VaultMode): ScoreBreakdown | undefined {
     const first = attempts.get(1);
     const second = attempts.get(2);
     if (mode === "average" && first && second) return averageVaults(first, second);
-    return first;
+    if (mode === "best" && first && second) return bestVault(first, second);
+    return first ?? (mode === "best" ? second : undefined);
+  }
+
+  /** Режим опорного прыжка с учётом правила соревнования «лучший из двух». */
+  private static vaultMode(rule: VaultRule, fig: VaultMode): VaultMode {
+    return rule === "BEST" ? "best" : fig;
   }
 
   /** Для табло: на каждом снаряде кто выступает сейчас и последняя утверждённая оценка. */
@@ -171,7 +179,8 @@ export class ResultsService {
     const entries = [...scores].flatMap(([gymnastId, byApparatus]) => {
       if (!inScope(scope, people.get(gymnastId)!.categoryId)) return [];
       const attempts = byApparatus.get(apparatus);
-      const score = attempts && ResultsService.pick(attempts, apparatus === "VT" ? vaultMode : "first");
+      const mode = apparatus === "VT" ? ResultsService.vaultMode(competition.vaultRule, vaultMode) : "first";
+      const score = attempts && ResultsService.pick(attempts, mode);
       return score ? [{ id: gymnastId, score }] : [];
     });
     return rankApparatus(entries).map(({ rank, item }) => ({
@@ -198,7 +207,7 @@ export class ResultsService {
       .map(([gymnastId, byApparatus]) => ({
       id: gymnastId,
       scores: Object.fromEntries(
-        [...byApparatus].map(([a, attempts]) => [a, ResultsService.pick(attempts, "first")]),
+        [...byApparatus].map(([a, attempts]) => [a, ResultsService.pick(attempts, ResultsService.vaultMode(competition.vaultRule, "first"))]),
       ) as Partial<Record<Apparatus, ScoreBreakdown>>,
     }));
     const byId = new Map(entries.map((e) => [e.id, e]));
@@ -237,7 +246,7 @@ export class ResultsService {
           id: g.id,
           scores: Object.fromEntries(
             [...(scores.get(g.id) ?? new Map<Apparatus, Map<number, ScoreBreakdown>>())].map(
-              ([a, attempts]) => [a, ResultsService.pick(attempts, "first")],
+              ([a, attempts]) => [a, ResultsService.pick(attempts, ResultsService.vaultMode(competition.vaultRule, "first"))],
             ),
           ) as Partial<Record<Apparatus, ScoreBreakdown>>,
         })),

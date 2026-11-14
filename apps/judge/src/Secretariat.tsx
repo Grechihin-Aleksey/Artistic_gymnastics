@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, SeriesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, expandScore, judgeLabel, parsePoints, parseScore } from "./labels";
@@ -1286,6 +1286,7 @@ export function RulesPanel({
 }: Props & { onSaved: (rules: Rules) => void }) {
   const [view, setView] = useState<RulesView | null>(null);
   const [rules, setRules] = useState<Rules>("FIG");
+  const [vaultRule, setVaultRule] = useState<VaultRule>("FIG");
   const [deductions, setDeductions] = useState<{ name: string; value: string }[]>([]);
   const [bases, setBases] = useState<Record<string, BaseDraft>>({});
   const { saved, markSaved, watch } = useSaved();
@@ -1294,6 +1295,7 @@ export function RulesPanel({
   const apply = useCallback((v: RulesView) => {
     setView(v);
     setRules(v.rules);
+    setVaultRule(v.vaultRule);
     setDeductions(v.deductions.map((d) => ({ name: d.name, value: String(d.value) })));
     setBases(
       Object.fromEntries(
@@ -1356,7 +1358,7 @@ export function RulesPanel({
       const result = await apiRequest<RulesView>(`/competitions/${competitionId}/rules`, {
         token: adminToken,
         method: "PUT",
-        body: { rules, deductions: deductionRows, bases: rules === "CUSTOM" ? baseRows : [] },
+        body: { rules, vaultRule, deductions: deductionRows, bases: rules === "CUSTOM" ? baseRows : [] },
       });
       apply(result);
       onSaved(result.rules);
@@ -1381,6 +1383,16 @@ export function RulesPanel({
         </select>
         {view.scored && <span className="muted">Оценки уже ставятся: правила не переключить.</span>}
       </label>
+      {program.includes("VT") && (
+        <label className="wide">
+          Два опорных прыжка
+          <select value={vaultRule} onChange={(e) => setVaultRule(e.target.value as VaultRule)}>
+            <option value="FIG">FIG: в многоборье первый прыжок, на снаряде и в финале среднее двух</option>
+            <option value="BEST">Лучший из двух: и в многоборье, и на снаряде</option>
+          </select>
+          <span className="muted">Можно поменять в любой момент: места и протоколы пересчитаются.</span>
+        </label>
+      )}
 
       {rules === "CUSTOM" && (
         <>

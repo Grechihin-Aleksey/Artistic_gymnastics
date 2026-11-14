@@ -206,7 +206,12 @@ export class ProtocolsService {
       notes.push(
         "Стоимость — базовая оценка разряда минус сбавки за требования. Сбавка — средняя сбавка судей E. НС — нейтральная сбавка.",
       );
-    if (isVault) notes.push("Итог опорного прыжка — среднее двух прыжков.");
+    if (isVault)
+      notes.push(
+        competition.vaultRule === "BEST"
+          ? "Итог опорного прыжка — лучший из двух прыжков."
+          : "Итог опорного прыжка — среднее двух прыжков.",
+      );
     const panel = await this.panel(competitionId, apparatus);
     if (panel) notes.push(`Судейская бригада: ${panel}.`);
     if (changedNote)
@@ -278,7 +283,11 @@ export class ProtocolsService {
         ...(withNormatives ? [{ text: row.earned ?? "", style: "small" } as TableCell] : []),
       ]);
     }
-    const notes = ["Опорный прыжок в многоборье — оценка за первый прыжок."];
+    const notes = [
+      competition.vaultRule === "BEST"
+        ? "Опорный прыжок в многоборье — лучший из двух прыжков."
+        : "Опорный прыжок в многоборье — оценка за первый прыжок.",
+    ];
     if (rows.some((r) => !r.complete))
       notes.push("¹ Выступил(а) не на всех снарядах.");
     const out = await this.db

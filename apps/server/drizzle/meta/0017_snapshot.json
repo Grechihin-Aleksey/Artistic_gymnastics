@@ -1,5 +1,5 @@
 {
-  "id": "1daa2163-13a7-49c9-9849-edf78dd09415",
+  "id": "5582000f-6a61-4af1-841a-f1e72d34c6c4",
   "prevId": "17e6216b-7065-4058-9403-283a32aa4309",
   "version": "7",
   "dialect": "postgresql",
@@ -243,6 +243,14 @@
           "notNull": true,
           "default": "'FIG'"
         },
+        "vault_rule": {
+          "name": "vault_rule",
+          "type": "vault_rule",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'FIG'"
+        },
         "deductions": {
           "name": "deductions",
           "type": "jsonb",
@@ -334,13 +342,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "trial": {
-          "name": "trial",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -1562,6 +1563,14 @@
       "values": [
         "QUAL",
         "FINAL"
+      ]
+    },
+    "public.vault_rule": {
+      "name": "vault_rule",
+      "schema": "public",
+      "values": [
+        "FIG",
+        "BEST"
       ]
     }
   },

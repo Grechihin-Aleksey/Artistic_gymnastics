@@ -124,8 +124,15 @@
     {
       "idx": 17,
       "version": "7",
-      "when": 1794648979004,
-      "tag": "0017_competition_trial",
+      "when": 1794648532179,
+      "tag": "0017_vault_rule",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794651754218,
+      "tag": "0018_competition_trial",
       "breakpoints": true
     }
   ]
