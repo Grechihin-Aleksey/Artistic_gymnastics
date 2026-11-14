@@ -1672,6 +1672,7 @@ export function DrawPanel({
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [firstBib, setFirstBib] = useState("1");
   const [keepTeams, setKeepTeams] = useState(true);
+  const [byGroup, setByGroup] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -1739,6 +1740,15 @@ export function DrawPanel({
   }
   const first = Number(firstBib);
   const firstValid = Number.isInteger(first) && first >= 1 && first <= 100_000;
+  const hasShifts = people.some((g) => g.shift !== null);
+  // Шаг как на сервере: 100, а если в смене (разряде) больше 100 человек — 1000.
+  const groupSizes = new Map<string, number>();
+  for (const g of people) {
+    const key = String(hasShifts ? g.shift : g.categoryId);
+    groupSizes.set(key, (groupSizes.get(key) ?? 0) + 1);
+  }
+  let step = 100;
+  while (step < Math.max(...groupSizes.values())) step *= 10;
 
   return (
     <section className="panel no-print draw">
@@ -1763,14 +1773,29 @@ export function DrawPanel({
             <input type="checkbox" checked={keepTeams} onChange={(e) => setKeepTeams(e.target.checked)} />
             Участники одной команды выступают подряд
           </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={byGroup}
+              onChange={(e) => {
+                setByGroup(e.target.checked);
+                if (e.target.checked && firstBib === "1") setFirstBib("101");
+                if (!e.target.checked && firstBib === "101") setFirstBib("1");
+              }}
+            />
+            {hasShifts ? "Каждая смена" : "Каждый разряд"} с новой {step === 100 ? "сотни" : "тысячи"}:{" "}
+            {firstValid ? `${first}, ${first + step}, ${first + 2 * step}…` : `101, ${100 + step + 1}…`}
+          </label>
           <button
             type="button"
             className="primary"
             disabled={busy || !firstValid}
             onClick={() =>
               void run(
-                { mode: "random", firstBib: first, keepTeams },
-                `Провести жеребьёвку? Все ${people.length} уч. получат новые номера с №${first} в случайном порядке внутри своей смены.`,
+                { mode: "random", firstBib: first, keepTeams, byGroup },
+                byGroup
+                  ? `Провести жеребьёвку? Все ${people.length} уч. получат новые номера в случайном порядке: ${hasShifts ? "первая смена" : "первый разряд"} с №${first}, ${hasShifts ? "вторая" : "второй"} с №${first + step} и так далее.`
+                  : `Провести жеребьёвку? Все ${people.length} уч. получат новые номера с №${first} в случайном порядке внутри своей смены.`,
               )
             }
           >

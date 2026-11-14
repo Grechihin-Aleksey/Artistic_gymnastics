@@ -54,6 +54,14 @@ describe("жеребьёвка", () => {
     expect(rotation.shifts[0].gymnastIds).toEqual(first.map((g) => g.id));
   });
 
+  it("случайная с новой сотни на каждую смену: 101, 201", async () => {
+    await admin.post(`/competitions/${competitionId}/draw`, { mode: "random", firstBib: 101, byGroup: true }).expect(201);
+    const people = await list();
+    const bibs = (shift: number) => people.filter((g) => g.shift === shift).map((g) => g.bib).sort((a, b) => a - b);
+    expect(bibs(1)).toEqual([101, 102, 103, 104, 105, 106, 107, 108]);
+    expect(bibs(2)).toEqual([201, 202, 203]);
+  });
+
   it("случайная действительно перемешивает", async () => {
     const orders = new Set<string>();
     for (let i = 0; i < 6; i++) {
