@@ -127,7 +127,7 @@ function Picker() {
         {list && pairUp(list).map(([c, other]) => (
           <li key={c.id}>
             <a href={routeHash(other ? { competitionId: c.id, group: [c.id, other.id], view: "auto" } : { competitionId: c.id, view: "auto" })}>
-              {c.name} <span className="muted">{other ? "девочки и мальчики" : c.discipline}</span>
+              {c.name} <span className="muted">{other ? "женская и мужская" : c.discipline}</span>
             </a>
           </li>
         ))}

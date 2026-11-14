@@ -306,7 +306,7 @@ export function AdminScreen() {
           <select value={listedId} onChange={(e) => setCompetitionId(e.target.value)}>
             {listed.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} ({competitions.some((o) => o.pairId && o.pairId === c.pairId && o.id !== c.id) ? "девочки и мальчики" : c.discipline})
+                {c.name} ({competitions.some((o) => o.pairId && o.pairId === c.pairId && o.id !== c.id) ? "женская и мужская" : c.discipline})
               </option>
             ))}
           </select>
