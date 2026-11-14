@@ -21,6 +21,12 @@ export const GYMNAST_STATUS_NAMES: Readonly<Record<GymnastStatus, string>> = {
 /** Правила судейства: FIG или свои (база по разряду минус сбавки). */
 export const RULES = ["FIG", "CUSTOM"] as const;
 export type Rules = (typeof RULES)[number];
+/**
+ * Как засчитывать два опорных прыжка. FIG: в многоборье и командах — первый,
+ * в таблице снаряда и финале — среднее двух. BEST: везде лучший из двух.
+ */
+export const VAULT_RULES = ["FIG", "BEST"] as const;
+export type VaultRule = (typeof VAULT_RULES)[number];
 
 export const disciplineSchema = z.enum(DISCIPLINES);
 export const apparatusSchema = z.enum(APPARATUS);
@@ -293,6 +299,7 @@ export const setLogoSchema = z.object({
  */
 export const setRulesSchema = z.object({
   rules: z.enum(RULES),
+  vaultRule: z.enum(VAULT_RULES).default("FIG"),
   deductions: z
     .array(z.object({ name: z.string().trim().min(1).max(100), value: score.max(10).positive() }))
     .max(40)
@@ -547,6 +554,7 @@ export interface NormativesView {
 
 export interface RulesView {
   rules: Rules;
+  vaultRule: VaultRule;
   deductions: { name: string; value: number }[];
   categories: {
     id: string;

@@ -10,7 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex } from "@ag/shared";
-import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES } from "@ag/shared";
+import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES, VAULT_RULES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
 export const apparatusEnum = pgEnum("apparatus", APPARATUS);
@@ -19,6 +19,7 @@ export const markKindEnum = pgEnum("mark_kind", MARK_KINDS);
 export const performanceStatusEnum = pgEnum("performance_status", PERFORMANCE_STATUSES);
 export const inquiryStatusEnum = pgEnum("inquiry_status", INQUIRY_STATUSES);
 export const rulesEnum = pgEnum("rules", RULES);
+export const vaultRuleEnum = pgEnum("vault_rule", VAULT_RULES);
 export const gymnastStatusEnum = pgEnum("gymnast_status", GYMNAST_STATUSES);
 export const stageEnum = pgEnum("stage", STAGES);
 export const onlineEntryStatusEnum = pgEnum("online_entry_status", ONLINE_ENTRY_STATUSES);
@@ -39,6 +40,8 @@ export const competitions = pgTable("competitions", {
   logo: text("logo"),
   /** FIG или свои правила: база по разряду минус сбавки. */
   rules: rulesEnum("rules").notNull().default("FIG"),
+  /** Два опорных прыжка: по FIG (первый в многоборье, среднее на снаряде) или лучший из двух. */
+  vaultRule: vaultRuleEnum("vault_rule").notNull().default("FIG"),
   /** Своих правил: список сбавок за требования, баллы в тысячных. */
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
   /** Идёт квалификация или финалы на снарядах: новые выступления получают этот этап. */
