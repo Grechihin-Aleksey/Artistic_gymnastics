@@ -6,6 +6,7 @@ import {
   shiftApparatus,
   QUALIFICATION_5_4_3,
   averageVaults,
+  bestVault,
   executionScore,
   formatPoints,
   rank,
@@ -89,6 +90,13 @@ describe("опорный прыжок", () => {
       neutral: p(0.05),
       total: p(14.366),
     });
+  });
+  it("«лучший из двух»: выше итог, при равном итоге выше E", () => {
+    const first = { d: p(5.6), e: p(8.9), neutral: 0, total: p(14.5) };
+    const second = { d: p(5.4), e: p(8.933), neutral: 0, total: p(14.333) };
+    expect(bestVault(first, second)).toBe(first);
+    const same = { d: p(5.5), e: p(9), neutral: 0, total: p(14.5) };
+    expect(bestVault(first, same)).toBe(same);
   });
 });
 

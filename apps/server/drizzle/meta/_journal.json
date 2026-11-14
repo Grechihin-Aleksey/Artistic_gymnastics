@@ -120,6 +120,13 @@
       "when": 1792528022587,
       "tag": "0016_competition_pair",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794648532179,
+      "tag": "0017_vault_rule",
+      "breakpoints": true
     }
   ]
 }
