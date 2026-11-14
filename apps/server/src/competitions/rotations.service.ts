@@ -125,8 +125,13 @@ export class RotationsService {
       const byShift = people.some((g) => g.shift !== null);
       const key = (g: (typeof people)[number]) => (byShift ? g.shift : g.category) ?? Number.MAX_SAFE_INTEGER;
       const groups = [...new Set(people.map(key))].sort((a, b) => a - b);
+      // С новой сотни на каждую смену: шаг 100, а если в смене больше 100 человек — 1000 и так далее.
+      const largest = Math.max(...groups.map((group) => people.filter((g) => key(g) === group).length));
+      let step = 100;
+      while (step < largest) step *= 10;
       let next = input.firstBib;
-      for (const group of groups) {
+      for (const [index, group] of groups.entries()) {
+        if (input.byGroup) next = input.firstBib + index * step;
         const members = people.filter((g) => key(g) === group);
         // Блоки: команда целиком или один участник; блоки и участники в блоке — в случайном порядке.
         const blocks = new Map<string, typeof members>();

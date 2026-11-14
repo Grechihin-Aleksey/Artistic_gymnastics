@@ -421,7 +421,9 @@ export const parseEntriesSchema = z.object({
 /**
  * Жеребьёвка стартовых номеров. Случайная — номера по порядку от firstBib в
  * случайном порядке внутри каждой смены (без смен — внутри разряда); участники
- * одной команды при keepTeams выходят подряд. Ручная — секретарь сам ставит номера.
+ * одной команды при keepTeams выходят подряд. При byGroup каждая смена (без смен —
+ * разряд) начинается с новой сотни: 101, 201, 301… (с новой тысячи, если в
+ * какой-то смене больше 100 участников). Ручная — секретарь сам ставит номера.
  * Порядок выхода в смене — по возрастанию номеров.
  */
 /**
@@ -438,6 +440,7 @@ export const drawSchema = z.discriminatedUnion("mode", [
     mode: z.literal("random"),
     firstBib: z.number().int().min(1).max(100_000).default(1),
     keepTeams: z.boolean().default(true),
+    byGroup: z.boolean().default(false),
   }),
   z.object({
     mode: z.literal("manual"),
