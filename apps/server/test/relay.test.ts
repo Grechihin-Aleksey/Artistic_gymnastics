@@ -100,6 +100,7 @@ describe("отправка на сайт", () => {
     expect(before).toMatchObject({ enabled: true, sentAt: null });
     expect(before.embed).toContain(`data-ag-results="${competition.id}"`);
     expect(before.embed).toContain("/embed.js");
+    expect(before.shortcode).toBe(`[ag_results id="${competition.id}" theme="dark"]`);
     expect(before.page).toContain(`/widget/index.html#c=${competition.id}`);
 
     failFirst = 1;

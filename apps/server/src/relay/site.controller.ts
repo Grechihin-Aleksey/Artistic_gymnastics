@@ -9,6 +9,8 @@ interface SiteView extends RelayStatus {
   page: string | null;
   /** Код для вставки на страницу сайта. */
   embed: string | null;
+  /** Шорткод плагина WordPress «Табло результатов»: его можно вставить и без прав администратора. */
+  shortcode: string | null;
 }
 
 /** Связь зала с сайтом: состояние для секретариата и отправка соревнования на сайт сразу. */
@@ -43,12 +45,13 @@ export class SiteController {
   }
 
   private withLinks(id: string, status: RelayStatus): SiteView {
-    if (!status.enabled || !this.config.relayUrl) return { ...status, page: null, embed: null };
+    if (!status.enabled || !this.config.relayUrl) return { ...status, page: null, embed: null, shortcode: null };
     const base = this.config.relayUrl.replace(/\/+$/, "");
     return {
       ...status,
       page: `${base}/widget/index.html#c=${id}&view=auto&theme=dark`,
       embed: `<div data-ag-results="${id}" data-view="auto" data-theme="dark"></div>\n<script src="${base}/embed.js" async></script>`,
+      shortcode: `[ag_results id="${id}" theme="dark"]`,
     };
   }
 }

@@ -2389,6 +2389,7 @@ interface SiteStatus {
 interface SiteView extends SiteStatus {
   page: string | null;
   embed: string | null;
+  shortcode?: string | null;
 }
 
 /** «Сайт» в шапке секретариата: зелёный, если результаты доходят до сайта, красный с причиной, если нет. */
@@ -2441,20 +2442,19 @@ export function SitePanel({
 }) {
   const [view, setView] = useState<SiteView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"embed" | "shortcode" | null>(null);
   // Второе соревнование в той же рамке: девочки и мальчики с переключателем над табло.
   const [partner, setPartner] = useState(partnerId ?? "");
   const others = competitions.filter((c) => c.id !== competitionId);
-  const embed =
-    view?.embed && partner && others.some((c) => c.id === partner)
-      ? view.embed.replace(
-          `data-ag-results="${competitionId}"`,
-          // Девочки первыми: так кнопки переключателя идут «Девочки | Мальчики».
-          `data-ag-results="${[competitionId, partner]
-            .sort((a, b) => Number(competitions.find((c) => c.id === b)?.discipline === "WAG") - Number(competitions.find((c) => c.id === a)?.discipline === "WAG"))
-            .join(",")}"`,
-        )
-      : view?.embed;
+  const together = Boolean(partner && others.some((c) => c.id === partner));
+  // Девочки первыми: так кнопки переключателя идут «Девочки | Мальчики».
+  const ids = together
+    ? [competitionId, partner]
+        .sort((a, b) => Number(competitions.find((c) => c.id === b)?.discipline === "WAG") - Number(competitions.find((c) => c.id === a)?.discipline === "WAG"))
+        .join(",")
+    : competitionId;
+  const embed = view?.embed?.replace(`data-ag-results="${competitionId}"`, `data-ag-results="${ids}"`) ?? null;
+  const shortcode = view?.shortcode?.replace(`id="${competitionId}"`, `id="${ids}"`) ?? null;
 
   const run = useCallback(
     async (method: "GET" | "POST") => {
@@ -2492,11 +2492,11 @@ export function SitePanel({
       </section>
     );
   }
-  const copy = async () => {
+  const copy = async (what: "embed" | "shortcode") => {
     try {
-      await navigator.clipboard.writeText(embed!);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText((what === "embed" ? embed : shortcode)!);
+      setCopied(what);
+      setTimeout(() => setCopied(null), 2000);
     } catch {
       onError("Не удалось скопировать: выделите код и скопируйте вручную");
     }
@@ -2541,14 +2541,26 @@ export function SitePanel({
           </select>
         </label>
       )}
-      {embed && (
+      {shortcode && (
         <div className="wide site-embed">
-          <span className="muted">Код для страницы сайта (блок «HTML» в Elementor):</span>
-          <textarea readOnly rows={3} value={embed} onFocus={(e) => e.target.select()} aria-label="Код для страницы сайта" />
-          <button type="button" onClick={() => void copy()}>
-            {copied ? "Скопировано" : "Скопировать код"}
+          <span className="muted">
+            Шорткод для страницы WordPress (нужен плагин «Табло результатов» из папки downloads). Вставьте его в блок
+            «Шорткод» или прямо в текст страницы: так табло вставляет и редактор без прав администратора.
+          </span>
+          <input readOnly value={shortcode} onFocus={(e) => e.target.select()} aria-label="Шорткод для страницы сайта" />
+          <button type="button" onClick={() => void copy("shortcode")}>
+            {copied === "shortcode" ? "Скопировано" : "Скопировать шорткод"}
           </button>
         </div>
+      )}
+      {embed && (
+        <details className="wide site-embed">
+          <summary className="muted">Код HTML для сайта без плагина (WordPress вырезает его у редакторов без прав администратора)</summary>
+          <textarea readOnly rows={3} value={embed} onFocus={(e) => e.target.select()} aria-label="Код для страницы сайта" />
+          <button type="button" onClick={() => void copy("embed")}>
+            {copied === "embed" ? "Скопировано" : "Скопировать код"}
+          </button>
+        </details>
       )}
     </section>
   );
