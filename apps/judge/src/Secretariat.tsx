@@ -4,6 +4,7 @@ import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
+import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, expandScore, judgeLabel, parsePoints, parseScore } from "./labels";
 import { parseRoster, splitByGender, teamFormatWarnings, type TeamFormat } from "./roster";
@@ -2174,11 +2175,10 @@ export function OnlineEntriesPanel({
   const settings = (open: boolean) =>
     void run("/settings", "PUT", { open, deadline: open && deadline ? new Date(deadline).toISOString() : null });
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(view.link!);
+    if (await copyText(view.link!)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       onError("Не удалось скопировать: выделите ссылку и скопируйте вручную");
     }
   };
@@ -2493,11 +2493,10 @@ export function SitePanel({
     );
   }
   const copy = async (what: "embed" | "shortcode") => {
-    try {
-      await navigator.clipboard.writeText((what === "embed" ? embed : shortcode)!);
+    if (await copyText((what === "embed" ? embed : shortcode)!)) {
       setCopied(what);
       setTimeout(() => setCopied(null), 2000);
-    } catch {
+    } else {
       onError("Не удалось скопировать: выделите код и скопируйте вручную");
     }
   };
