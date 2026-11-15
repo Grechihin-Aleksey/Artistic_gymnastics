@@ -113,6 +113,9 @@ describe("копия в облако", () => {
     const status = (await admin.post("/cloud-backup").expect(200)).body;
     expect(status).toMatchObject({ enabled: true, bucket: "ffk", lastError: expect.stringContaining("403") });
     fail = false;
-    expect((await admin.post("/cloud-backup").expect(200)).body).toMatchObject({ lastError: null, uploaded: ["gymnastics/db/latest.dump", "gymnastics/db/daily/2026-11-14.dump"] });
+    // Кнопка запускает копирование «сейчас», поэтому копия дня — за сегодняшнюю дату сервера.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    expect((await admin.post("/cloud-backup").expect(200)).body).toMatchObject({ lastError: null, uploaded: ["gymnastics/db/latest.dump", `gymnastics/db/daily/${today}.dump`] });
   });
 });
