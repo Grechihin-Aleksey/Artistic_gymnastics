@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Табло результатов (спортивная гимнастика)
  * Description: Шорткод [ag_results id="…"] вставляет на страницу табло турнира с ретранслятора результатов, а [ag_entry id="…" key="…"] — кнопку «Подать заявку» для клубов. Работает и у редакторов без прав администратора: тег script на страницу вставлять не нужно.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires at least: 5.0
  * Requires PHP: 7.4
  * License: MIT
@@ -83,7 +83,8 @@ add_shortcode('ag_results', 'ag_results_shortcode');
 /**
  * [ag_entry id="…" key="…" text="Подать заявку"] — кнопка, ведущая клубы на форму онлайн-заявки.
  * Ссылка одна на весь турнир: id — ID соревнования, key — ключ приёма из секретариата.
- * Кнопка синяя с полосой триколора снизу; стили плагина перебивают стили кнопок темы и Elementor.
+ * Кнопка синяя; полоса триколора под ней раскрывается слева направо при наведении и фокусе
+ * с клавиатуры (на телефонах, где наведения нет, видна сразу). Стили плагина перебивают стили кнопок темы и Elementor.
  */
 function ag_entry_shortcode($atts)
 {
@@ -135,7 +136,12 @@ function ag_entry_style()
         . $b . ':hover .ag-entry__text,' . $b . ':focus-visible .ag-entry__text{background:#002D84!important;box-shadow:0 4px 12px rgba(0,57,166,.35)!important}'
         . $b . ':hover{transform:translateY(-1px)!important}'
         . $b . ':focus-visible{outline:3px solid #D52B1E!important;outline-offset:3px!important;border-radius:10px!important}'
-        . $b . ' .ag-entry__flag{display:flex!important;height:5px!important;border-radius:3px!important;overflow:hidden!important}'
+        . $b . ' .ag-entry__flag{display:flex!important;height:5px!important;border-radius:3px!important;overflow:hidden!important;'
+        . 'transform:scaleX(0)!important;transform-origin:left center!important;transition:transform .35s ease-out!important}'
+        . $b . ':hover .ag-entry__flag,' . $b . ':focus-visible .ag-entry__flag{transform:scaleX(1)!important}'
+        . '@media (hover:none){' . $b . ' .ag-entry__flag{transform:none!important}}'
+        . '@media (prefers-reduced-motion:reduce){' . $b . ',' . $b . ' .ag-entry__flag,' . $b . ' .ag-entry__text{transition:none!important}'
+        . $b . ':hover{transform:none!important}}'
         . $b . ' .ag-entry__flag span{flex:1 1 0!important;display:block!important}'
         . $b . ' .ag-entry__flag span:nth-child(1){background:#FFFFFF!important;box-shadow:inset 1px 1px 0 #D0D7E2,inset 0 -1px 0 #D0D7E2!important}'
         . $b . ' .ag-entry__flag span:nth-child(2){background:#0039A6!important}'
