@@ -2133,7 +2133,12 @@ export function OnlineEntriesPanel({
   adminToken,
   onError,
   onAccepted,
-}: Omit<Props, "discipline"> & { onAccepted: () => void }) {
+  mixed = false,
+}: Omit<Props, "discipline"> & {
+  onAccepted: () => void;
+  /** Турнир девочек и мальчиков: по «Принять в список» участники расходятся по частям по полу. */
+  mixed?: boolean;
+}) {
   const [view, setView] = useState<OnlineEntriesView | null>(null);
   const [deadline, setDeadline] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2223,6 +2228,8 @@ export function OnlineEntriesPanel({
           ? `Присланное попадает сюда само каждые ${Math.round(view.autoSync / 60)} мин, пока у ноутбука есть интернет, или сразу по кнопке «Забрать заявки». Решения по заявкам уходят на сайт так же.`
           : "Присланное попадает сюда по кнопке «Забрать заявки»."}{" "}
         В список участников заявка попадает только после «Принять в список».
+        {mixed &&
+          " Турнир девочек и мальчиков: ссылка одна на обе части, клуб указывает пол каждого участника, и по «Принять в список» девочки попадают в список девочек, мальчики — в список мальчиков."}
       </p>
       <p className="wide">
         {view.open ? (
@@ -2298,6 +2305,7 @@ export function OnlineEntriesPanel({
                 <tr>
                   <th>№</th>
                   <th>Участник</th>
+                  {(mixed || e.rows.some((r) => r.gender)) && <th>Пол</th>}
                   <th>Дата рождения</th>
                   <th>Разряд</th>
                   <th>Команда</th>
@@ -2309,6 +2317,11 @@ export function OnlineEntriesPanel({
                   <tr key={i}>
                     <td className="muted">{i + 1}</td>
                     <td>{[r.lastName, r.firstName, r.middleName].filter(Boolean).join(" ")}</td>
+                    {(mixed || e.rows.some((x) => x.gender)) && (
+                      <td className={!r.gender && mixed ? "late" : undefined}>
+                        {r.gender === "Ж" ? "Ж (девочки)" : r.gender === "М" ? "М (мальчики)" : mixed ? "не указан" : ""}
+                      </td>
+                    )}
                     <td>{r.birthDate ?? ""}</td>
                     <td>{r.category ?? ""}</td>
                     <td>{r.team ?? ""}</td>

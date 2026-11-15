@@ -188,6 +188,11 @@ export const importGymnastsSchema = z.object({
     .max(1000),
 });
 
+/** Пол участника в заявке: «Ж» — девочки (WAG), «М» — мальчики (MAG). */
+export const GENDERS = ["Ж", "М"] as const;
+export type Gender = (typeof GENDERS)[number];
+export const GENDER_DISCIPLINE: Record<Gender, (typeof DISCIPLINES)[number]> = { Ж: "WAG", М: "MAG" };
+
 /** Строка онлайн-заявки клуба: участник без номера, номер даст секретариат. */
 export const onlineEntryRowSchema = z.object({
   lastName: z.string().trim().min(1, "Укажите фамилию").max(100),
@@ -195,6 +200,8 @@ export const onlineEntryRowSchema = z.object({
   /** Разряд или возрастная группа из списка соревнования. */
   category: z.string().trim().max(100).optional(),
   team: z.string().trim().max(200).optional(),
+  /** Пол: нужен турниру девочек и мальчиков, чтобы участник попал в свою часть. */
+  gender: z.enum(GENDERS).optional(),
   ...gymnastDetails,
 });
 
@@ -215,8 +222,13 @@ export interface OnlineEntryCall {
   open: boolean;
   /** ISO-время окончания приёма или null. */
   deadline: string | null;
-  /** Разряды соревнования для выбора в заявке. */
+  /** Разряды соревнования для выбора в заявке (в турнире девочек и мальчиков — обеих частей). */
   categories: string[];
+  /**
+   * Турнир девочек и мальчиков: в заявке обязателен пол, разряды у каждой части свои.
+   * Нет поля — турнир одной программы, пол не спрашиваем.
+   */
+  mixed?: { girls: string[]; boys: string[] } | undefined;
 }
 
 /** Решение секретариата по заявке: клуб видит его по номеру заявки. */

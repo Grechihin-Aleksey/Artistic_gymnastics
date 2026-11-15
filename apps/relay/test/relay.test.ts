@@ -187,6 +187,45 @@ describe("ретранслятор", () => {
     expect((await fetch(`${base}/entry/index.html`)).status).toBe(200);
   });
 
+  it("в турнире девочек и мальчиков требует пол и проверяет разряд по части", async () => {
+    const KEY = "entry-key-mixed-0123456789";
+    const MID = "0d2b7f6e-1111-4a2b-9c3d-5e6f7a8b9c0d";
+    const call = {
+      name: "Первенство",
+      discipline: "WAG",
+      open: true,
+      deadline: null,
+      categories: ["КМС", "1 юношеский"],
+      mixed: { girls: ["КМС"], boys: ["1 юношеский"] },
+    };
+    const put = await fetch(`${base}/entries/${MID}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ key: KEY, call }),
+    });
+    expect(put.status).toBe(200);
+    expect(await (await fetch(`${base}/api/entries/${MID}?k=${KEY}`)).json()).toEqual(call);
+    const club = (rows: unknown[]) =>
+      fetch(`${base}/api/entries/${MID}?k=${KEY}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ club: "Олимп", contact: "Иванова И. И., +7 900", rows }),
+      });
+    const message = async (r: Response) => ((await r.json()) as { message: string }).message;
+    expect(await message(await club([{ lastName: "Белова", firstName: "Бэлла", category: "КМС" }]))).toBe("Участник 1: укажите пол");
+    expect(await message(await club([{ lastName: "Белов", firstName: "Борис", gender: "М", category: "КМС" }]))).toBe(
+      "Участник 1: разряда «КМС» нет у мальчиков",
+    );
+    expect((await club([{ lastName: "Белов", firstName: "Борис", gender: "X" }])).status).toBe(400);
+    const rows = [
+      { lastName: "Белова", firstName: "Бэлла", gender: "Ж", category: "КМС" },
+      { lastName: "Белов", firstName: "Борис", gender: "М", category: "1 юношеский" },
+    ];
+    expect((await club(rows)).status).toBe(201);
+    const hall = await fetch(`${base}/entries/${MID}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(((await hall.json()) as { entries: { rows: unknown[] }[] }).entries[0]!.rows).toEqual(rows);
+  });
+
   it("хранит выложенные протоколы, отдаёт их сайту и снимает по запросу зала", async () => {
     const put = (body: unknown, token = TOKEN, method = "PUT") =>
       fetch(`${base}/protocols/${ID}`, {

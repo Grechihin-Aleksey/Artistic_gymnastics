@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -8,15 +9,16 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import type {
-  OnlineEntryDecision,
-  OnlineEntriesView,
-  OnlineEntryCall,
-  ReceivedOnlineEntry,
-  RejectOnlineEntryInput,
-  SetOnlineEntriesInput,
+import {
+  GENDER_DISCIPLINE,
+  type OnlineEntryDecision,
+  type OnlineEntriesView,
+  type OnlineEntryCall,
+  type ReceivedOnlineEntry,
+  type RejectOnlineEntryInput,
+  type SetOnlineEntriesInput,
 } from "@ag/shared";
-import { and, asc, eq, isNotNull, max } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, max } from "drizzle-orm";
 import { newToken } from "../auth/tokens";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { APP_CONFIG, relayHeaders, type AppConfig } from "../config";
@@ -98,6 +100,23 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
     return done;
   }
 
+  /**
+   * Турнир девочек и мальчиков принимает заявки одной ссылкой: они живут в первой
+   * части (её id и есть pairId), какую бы часть ни открыл секретарь.
+   */
+  private async main(competitionId: string) {
+    const competition = await this.competitions.get(competitionId);
+    if (!competition.pairId || competition.pairId === competition.id) return competition;
+    return this.competitions.get(competition.pairId);
+  }
+
+  /** Части турнира: одна или две (девочки и мальчики). */
+  private async parts(competitionId: string) {
+    const main = await this.main(competitionId);
+    if (!main.pairId) return [main];
+    return this.db.select().from(competitions).where(eq(competitions.pairId, main.pairId)).orderBy(asc(competitions.createdAt));
+  }
+
   private get enabled(): boolean {
     return Boolean(this.config.relayUrl && this.config.relayToken);
   }
@@ -107,7 +126,8 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async view(competitionId: string): Promise<OnlineEntriesView> {
-    const competition = await this.competitions.get(competitionId);
+    const competition = await this.main(competitionId);
+    competitionId = competition.id;
     const shared = this.enabled && competition.entryKey;
     const rows = await this.db
       .select()
@@ -136,7 +156,8 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
   /** Открыть или закрыть приём: сначала на сайте, потом у себя — иначе секретарь увидит неправду. */
   async setSettings(competitionId: string, input: SetOnlineEntriesInput): Promise<OnlineEntriesView> {
     this.requireRelay();
-    const competition = await this.competitions.get(competitionId);
+    const competition = await this.main(competitionId);
+    competitionId = competition.id;
     const key = competition.entryKey ?? newToken();
     await this.publish(competitionId, key, { open: input.open, deadline: input.deadline });
     await this.db.transaction(async (tx) => {
@@ -152,7 +173,8 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
   /** Забрать новые заявки с сайта; заодно обновить там список разрядов. */
   async sync(competitionId: string): Promise<OnlineEntriesView> {
     this.requireRelay();
-    const competition = await this.competitions.get(competitionId);
+    const competition = await this.main(competitionId);
+    competitionId = competition.id;
     if (!competition.entryKey) throw new ConflictException("Приём онлайн-заявок ещё не открывали");
     await this.publish(competitionId, competition.entryKey, {
       open: competition.entriesOpen,
@@ -174,32 +196,62 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
   /**
    * Принять заявку: участники попадают в список с номерами после последнего,
    * клуб и город — из заявки. Номера потом можно переразыграть жеребьёвкой.
+   * В турнире девочек и мальчиков каждый участник идёт в свою часть по полу,
+   * номера сквозные на обе части.
    */
   async accept(competitionId: string, entryId: string): Promise<OnlineEntriesView> {
+    const parts = await this.parts(competitionId);
+    competitionId = parts[0]!.id;
+    const mixed = parts.length > 1;
+    if (mixed) {
+      // Проверяем до решения: заявка без пола остаётся новой, секретарь может её отклонить.
+      const [found] = await this.db
+        .select()
+        .from(onlineEntries)
+        .where(and(eq(onlineEntries.id, entryId), eq(onlineEntries.competitionId, competitionId)));
+      const missing = found?.status === "NEW" ? found.entry.rows.findIndex((r) => !r.gender) : -1;
+      if (missing >= 0) {
+        const r = found!.entry.rows[missing]!;
+        throw new BadRequestException(
+          `У участника ${r.lastName} ${r.firstName} не указан пол: в турнире девочек и мальчиков его некуда отнести. Отклоните заявку и попросите клуб подать её заново`,
+        );
+      }
+    }
     const row = await this.decide(competitionId, entryId, "ACCEPTED", null);
     const [last] = await this.db
       .select({ value: max(gymnasts.bib) })
       .from(gymnasts)
-      .where(eq(gymnasts.competitionId, competitionId));
+      .where(inArray(gymnasts.competitionId, parts.map((p) => p.id)));
     let bib = last?.value ?? 0;
     const { entry } = row;
+    const people = entry.rows.map((r) => ({
+      part: mixed ? parts.find((p) => p.discipline === GENDER_DISCIPLINE[r.gender!])! : parts[0]!,
+      row: {
+        bib: ++bib,
+        lastName: r.lastName,
+        firstName: r.firstName,
+        club: entry.club,
+        ...(entry.city ? { city: entry.city } : {}),
+        ...(r.middleName ? { middleName: r.middleName } : {}),
+        ...(r.birthDate ? { birthDate: r.birthDate } : {}),
+        ...(r.coach ? { coach: r.coach } : {}),
+        ...(r.category ? { category: r.category } : {}),
+        ...(r.team ? { team: r.team } : {}),
+      },
+    }));
+    const imported: { id: string; bibs: number[] }[] = [];
     try {
-      await this.competitions.importGymnasts(competitionId, {
-        rows: entry.rows.map((r) => ({
-          bib: ++bib,
-          lastName: r.lastName,
-          firstName: r.firstName,
-          club: entry.club,
-          ...(entry.city ? { city: entry.city } : {}),
-          ...(r.middleName ? { middleName: r.middleName } : {}),
-          ...(r.birthDate ? { birthDate: r.birthDate } : {}),
-          ...(r.coach ? { coach: r.coach } : {}),
-          ...(r.category ? { category: r.category } : {}),
-          ...(r.team ? { team: r.team } : {}),
-        })),
-      });
+      for (const part of parts) {
+        const rows = people.filter((p) => p.part.id === part.id).map((p) => p.row);
+        if (!rows.length) continue;
+        await this.competitions.importGymnasts(part.id, { rows });
+        imported.push({ id: part.id, bibs: rows.map((r) => r.bib) });
+      }
     } catch (e) {
-      // Список не изменился (импорт — всё или ничего): возвращаем заявку в новые.
+      // Импорт части — всё или ничего; если вторая часть не загрузилась, убираем и первую.
+      for (const done of imported) {
+        await this.db.delete(gymnasts).where(and(eq(gymnasts.competitionId, done.id), inArray(gymnasts.bib, done.bibs)));
+      }
       await this.db.update(onlineEntries).set({ status: "NEW", decidedAt: null }).where(eq(onlineEntries.id, entryId));
       throw e;
     }
@@ -214,6 +266,7 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
   }
 
   async reject(competitionId: string, entryId: string, input: RejectOnlineEntryInput): Promise<OnlineEntriesView> {
+    competitionId = (await this.main(competitionId)).id;
     const row = await this.decide(competitionId, entryId, "REJECTED", input.note ?? null);
     await this.db.insert(auditLog).values({
       competitionId,
@@ -262,8 +315,17 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
 
   private async publish(competitionId: string, key: string, state: Pick<OnlineEntryCall, "open" | "deadline">) {
     const competition = await this.competitions.get(competitionId);
-    const categories = (await this.results.categoryList(competitionId)).filter((c) => c.id).map((c) => c.name);
+    const parts = await this.parts(competitionId);
+    const names = async (id: string) => (await this.results.categoryList(id)).filter((c) => c.id).map((c) => c.name);
+    const lists = await Promise.all(parts.map(async (p) => ({ discipline: p.discipline, names: await names(p.id) })));
+    const categories = [...new Set(lists.flatMap((l) => l.names))];
     const call: OnlineEntryCall = { name: competition.name, discipline: competition.discipline, categories, ...state };
+    if (parts.length > 1) {
+      call.mixed = {
+        girls: lists.find((l) => l.discipline === "WAG")?.names ?? [],
+        boys: lists.find((l) => l.discipline === "MAG")?.names ?? [],
+      };
+    }
     const decided = await this.db
       .select({ id: onlineEntries.id, status: onlineEntries.status, note: onlineEntries.note, decidedAt: onlineEntries.decidedAt })
       .from(onlineEntries)

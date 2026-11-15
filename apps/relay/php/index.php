@@ -286,6 +286,10 @@ function parse_entry($body): array
                 }
                 $parsed[$key] = $value;
             }
+            if (isset($row->gender)) {
+                if (!in_array($row->gender, ['Ж', 'М'], true)) throw new HttpError(400, 'Пол: Ж или М');
+                $parsed['gender'] = $row->gender;
+            }
             $entry['rows'][] = $parsed;
         } catch (HttpError $e) {
             throw new HttpError(400, 'Участник ' . ($i + 1) . ': ' . $e->getMessage());
@@ -312,6 +316,16 @@ function hall_entries(string $id): void
     if (!property_exists($call, 'deadline') || !($call->deadline === null || is_string($call->deadline))) throw $invalid;
     if (!is_array($call->categories ?? null) || count($call->categories) > 100) throw $invalid;
     foreach ($call->categories as $c) if (!is_string($c) || mb_strlen($c) > 100) throw $invalid;
+    $mixed = null;
+    if (isset($call->mixed)) {
+        if (!is_object($call->mixed)) throw $invalid;
+        foreach (['girls', 'boys'] as $part) {
+            $list = $call->mixed->$part ?? null;
+            if (!is_array($list) || count($list) > 100) throw $invalid;
+            foreach ($list as $c) if (!is_string($c) || mb_strlen($c) > 100) throw $invalid;
+        }
+        $mixed = ['girls' => $call->mixed->girls, 'boys' => $call->mixed->boys];
+    }
     $decisions = null;
     if (isset($body->decisions)) {
         if (!is_object($body->decisions)) throw $invalid;
@@ -329,6 +343,7 @@ function hall_entries(string $id): void
         'deadline' => $call->deadline,
         'categories' => $call->categories,
     ];
+    if ($mixed !== null) $clean['mixed'] = $mixed;
     with_lock("entries-$id", function () use ($id, $body, $clean, $decisions) {
         $current = load_record("entries-$id");
         save_record("entries-$id", [
@@ -377,8 +392,18 @@ function club_entry(string $id, string $key, ?string $entryId): void
         throw new HttpError(409, 'Приём заявок закрыт');
     }
     $entry = parse_entry(read_body(MAX_ENTRY_BYTES));
-    foreach ($entry['rows'] as $row) {
-        if (isset($row['category']) && count($call->categories) > 0 && !in_array($row['category'], $call->categories, true)) {
+    $mixed = $call->mixed ?? null;
+    foreach ($entry['rows'] as $i => $row) {
+        $n = $i + 1;
+        if ($mixed !== null) {
+            // Турнир девочек и мальчиков: без пола участника некуда отнести, разряд — из списка его части.
+            if (!isset($row['gender'])) throw new HttpError(400, "Участник $n: укажите пол");
+            $list = $row['gender'] === 'Ж' ? $mixed->girls : $mixed->boys;
+            if (isset($row['category']) && count($list) > 0 && !in_array($row['category'], $list, true)) {
+                $who = $row['gender'] === 'Ж' ? 'девочек' : 'мальчиков';
+                throw new HttpError(400, "Участник $n: разряда «{$row['category']}» нет у $who");
+            }
+        } elseif (isset($row['category']) && count($call->categories) > 0 && !in_array($row['category'], $call->categories, true)) {
             throw new HttpError(400, "Разряда «{$row['category']}» нет в соревновании");
         }
     }

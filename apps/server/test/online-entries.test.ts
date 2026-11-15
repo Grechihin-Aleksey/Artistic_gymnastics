@@ -149,6 +149,41 @@ describe("онлайн-заявки клубов", () => {
     expect(await service.autoSync()).toEqual([]);
   });
 
+  it("турнир девочек и мальчиков: одна ссылка на обе части, участники расходятся по полу", async () => {
+    const girls = (await admin.post("/competitions", { name: "Первенство", discipline: "WAG" }).expect(201)).body.id as string;
+    const boys = (await admin.post("/competitions", { name: "Первенство", discipline: "MAG", pairWith: girls }).expect(201)).body.id as string;
+    await admin.post(`/competitions/${girls}/gymnasts/import`, { rows: [{ bib: 1, lastName: "Аксёнова", firstName: "Ася", category: "КМС" }] }).expect(201);
+    await admin.post(`/competitions/${boys}/gymnasts/import`, { rows: [{ bib: 2, lastName: "Аксёнов", firstName: "Антон", category: "1 юношеский" }] }).expect(201);
+
+    // Приём открывают из любой части — он один, у первой части; на сайт уходят разряды обеих.
+    const fromBoys = (await admin.put(`/competitions/${boys}/online-entries/settings`, { open: true }).expect(200)).body as OnlineEntriesView;
+    expect(fromBoys.link).toContain(`#c=${girls}&`);
+    expect(published.at(-1)!.call).toMatchObject({ categories: ["КМС", "1 юношеский"], mixed: { girls: ["КМС"], boys: ["1 юношеский"] } });
+    expect((await admin.get(`/competitions/${girls}/online-entries`).expect(200)).body.link).toBe(fromBoys.link);
+
+    submitted.length = 0;
+    const both = entry("Олимп", [
+      { lastName: "Белова", firstName: "Бэлла", gender: "Ж", category: "КМС" },
+      { lastName: "Белов", firstName: "Борис", gender: "М", category: "1 юношеский", team: "Олимп" },
+    ]);
+    const noGender = entry("Старт", [{ lastName: "Глебова", firstName: "Галя" }]);
+    submitted.push(both, noGender);
+    await admin.post(`/competitions/${boys}/online-entries/sync`).expect(201);
+
+    // Без пола участника некуда отнести: заявка остаётся новой.
+    const refused = await admin.post(`/competitions/${girls}/online-entries/${noGender.id}/accept`).expect(400);
+    expect(refused.body.message).toContain("Глебова Галя не указан пол");
+    await admin.post(`/competitions/${girls}/online-entries/${noGender.id}/reject`, { note: "Укажите пол" }).expect(201);
+
+    const view = (await admin.post(`/competitions/${boys}/online-entries/${both.id}/accept`).expect(201)).body as OnlineEntriesView;
+    expect(view.entries.find((e) => e.id === both.id)).toMatchObject({ status: "ACCEPTED" });
+    const list = async (id: string) =>
+      ((await admin.get(`/competitions/${id}/gymnasts`).expect(200)).body as { bib: number; lastName: string }[]).map((g) => [g.bib, g.lastName]);
+    // Номера сквозные на обе части.
+    expect(await list(girls)).toEqual([[1, "Аксёнова"], [3, "Белова"]]);
+    expect(await list(boys)).toEqual([[2, "Аксёнов"], [4, "Белов"]]);
+  });
+
   it("говорит, если сайта нет или он не отвечает", async () => {
     down = true;
     expect((await admin.post(`${base()}/sync`).expect(502)).body.message).toBe("Сайт соревнований ответил ошибкой 503");

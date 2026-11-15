@@ -56,8 +56,8 @@ const HEADERS: [Field, RegExp][] = [
 export function normalizeGender(text: string): "Ж" | "М" | "" | null {
   const t = text.trim().toLowerCase().replace(/\.$/, "");
   if (!t) return "";
-  if (/^(ж|жен|женский|д|дев|девочка|девушка|f|w)$/.test(t)) return "Ж";
-  if (/^(м|муж|мужской|мал|мальчик|юн|юноша|m)$/.test(t)) return "М";
+  if (/^(ж|жен|женский|д|дев|девочка|девочки|девушка|девушки|f|w)$/.test(t)) return "Ж";
+  if (/^(м|муж|мужской|мал|мальчик|мальчики|юн|юноша|юноши|m)$/.test(t)) return "М";
   return null;
 }
 
