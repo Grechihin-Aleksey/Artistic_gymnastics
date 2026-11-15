@@ -64,17 +64,19 @@ describe.skipIf(!hasPhp)("плагин WordPress: кнопка «Подать з
     render(atts, { ...opts, tag: "ag_entry" }).html;
 
   it("ведёт на форму заявки ретранслятора этого сайта", () => {
-    expect(entry({ id: ID, key: KEY })).toBe(
-      `<div class="wp-block-buttons ag-entry"><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://ffk52.ru/results/entry/index.html#c=${ID}&#038;k=${KEY}" target="_blank" rel="noopener">Подать заявку</a></div></div>`,
+    const html = entry({ id: ID, key: KEY });
+    expect(html).toMatch(/^<style id="ag-entry-style">.*#0039A6.*#D52B1E.*<\/style>/);
+    expect(html.replace(/^<style[^]*?<\/style>/, "")).toBe(
+      `<div class="ag-entry"><a class="ag-entry__button" href="https://ffk52.ru/results/entry/index.html#c=${ID}&#038;k=${KEY}" target="_blank" rel="noopener"><span class="ag-entry__text">Подать заявку</span><span class="ag-entry__flag" aria-hidden="true"><span></span><span></span><span></span></span></a></div>`,
     );
     expect(entry({ id: ID, key: KEY, text: "Заявка на Кубок" }, { base: "https://relay.example.ru/r" })).toContain(
       `href="https://relay.example.ru/r/entry/index.html#c=${ID}&#038;k=${KEY}"`,
     );
-    expect(entry({ id: ID, key: KEY, text: "Заявка на Кубок" })).toContain(">Заявка на Кубок</a>");
+    expect(entry({ id: ID, key: KEY, text: "Заявка на Кубок" })).toContain(">Заявка на Кубок</span>");
   });
 
   it("лишнее в атрибутах не попадает на страницу", () => {
-    expect(entry({ id: ID, key: KEY, text: '<b onclick="x">Жми</b>' })).toContain(">Жми</a>");
+    expect(entry({ id: ID, key: KEY, text: '<b onclick="x">Жми</b>' })).toContain('<span class="ag-entry__text">Жми</span>');
     expect(entry({ id: ID, key: `${KEY}"><script>` })).toBe("");
     expect(entry({ id: "x", key: KEY })).toBe("");
     expect(entry({ id: ID, key: "" }, { editor: true })).toContain("Скопируйте шорткод заново");
