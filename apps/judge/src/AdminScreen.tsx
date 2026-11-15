@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
 import { apiRequest } from "./api";
+import { copyText } from "./clipboard";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
 import {
   DrawPanel,
@@ -90,36 +91,6 @@ function loginUrl(token: string): string {
 
 /** Секретариат открыт по адресу localhost: ссылки и QR-коды с ним не откроются на других устройствах. */
 const LOCAL_ONLY = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-
-/**
- * Копирует текст в буфер обмена. В сети зала страница открыта по http, а там navigator.clipboard нет,
- * поэтому запасной путь — скрытое поле и команда «копировать».
- */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Пробуем запасной путь.
-  }
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.opacity = "0";
-  document.body.appendChild(area);
-  area.select();
-  let ok = false;
-  try {
-    ok = document.execCommand("copy");
-  } catch {
-    ok = false;
-  }
-  area.remove();
-  return ok;
-}
 
 function judgeTitle(judge: Judge): string {
   return `${APPARATUS_NAMES[judge.apparatus]}, ${judgeLabel(judge.role, judge.seat)}`;
