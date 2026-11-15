@@ -17,6 +17,7 @@ import type {
   SetRulesInput,
   UpdateGymnastInput,
 } from "@ag/shared";
+import { FIG_E_TOLERANCE } from "@ag/shared";
 import { and, asc, eq, inArray, isNull, max, ne } from "drizzle-orm";
 import { hashToken, newToken, openToken, sealToken } from "../auth/tokens";
 import { APP_CONFIG, type AppConfig } from "../config";
@@ -146,9 +147,15 @@ export class CompetitionsService {
           .where(eq(performances.competitionId, competitionId))
       ).map((r) => r.categoryId),
     );
+    const table = competition.eToleranceTable;
     return {
       rules: competition.rules,
       vaultRule: competition.vaultRule,
+      eTolerance: fromPoints(competition.eTolerance),
+      eToleranceTable: table
+        ? table.map((r) => ({ from: fromPoints(r.from), tolerance: fromPoints(r.tolerance) })).sort((a, b) => b.from - a.from)
+        : FIG_E_TOLERANCE.map((r) => ({ ...r })),
+      eToleranceTableDefault: table === null,
       deductions: publicCompetition(competition).deductions,
       categories: rows.map((c) => ({
         id: c.id,
@@ -192,6 +199,11 @@ export class CompetitionsService {
         .set({
           rules: input.rules,
           vaultRule: input.vaultRule,
+          ...(input.eTolerance !== undefined && { eTolerance: toPoints(input.eTolerance) }),
+          ...(input.eToleranceTable !== undefined && {
+            eToleranceTable:
+              input.eToleranceTable?.map((r) => ({ from: toPoints(r.from), tolerance: toPoints(r.tolerance) })) ?? null,
+          }),
           deductions: input.deductions.map((d) => ({ name: d.name, value: toPoints(d.value) })),
         })
         .where(eq(competitions.id, competitionId));

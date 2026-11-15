@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
-import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
+import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
@@ -1291,6 +1291,10 @@ export function RulesPanel({
   const [rules, setRules] = useState<Rules>("FIG");
   const [vaultRule, setVaultRule] = useState<VaultRule>("FIG");
   const [deductions, setDeductions] = useState<{ name: string; value: string }[]>([]);
+  const [eTolerance, setETolerance] = useState("");
+  const [eTable, setETable] = useState<{ from: string; tolerance: string }[]>([]);
+  /** Таблица допусков как в FIG — сохраняем null, программа возьмёт свою. */
+  const [eTableFig, setETableFig] = useState(true);
   const [bases, setBases] = useState<Record<string, BaseDraft>>({});
   const { saved, markSaved, watch } = useSaved();
   const program = apparatusFor(discipline);
@@ -1300,6 +1304,9 @@ export function RulesPanel({
     setRules(v.rules);
     setVaultRule(v.vaultRule);
     setDeductions(v.deductions.map((d) => ({ name: d.name, value: String(d.value) })));
+    setETolerance(v.eTolerance.toFixed(2));
+    setETable(v.eToleranceTable.map((r) => ({ from: r.from.toFixed(2), tolerance: r.tolerance.toFixed(2) })));
+    setETableFig(v.eToleranceTableDefault);
     setBases(
       Object.fromEntries(
         v.categories.map((c) => [
@@ -1335,6 +1342,34 @@ export function RulesPanel({
       }
       return { name: d.name.trim(), value: value ?? 0 };
     });
+  const eToleranceValue = readScore(eTolerance);
+  if (rules === "CUSTOM" && (eToleranceValue === null || eToleranceValue <= 0 || eToleranceValue > 10)) {
+    problems.push("Допуск расхождения сбавок E: число от 0.01 до 10");
+  }
+  const eTableRows = eTable
+    .filter((r) => r.from.trim() || r.tolerance.trim())
+    .map((r) => {
+      const from = readScore(r.from);
+      const tolerance = readScore(r.tolerance);
+      if (rules === "FIG" && (from === null || from > 10 || tolerance === null || tolerance <= 0 || tolerance > 10)) {
+        problems.push(`Таблица допусков, строка «от ${r.from || "?"}»: оценка E от 0 до 10 и допуск от 0.01 до 10`);
+      }
+      return { from: from ?? 0, tolerance: tolerance ?? 0 };
+    });
+  if (rules === "FIG" && !eTableFig) {
+    if (!eTableRows.some((r) => r.from === 0)) problems.push("Таблица допусков: нужна строка «от 0»");
+    if (new Set(eTableRows.map((r) => r.from)).size !== eTableRows.length) {
+      problems.push("Таблица допусков: одна и та же оценка «от» в двух строках");
+    }
+  }
+  const editETable = (change: (rows: { from: string; tolerance: string }[]) => { from: string; tolerance: string }[]) => {
+    setETable(change);
+    setETableFig(false);
+  };
+  const resetETable = () => {
+    setETable(FIG_E_TOLERANCE.map((r) => ({ from: r.from.toFixed(2), tolerance: r.tolerance.toFixed(2) })));
+    setETableFig(true);
+  };
   const baseRows = (view?.categories ?? []).map((c) => {
     const draft = bases[c.id] ?? { base: "", apparatus: {} };
     const base = readScore(draft.base);
@@ -1361,7 +1396,14 @@ export function RulesPanel({
       const result = await apiRequest<RulesView>(`/competitions/${competitionId}/rules`, {
         token: adminToken,
         method: "PUT",
-        body: { rules, vaultRule, deductions: deductionRows, bases: rules === "CUSTOM" ? baseRows : [] },
+        body: {
+          rules,
+          vaultRule,
+          deductions: deductionRows,
+          bases: rules === "CUSTOM" ? baseRows : [],
+          ...(rules === "CUSTOM" && eToleranceValue !== null && { eTolerance: eToleranceValue }),
+          ...(rules === "FIG" && { eToleranceTable: eTableFig ? null : eTableRows }),
+        },
       });
       apply(result);
       onSaved(result.rules);
@@ -1504,6 +1546,77 @@ export function RulesPanel({
             </button>
           </div>
         </>
+      )}
+
+      {rules === "FIG" ? (
+        <div className="wide">
+          <h3>Допуск расхождения сбавок судей E</h3>
+          <p className="muted">
+            Если сбавки судей E расходятся больше допуска, старший судья видит предупреждение. Утвердить оценку оно не
+            мешает. Допуск выбирается по оценке E (10 − средняя сбавка): строка «от 9.00» действует от 9.000 до
+            следующей строки выше.
+          </p>
+          <table className="rules-table">
+            <thead>
+              <tr>
+                <th>Оценка E от</th>
+                <th>Допуск</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {eTable.map((r, i) => (
+                <tr key={i}>
+                  <td>
+                    <input
+                      inputMode="decimal"
+                      value={r.from}
+                      onChange={(e) =>
+                        editETable((rows) => rows.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)))
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      inputMode="decimal"
+                      value={r.tolerance}
+                      onChange={(e) =>
+                        editETable((rows) => rows.map((x, k) => (k === i ? { ...x, tolerance: e.target.value } : x)))
+                      }
+                    />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="link"
+                      disabled={eTable.length <= 1}
+                      onClick={() => editETable((rows) => rows.filter((_, k) => k !== i))}
+                    >
+                      Убрать
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="deduction-row">
+            <button type="button" onClick={() => editETable((rows) => [...rows, { from: "", tolerance: "" }])}>
+              Добавить строку
+            </button>
+            <button type="button" disabled={eTableFig} onClick={resetETable}>
+              Вернуть как в FIG
+            </button>
+            <span className="muted">{eTableFig ? "Таблица как в FIG." : "Таблица изменена."}</span>
+          </div>
+        </div>
+      ) : (
+        <label className="wide">
+          Допуск расхождения сбавок судей E
+          <input inputMode="decimal" value={eTolerance} onChange={(e) => setETolerance(e.target.value)} />
+          <span className="muted">
+            Если сбавки судей E расходятся больше, старший судья видит предупреждение. Утвердить оценку оно не мешает.
+          </span>
+        </label>
       )}
 
       {problems.length > 0 && <div className="alert wide">{problems.join("; ")}</div>}

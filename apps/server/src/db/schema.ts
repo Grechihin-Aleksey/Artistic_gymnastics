@@ -44,6 +44,10 @@ export const competitions = pgTable("competitions", {
   vaultRule: vaultRuleEnum("vault_rule").notNull().default("FIG"),
   /** Своих правил: список сбавок за требования, баллы в тысячных. */
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
+  /** Своих правил: допуск расхождения сбавок судей E, тысячные балла. */
+  eTolerance: integer("e_tolerance").notNull().default(500),
+  /** FIG: своя таблица допусков по оценке E, тысячные балла; null — таблица программы. */
+  eToleranceTable: jsonb("e_tolerance_table").$type<{ from: number; tolerance: number }[]>(),
   /** Идёт квалификация или финалы на снарядах: новые выступления получают этот этап. */
   phase: stageEnum("phase").notNull().default("QUAL"),
   /** Общекомандный зачёт: очки за места. Пустые таблицы — зачёт не ведётся. */

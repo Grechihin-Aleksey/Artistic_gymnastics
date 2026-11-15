@@ -1,4 +1,4 @@
-import { submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
+import { eToleranceFor, submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
 import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
 import { MarkQueue, type SendOutcome } from "./markQueue";
@@ -201,10 +201,29 @@ describe("быстрый ввод оценки", () => {
 
 describe("расхождение сбавок судей E", () => {
   it("молчит в пределах допуска и предупреждает сверх него", () => {
-    expect(eSpreadWarning([1.2])).toBeNull();
-    expect(eSpreadWarning([1.2, 1.7])).toBeNull();
-    expect(eSpreadWarning([1.2, 1.4, 1.3])).toBeNull();
-    expect(eSpreadWarning([1.2, 2.0])).toBe("Сбавки судей E расходятся на 0.80 (допуск 0.50). Проверьте перед утверждением");
+    expect(eSpreadWarning([1.2], 0.5)).toBeNull();
+    expect(eSpreadWarning([1.2, 1.7], 0.5)).toBeNull();
+    expect(eSpreadWarning([1.2, 1.4, 1.3], 0.5)).toBeNull();
+    expect(eSpreadWarning([1.2, 2.0], 0.5)).toBe("Сбавки судей E расходятся на 0.80 (допуск 0.50). Проверьте перед утверждением");
+  });
+
+  it("по FIG допуск зависит от оценки E, по своим правилам — одно число", () => {
+    // Оценка E 9.6 — верхняя строка таблицы, 8.2 — строка «от 8», 5.0 — «от 0».
+    expect(eToleranceFor({ rules: "FIG" }, [0.3, 0.5])).toBe(0.2);
+    expect(eToleranceFor({ rules: "FIG" }, [1.7, 1.9])).toBe(0.5);
+    expect(eToleranceFor({ rules: "FIG" }, [5, 5])).toBe(0.7);
+    // Граница строки входит в неё: E ровно 9.000 — строка «от 9».
+    expect(eToleranceFor({ rules: "FIG" }, [1, 1])).toBe(0.3);
+    // Своя таблица вместо заложенной.
+    const table = [
+      { from: 0, tolerance: 1 },
+      { from: 9, tolerance: 0.1 },
+    ];
+    expect(eToleranceFor({ rules: "FIG", eToleranceTable: table }, [0.5])).toBe(0.1);
+    expect(eToleranceFor({ rules: "FIG", eToleranceTable: table }, [2])).toBe(1);
+    expect(eToleranceFor({ rules: "CUSTOM", eTolerance: 0.8, eToleranceTable: table }, [0.5])).toBe(0.8);
+    expect(eToleranceFor({ rules: "CUSTOM" }, [0.5])).toBe(0.5);
+    expect(eToleranceFor(null, [0.5])).toBe(0.2);
   });
 });
 
