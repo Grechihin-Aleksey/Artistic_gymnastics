@@ -108,6 +108,7 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
 
   async view(competitionId: string): Promise<OnlineEntriesView> {
     const competition = await this.competitions.get(competitionId);
+    const shared = this.enabled && competition.entryKey;
     const rows = await this.db
       .select()
       .from(onlineEntries)
@@ -117,10 +118,8 @@ export class OnlineEntriesService implements OnModuleInit, OnModuleDestroy {
       enabled: this.enabled,
       open: competition.entriesOpen,
       deadline: competition.entriesDeadline?.toISOString() ?? null,
-      link:
-        this.enabled && competition.entryKey
-          ? `${this.relayUrl("entry/index.html").toString()}#c=${competitionId}&k=${competition.entryKey}`
-          : null,
+      link: shared ? `${this.relayUrl("entry/index.html").toString()}#c=${competitionId}&k=${competition.entryKey}` : null,
+      shortcode: shared ? `[ag_entry id="${competitionId}" key="${competition.entryKey}"]` : null,
       syncedAt: competition.entriesSyncedAt?.toISOString() ?? null,
       autoSync: this.interval,
       entries: rows.map((r) => ({

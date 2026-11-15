@@ -2102,6 +2102,29 @@ function localInput(iso: string | null): string {
   return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
+/** Копирование в буфер; в сети зала по http navigator.clipboard недоступен, тогда через скрытое поле. */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+    }
+  }
+}
+
 const longTime = (iso: string) => new Date(iso).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
 
 /**
@@ -2118,6 +2141,7 @@ export function OnlineEntriesPanel({
   const [deadline, setDeadline] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedButton, setCopiedButton] = useState<"shortcode" | "html" | null>(null);
 
   const run = useCallback(
     async (path: string, method: "GET" | "POST" | "PUT" = "GET", body?: unknown) => {
@@ -2182,6 +2206,18 @@ export function OnlineEntriesPanel({
       onError("Не удалось скопировать: выделите ссылку и скопируйте вручную");
     }
   };
+  // Кнопка «Подать заявку» для сайта: ссылка одна на весь турнир, поэтому её можно выложить для всех клубов.
+  const buttonHtml = view.link
+    ? `<a href="${view.link.replace(/&/g, "&amp;")}" target="_blank" rel="noopener">Подать заявку</a>`
+    : null;
+  const copyButton = async (what: "shortcode" | "html") => {
+    if (await copyToClipboard((what === "shortcode" ? view.shortcode : buttonHtml)!)) {
+      setCopiedButton(what);
+      setTimeout(() => setCopiedButton(null), 2000);
+    } else {
+      onError("Не удалось скопировать: выделите код и скопируйте вручную");
+    }
+  };
   const fresh = view.entries.filter((e) => e.status === "NEW").length;
 
   return (
@@ -2225,6 +2261,23 @@ export function OnlineEntriesPanel({
           <input readOnly value={view.link} aria-label="Ссылка для клубов" onFocus={(e) => e.target.select()} />
           <button type="button" onClick={() => void copy()}>
             {copied ? "Скопировано" : "Скопировать ссылку"}
+          </button>
+        </div>
+      )}
+      {view.shortcode && (
+        <div className="wide entry-link">
+          <span className="muted entry-button-hint">
+            Ссылка одна для всех клубов, её можно поставить на сайт кнопкой «Подать заявку». Шорткод вставьте в блок
+            «Шорткод» или прямо в текст страницы WordPress (нужен плагин «Табло результатов» версии 1.1 из папки
+            downloads). Отправить заявку сможет любой посетитель сайта, но в список она попадёт только после «Принять в
+            список».
+          </span>
+          <input readOnly value={view.shortcode} aria-label="Шорткод кнопки «Подать заявку»" onFocus={(e) => e.target.select()} />
+          <button type="button" onClick={() => void copyButton("shortcode")}>
+            {copiedButton === "shortcode" ? "Скопировано" : "Скопировать шорткод кнопки"}
+          </button>
+          <button type="button" onClick={() => void copyButton("html")}>
+            {copiedButton === "html" ? "Скопировано" : "Скопировать HTML кнопки"}
           </button>
         </div>
       )}
