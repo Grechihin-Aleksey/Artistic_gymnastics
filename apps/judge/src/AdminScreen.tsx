@@ -535,9 +535,11 @@ export function AdminScreen() {
       {ready && competition && (
         <>
           <div {...pane("roster")}>
+            {/* Турнир девочек и мальчиков принимает заявки одной ссылкой: на обеих частях одна панель. */}
             <OnlineEntriesPanel
-              key={`online-${competition.id}`}
-              competitionId={competition.id}
+              key={`online-${competition.pairId ?? competition.id}`}
+              competitionId={competition.pairId ?? competition.id}
+              mixed={Boolean(partner)}
               adminToken={adminToken}
               onError={setError}
               onAccepted={() => {

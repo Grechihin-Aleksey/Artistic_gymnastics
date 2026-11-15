@@ -33,6 +33,9 @@ const publishEntriesSchema = z.object({
     open: z.boolean(),
     deadline: z.string().nullable(),
     categories: z.array(z.string().max(100)).max(100),
+    mixed: z
+      .object({ girls: z.array(z.string().max(100)).max(100), boys: z.array(z.string().max(100)).max(100) })
+      .optional(),
   }),
   decisions: z
     .record(
@@ -180,8 +183,19 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       const row = issue.path[0] === "rows" && typeof issue.path[1] === "number" ? `Участник ${issue.path[1] + 1}: ` : "";
       throw new HttpError(400, `${row}${issue.message}`);
     }
-    const unknown = parsed.data.rows.find((r) => r.category && call.categories.length > 0 && !call.categories.includes(r.category));
-    if (unknown) throw new HttpError(400, `Разряда «${unknown.category}» нет в соревновании`);
+    if (call.mixed) {
+      // Турнир девочек и мальчиков: без пола участника некуда отнести, разряд — из списка его части.
+      parsed.data.rows.forEach((r, i) => {
+        if (!r.gender) throw new HttpError(400, `Участник ${i + 1}: укажите пол`);
+        const list = r.gender === "Ж" ? call.mixed!.girls : call.mixed!.boys;
+        if (r.category && list.length > 0 && !list.includes(r.category)) {
+          throw new HttpError(400, `Участник ${i + 1}: разряда «${r.category}» нет у ${r.gender === "Ж" ? "девочек" : "мальчиков"}`);
+        }
+      });
+    } else {
+      const unknown = parsed.data.rows.find((r) => r.category && call.categories.length > 0 && !call.categories.includes(r.category));
+      if (unknown) throw new HttpError(400, `Разряда «${unknown.category}» нет в соревновании`);
+    }
     const received = await entries.add(id, parsed.data);
     json(res, 201, { id: received.id, receivedAt: received.receivedAt });
   }

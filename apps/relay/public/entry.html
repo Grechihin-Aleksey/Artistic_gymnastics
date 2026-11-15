@@ -73,7 +73,7 @@
 
       <section>
         <h2>Участники</h2>
-        <p class="muted">Можно заполнить строки по одной или вставить список из Excel: столбцы Фамилия, Имя, Отчество, Дата рождения, Разряд, Тренер, Команда.</p>
+        <p class="muted" id="paste-hint">Можно заполнить строки по одной или вставить список из Excel: столбцы Фамилия, Имя, Отчество, Дата рождения, Разряд, Тренер, Команда.</p>
         <div id="rows"></div>
         <div class="actions">
           <button type="button" id="add">+ участник</button>
@@ -119,6 +119,29 @@
     ["coach", "Тренер"],
     ["team", "Команда"],
   ];
+  // Турнир девочек и мальчиков: пол обязателен, в таблице Excel — последний столбец.
+  const GENDER = ["gender", "Пол *"];
+  const fields = () => (call && call.mixed ? [...FIELDS, GENDER] : FIELDS);
+  function genderOf(text) {
+    const t = String(text || "").trim().toLowerCase().replace(/\.$/, "");
+    if (/^(ж|жен|женский|д|дев|девочка|девочки|девушка|девушки|f|w)$/.test(t)) return "Ж";
+    if (/^(м|муж|мужской|мал|мальчик|мальчики|юн|юноша|юноши|m)$/.test(t)) return "М";
+    return "";
+  }
+  /** Разряды для выбора: в турнире девочек и мальчиков — своей части, пока пол не выбран — обеих. */
+  function categoriesFor(gender) {
+    if (!call.mixed) return call.categories;
+    if (gender === "Ж") return call.mixed.girls;
+    if (gender === "М") return call.mixed.boys;
+    return call.categories;
+  }
+  function fillCategories(select, gender, value) {
+    const list = categoriesFor(gender);
+    select.textContent = "";
+    select.append(el("option", { value: "", textContent: "—" }), ...list.map((c) => el("option", { value: c, textContent: c })));
+    const match = list.find((c) => c.toLowerCase() === String(value || "").trim().toLowerCase());
+    select.value = match || "";
+  }
   let call = null;
   const STATUS = { NEW: "на рассмотрении", ACCEPTED: "принята, участники включены в список", REJECTED: "отклонена" };
   const statusLink = (entryId) => `${location.pathname}#c=${encodeURIComponent(id)}&k=${encodeURIComponent(key)}&r=${entryId}`;
@@ -174,12 +197,23 @@
 
   function addRow(values = {}) {
     const row = el("div", { className: "row" }, [el("span", { className: "num" })]);
-    for (const [field, title] of FIELDS) {
+    const gender = call.mixed ? genderOf(values.gender) : "";
+    for (const [field, title] of fields()) {
       let input;
-      if (field === "category" && call.categories.length > 0) {
-        input = el("select", { name: field }, [el("option", { value: "", textContent: "—" }), ...call.categories.map((c) => el("option", { value: c, textContent: c }))]);
-        const match = call.categories.find((c) => c.toLowerCase() === String(values[field] || "").trim().toLowerCase());
-        input.value = match || "";
+      if (field === "gender") {
+        input = el("select", { name: field, required: true }, [
+          el("option", { value: "", textContent: "— выберите —" }),
+          el("option", { value: "Ж", textContent: "Ж (девочка)" }),
+          el("option", { value: "М", textContent: "М (мальчик)" }),
+        ]);
+        input.value = gender;
+        input.addEventListener("change", () => {
+          const category = row.querySelector('[name="category"]');
+          if (category && category.tagName === "SELECT") fillCategories(category, input.value, category.value);
+        });
+      } else if (field === "category" && call.categories.length > 0) {
+        input = el("select", { name: field });
+        fillCategories(input, gender, values[field]);
       } else {
         input = el("input", { name: field, value: values[field] || "", maxLength: field === "team" ? 200 : 100 });
         if (field === "birthDate") input.placeholder = "15.03.2014 или 2014";
@@ -203,7 +237,7 @@
     const rows = [...rowsBox.querySelectorAll(".row")]
       .map((row) => {
         const r = {};
-        for (const [field] of FIELDS) {
+        for (const [field] of fields()) {
           const v = row.querySelector(`[name="${field}"]`).value.trim();
           if (v) r[field] = v;
         }
@@ -238,7 +272,7 @@
     });
     for (const line of lines) {
       const cells = line.split("\t");
-      addRow(Object.fromEntries(FIELDS.map(([field], i) => [field, (cells[i] || "").trim()])));
+      addRow(Object.fromEntries(fields().map(([field], i) => [field, (cells[i] || "").trim()])));
     }
     $("#paste-text").value = "";
     $("#paste").hidden = true;
@@ -249,9 +283,18 @@
     const error = $("#error");
     error.hidden = true;
     const button = $("#submit");
+    const entry = collect();
+    if (call.mixed) {
+      const missing = entry.rows.findIndex((r) => !r.gender);
+      if (missing >= 0) {
+        error.textContent = `Участник ${missing + 1}: укажите пол — Ж или М. Без него участника не распределить к девочкам или мальчикам.`;
+        error.hidden = false;
+        return;
+      }
+    }
     button.disabled = true;
     try {
-      const response = await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(collect()) });
+      const response = await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(entry) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || `Ошибка ${response.status}`);
       const at = new Date(data.receivedAt).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
@@ -287,6 +330,10 @@
       call = data;
       document.title = `Заявка: ${call.name}`;
       $("#name").textContent = call.name;
+      if (call.mixed) {
+        $("#paste-hint").textContent =
+          "Турнир девочек и мальчиков: у каждого участника укажите пол. Можно заполнить строки по одной или вставить список из Excel: столбцы Фамилия, Имя, Отчество, Дата рождения, Разряд, Тренер, Команда, Пол (Ж или М).";
+      }
       addRow();
       showStatus();
       void showMine();

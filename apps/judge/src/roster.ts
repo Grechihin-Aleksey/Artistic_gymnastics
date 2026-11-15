@@ -65,8 +65,8 @@ export function parseRoster(text: string): { rows: RosterRow[]; errors: string[]
 
 function genderOf(text: string): "F" | "M" | null {
   const t = text.trim().toLowerCase().replace(/\.$/, "");
-  if (/^(ж|жен|женский|д|дев|девочка|девушка|f|w)$/.test(t)) return "F";
-  if (/^(м|муж|мужской|мал|мальчик|юн|юноша|m)$/.test(t)) return "M";
+  if (/^(ж|жен|женский|д|дев|девочка|девочки|девушка|девушки|f|w)$/.test(t)) return "F";
+  if (/^(м|муж|мужской|мал|мальчик|мальчики|юн|юноша|юноши|m)$/.test(t)) return "M";
   return null;
 }
 
