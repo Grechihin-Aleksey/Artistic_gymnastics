@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Табло результатов (спортивная гимнастика)
  * Description: Шорткод [ag_results id="…"] вставляет на страницу табло турнира с ретранслятора результатов, а [ag_entry id="…" key="…"] — кнопку «Подать заявку» для клубов. Работает и у редакторов без прав администратора: тег script на страницу вставлять не нужно.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires at least: 5.0
  * Requires PHP: 7.4
  * License: MIT
@@ -83,7 +83,8 @@ add_shortcode('ag_results', 'ag_results_shortcode');
 /**
  * [ag_entry id="…" key="…" text="Подать заявку"] — кнопка, ведущая клубы на форму онлайн-заявки.
  * Ссылка одна на весь турнир: id — ID соревнования, key — ключ приёма из секретариата.
- * Кнопка синяя с полосой триколора снизу; стили плагина перебивают стили кнопок темы и Elementor.
+ * Кнопка синяя, фон — медленно переливающийся градиент оттенков синего; полоса триколора под ней раскрывается слева направо при наведении и фокусе
+ * с клавиатуры (на телефонах, где наведения нет, видна сразу). Стили плагина перебивают стили кнопок темы и Elementor.
  */
 function ag_entry_shortcode($atts)
 {
@@ -129,13 +130,19 @@ function ag_entry_style()
         . $b . ',' . $b . ':visited{display:inline-flex!important;flex-direction:column!important;align-items:stretch!important;gap:6px!important;'
         . 'background:none!important;border:0!important;box-shadow:none!important;padding:0!important;text-decoration:none!important;'
         . 'width:auto!important;min-width:0!important;transition:transform .15s ease!important}'
-        . $b . ' .ag-entry__text{display:block!important;background:#0039A6!important;color:#FFFFFF!important;border-radius:10px!important;'
+        . $b . ' .ag-entry__text{display:block!important;background-color:#0039A6!important;background-image:linear-gradient(110deg,#002D84 0%,#0039A6 30%,#2160D9 50%,#0039A6 70%,#002D84 100%)!important;background-size:250% 100%!important;animation:ag-entry-flow 5s ease-in-out infinite alternate!important;color:#FFFFFF!important;border-radius:10px!important;'
         . 'padding:14px 32px!important;font-family:inherit!important;font-weight:600!important;font-size:17px!important;line-height:1.2!important;letter-spacing:.01em!important;'
-        . 'text-align:center!important;text-transform:none!important;box-shadow:0 2px 6px rgba(0,57,166,.25)!important;transition:background .15s ease,box-shadow .15s ease!important}'
-        . $b . ':hover .ag-entry__text,' . $b . ':focus-visible .ag-entry__text{background:#002D84!important;box-shadow:0 4px 12px rgba(0,57,166,.35)!important}'
+        . 'text-align:center!important;text-transform:none!important;text-shadow:0 1px 1px rgba(0,20,70,.35)!important;box-shadow:0 2px 6px rgba(0,57,166,.25)!important;transition:filter .15s ease,box-shadow .15s ease!important}'
+        . '@keyframes ag-entry-flow{from{background-position:0% 50%}to{background-position:100% 50%}}'
+        . $b . ':hover .ag-entry__text,' . $b . ':focus-visible .ag-entry__text{filter:brightness(.92)!important;box-shadow:0 4px 12px rgba(0,57,166,.35)!important}'
         . $b . ':hover{transform:translateY(-1px)!important}'
         . $b . ':focus-visible{outline:3px solid #D52B1E!important;outline-offset:3px!important;border-radius:10px!important}'
-        . $b . ' .ag-entry__flag{display:flex!important;height:5px!important;border-radius:3px!important;overflow:hidden!important}'
+        . $b . ' .ag-entry__flag{display:flex!important;height:5px!important;border-radius:3px!important;overflow:hidden!important;'
+        . 'transform:scaleX(0)!important;transform-origin:left center!important;transition:transform .35s ease-out!important}'
+        . $b . ':hover .ag-entry__flag,' . $b . ':focus-visible .ag-entry__flag{transform:scaleX(1)!important}'
+        . '@media (hover:none){' . $b . ' .ag-entry__flag{transform:none!important}}'
+        . '@media (prefers-reduced-motion:reduce){' . $b . ',' . $b . ' .ag-entry__flag,' . $b . ' .ag-entry__text{transition:none!important;animation:none!important}'
+        . $b . ':hover{transform:none!important}}'
         . $b . ' .ag-entry__flag span{flex:1 1 0!important;display:block!important}'
         . $b . ' .ag-entry__flag span:nth-child(1){background:#FFFFFF!important;box-shadow:inset 1px 1px 0 #D0D7E2,inset 0 -1px 0 #D0D7E2!important}'
         . $b . ' .ag-entry__flag span:nth-child(2){background:#0039A6!important}'
