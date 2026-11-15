@@ -2106,6 +2106,25 @@ function localInput(iso: string | null): string {
 const longTime = (iso: string) => new Date(iso).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
 
 /**
+ * Кнопка заявки без плагина, как у шорткода: синяя, под ней полоса триколора. Только встроенные стили
+ * у a и span: их WordPress оставляет и у редакторов без прав администратора.
+ */
+function entryButtonHtml(link: string): string {
+  const stripe = (color: string, edge = "") =>
+    `<span style="flex:1;background:${color};${edge}"></span>`;
+  return (
+    `<a href="${link.replace(/&/g, "&amp;")}" target="_blank" rel="noopener" ` +
+    `style="display:inline-flex;flex-direction:column;gap:6px;text-decoration:none;background:none;border:0;padding:0;box-shadow:none">` +
+    `<span style="display:block;background:#0039A6;color:#FFFFFF;border-radius:10px;padding:14px 32px;font-weight:600;font-size:17px;line-height:1.2;text-align:center">Подать заявку</span>` +
+    `<span style="display:flex;height:5px;border-radius:3px;overflow:hidden">` +
+    stripe("#FFFFFF", "box-shadow:inset 1px 1px 0 #D0D7E2,inset 0 -1px 0 #D0D7E2") +
+    stripe("#0039A6") +
+    stripe("#D52B1E") +
+    `</span></a>`
+  );
+}
+
+/**
  * Онлайн-заявки клубов: секретарь открывает приём, рассылает клубам ссылку,
  * забирает присланные заявки и принимает их в список участников.
  */
@@ -2184,9 +2203,7 @@ export function OnlineEntriesPanel({
     }
   };
   // Кнопка «Подать заявку» для сайта: ссылка одна на весь турнир, поэтому её можно выложить для всех клубов.
-  const buttonHtml = view.link
-    ? `<a href="${view.link.replace(/&/g, "&amp;")}" target="_blank" rel="noopener">Подать заявку</a>`
-    : null;
+  const buttonHtml = view.link ? entryButtonHtml(view.link) : null;
   const copyButton = async (what: "shortcode" | "html") => {
     if (await copyText((what === "shortcode" ? view.shortcode : buttonHtml)!)) {
       setCopiedButton(what);
@@ -2245,7 +2262,7 @@ export function OnlineEntriesPanel({
         <div className="wide entry-link">
           <span className="muted entry-button-hint">
             Ссылка одна для всех клубов, её можно поставить на сайт кнопкой «Подать заявку». Шорткод вставьте в блок
-            «Шорткод» или прямо в текст страницы WordPress (нужен плагин «Табло результатов» версии 1.1 из папки
+            «Шорткод» или прямо в текст страницы WordPress (нужен плагин «Табло результатов» версии 1.2 из папки
             downloads). Отправить заявку сможет любой посетитель сайта, но в список она попадёт только после «Принять в
             список».
           </span>
