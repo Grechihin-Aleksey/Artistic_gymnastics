@@ -379,9 +379,42 @@ select {
   max-width: 240px;
 }
 
+.print-only {
+  display: none;
+}
+
+/* Ссылки судей текстом: длинный адрес переносится, а не растягивает таблицу. */
+.judge-links table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.judge-links th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.judge-links .link-cell {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.9em;
+  word-break: break-all;
+  user-select: all;
+}
+.copied-link {
+  word-break: break-all;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
 @media print {
   .no-print {
     display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .judge-links {
+    color: #000;
   }
   body {
     background: #fff;
