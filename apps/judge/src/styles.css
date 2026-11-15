@@ -926,6 +926,10 @@ select {
   min-width: 0;
 }
 
+.online-entries .entry-button-hint {
+  flex: 1 1 100%;
+}
+
 .entry-card {
   border: 1px solid var(--line);
   border-radius: 10px;

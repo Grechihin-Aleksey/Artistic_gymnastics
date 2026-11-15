@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Табло результатов (спортивная гимнастика)
- * Description: Шорткод [ag_results id="…"] вставляет на страницу табло турнира с ретранслятора результатов. Работает и у редакторов без прав администратора: тег script на страницу вставлять не нужно.
- * Version: 1.0.0
+ * Description: Шорткод [ag_results id="…"] вставляет на страницу табло турнира с ретранслятора результатов, а [ag_entry id="…" key="…"] — кнопку «Подать заявку» для клубов. Работает и у редакторов без прав администратора: тег script на страницу вставлять не нужно.
+ * Version: 1.1.0
  * Requires at least: 5.0
  * Requires PHP: 7.4
  * License: MIT
@@ -80,6 +80,38 @@ function ag_results_shortcode($atts)
 }
 add_shortcode('ag_results', 'ag_results_shortcode');
 
+/**
+ * [ag_entry id="…" key="…" text="Подать заявку"] — кнопка, ведущая клубы на форму онлайн-заявки.
+ * Ссылка одна на весь турнир: id — ID соревнования, key — ключ приёма из секретариата.
+ * Кнопка оформлена классами блока «Кнопки», поэтому выглядит как остальные кнопки темы.
+ */
+function ag_entry_shortcode($atts)
+{
+    $atts = shortcode_atts(array('id' => '', 'key' => '', 'text' => 'Подать заявку'), $atts, 'ag_entry');
+    $id = trim((string) $atts['id']);
+    $key = trim((string) $atts['key']);
+    if (
+        !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $id)
+        || !preg_match('/^[A-Za-z0-9_-]{16,128}$/', $key)
+    ) {
+        return current_user_can('edit_posts')
+            ? '<p><strong>Кнопка заявки:</strong> в шорткоде нет ID соревнования или ключа, или они записаны с ошибкой. Скопируйте шорткод заново в секретариате, в блоке «Онлайн-заявки клубов».</p>'
+            : '';
+    }
+    $text = trim(wp_strip_all_tags((string) $atts['text']));
+    if ($text === '') {
+        $text = 'Подать заявку';
+    }
+    if (function_exists('mb_substr')) {
+        $text = mb_substr($text, 0, 60);
+    }
+    $url = ag_results_base() . '/entry/index.html#c=' . rawurlencode($id) . '&k=' . rawurlencode($key);
+    return '<div class="wp-block-buttons ag-entry"><div class="wp-block-button">'
+        . '<a class="wp-block-button__link wp-element-button" href="' . esc_url($url) . '" target="_blank" rel="noopener">'
+        . esc_html($text) . '</a></div></div>';
+}
+add_shortcode('ag_entry', 'ag_entry_shortcode');
+
 /** Скрипт табло грузится асинхронно и не задерживает показ страницы. */
 function ag_results_async($tag, $handle)
 {
@@ -135,6 +167,7 @@ function ag_results_settings_page()
             <?php submit_button(); ?>
         </form>
         <p>Табло вставляется на страницу шорткодом, например <code>[ag_results id="ID соревнования" theme="dark"]</code>. Готовый шорткод есть в секретариате, в блоке «Результаты на сайте».</p>
+        <p>Кнопка «Подать заявку» для клубов: <code>[ag_entry id="ID соревнования" key="ключ приёма"]</code>, надпись меняется атрибутом <code>text</code>. Готовый шорткод есть в секретариате, в блоке «Онлайн-заявки клубов».</p>
     </div>
     <?php
 }

@@ -8,7 +8,7 @@ const ID = "0b9b6a52-6c1e-4f0e-9a4f-2f1d3c4b5a69";
 const ID2 = "1c9b6a52-6c1e-4f0e-9a4f-2f1d3c4b5a69";
 
 /** Плагин в минимальной обвязке WordPress: шорткод с атрибутами → HTML и подключённые скрипты. */
-function render(atts: Record<string, string>, opts: { base?: string; editor?: boolean } = {}) {
+function render(atts: Record<string, string>, opts: { base?: string; editor?: boolean; tag?: string } = {}) {
   const code = `
     define('ABSPATH', '/');
     $GLOBALS['shortcodes'] = []; $GLOBALS['scripts'] = []; $GLOBALS['filters'] = [];
@@ -20,9 +20,12 @@ function render(atts: Record<string, string>, opts: { base?: string; editor?: bo
     function shortcode_atts($pairs, $atts) { $out = []; foreach ($pairs as $k => $v) $out[$k] = array_key_exists($k, (array) $atts) ? $atts[$k] : $v; return $out; }
     function current_user_can($c) { return ${opts.editor ? "true" : "false"}; }
     function esc_attr($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }
+    function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }
+    function esc_url($s) { return str_replace('&', '&#038;', (string) $s); }
+    function wp_strip_all_tags($s) { return strip_tags((string) $s); }
     function wp_enqueue_script($h, $src) { $GLOBALS['scripts'][$h] = $src; }
     require ${JSON.stringify(PLUGIN)};
-    $html = call_user_func($GLOBALS['shortcodes']['ag_results'], json_decode($argv[1], true));
+    $html = call_user_func($GLOBALS['shortcodes'][${JSON.stringify(opts.tag ?? "ag_results")}], json_decode($argv[1], true));
     $tag = call_user_func($GLOBALS['filters']['script_loader_tag'], "<script src='x'></script>", 'ag-results-embed');
     echo json_encode(['html' => $html, 'scripts' => $GLOBALS['scripts'], 'tag' => $tag]);
   `;
@@ -51,5 +54,29 @@ describe.skipIf(!hasPhp)("плагин WordPress: шорткод табло", ()
     expect(render({ id: `${ID}"><script>` }).html).toBe("");
     expect(render({ id: "" }, { editor: true }).html).toContain("нет ID соревнования");
     expect(Object.keys(render({ id: "" }).scripts)).toHaveLength(0);
+  });
+});
+
+const KEY = "Qm9yb2RpbmEtMjAyNi1rZXktMDEyMzQ1Njc4";
+
+describe.skipIf(!hasPhp)("плагин WordPress: кнопка «Подать заявку»", () => {
+  const entry = (atts: Record<string, string>, opts: { base?: string; editor?: boolean } = {}) =>
+    render(atts, { ...opts, tag: "ag_entry" }).html;
+
+  it("ведёт на форму заявки ретранслятора этого сайта", () => {
+    expect(entry({ id: ID, key: KEY })).toBe(
+      `<div class="wp-block-buttons ag-entry"><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="https://ffk52.ru/results/entry/index.html#c=${ID}&#038;k=${KEY}" target="_blank" rel="noopener">Подать заявку</a></div></div>`,
+    );
+    expect(entry({ id: ID, key: KEY, text: "Заявка на Кубок" }, { base: "https://relay.example.ru/r" })).toContain(
+      `href="https://relay.example.ru/r/entry/index.html#c=${ID}&#038;k=${KEY}"`,
+    );
+    expect(entry({ id: ID, key: KEY, text: "Заявка на Кубок" })).toContain(">Заявка на Кубок</a>");
+  });
+
+  it("лишнее в атрибутах не попадает на страницу", () => {
+    expect(entry({ id: ID, key: KEY, text: '<b onclick="x">Жми</b>' })).toContain(">Жми</a>");
+    expect(entry({ id: ID, key: `${KEY}"><script>` })).toBe("");
+    expect(entry({ id: "x", key: KEY })).toBe("");
+    expect(entry({ id: ID, key: "" }, { editor: true })).toContain("Скопируйте шорткод заново");
   });
 });

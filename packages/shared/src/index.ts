@@ -253,8 +253,10 @@ export interface OnlineEntriesView {
   enabled: boolean;
   open: boolean;
   deadline: string | null;
-  /** Ссылка для клубов. */
+  /** Ссылка для клубов: одна на весь турнир, её можно поставить на сайт кнопкой. */
   link: string | null;
+  /** Шорткод кнопки «Подать заявку» для плагина WordPress «Табло результатов». */
+  shortcode: string | null;
   /** Когда последний раз забирали заявки с ретранслятора. */
   syncedAt: string | null;
   /** Как часто зал сам забирает заявки, секунды; 0 — только по кнопке. */
