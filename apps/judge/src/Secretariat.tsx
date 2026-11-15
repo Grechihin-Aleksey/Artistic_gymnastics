@@ -2103,29 +2103,6 @@ function localInput(iso: string | null): string {
   return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-/** Копирование в буфер; в сети зала по http navigator.clipboard недоступен, тогда через скрытое поле. */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const area = document.createElement("textarea");
-    area.value = text;
-    area.setAttribute("readonly", "");
-    area.style.position = "fixed";
-    area.style.opacity = "0";
-    document.body.appendChild(area);
-    area.select();
-    try {
-      return document.execCommand("copy");
-    } catch {
-      return false;
-    } finally {
-      area.remove();
-    }
-  }
-}
-
 const longTime = (iso: string) => new Date(iso).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
 
 /**
@@ -2211,7 +2188,7 @@ export function OnlineEntriesPanel({
     ? `<a href="${view.link.replace(/&/g, "&amp;")}" target="_blank" rel="noopener">Подать заявку</a>`
     : null;
   const copyButton = async (what: "shortcode" | "html") => {
-    if (await copyToClipboard((what === "shortcode" ? view.shortcode : buttonHtml)!)) {
+    if (await copyText((what === "shortcode" ? view.shortcode : buttonHtml)!)) {
       setCopiedButton(what);
       setTimeout(() => setCopiedButton(null), 2000);
     } else {
