@@ -258,6 +258,18 @@ export function VideoCamerasPanel({
     }
   };
 
+  // Архив может быть большим: браузер скачивает его сам по ссылке, показывая ход загрузки.
+  const downloadClips = async () => {
+    if (!competitionId) return;
+    try {
+      const { url } = await apiRequest<{ url: string }>(`/competitions/${competitionId}/replays/archive-link`, { token: adminToken });
+      window.location.href = url;
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
   const removeClips = async () => {
     if (!competitionId || !clips?.count) return;
     if (!window.confirm(`Удалить ${clips.count} роликов этого турнира? Посмотреть их потом будет нельзя.`)) return;
@@ -351,8 +363,11 @@ export function VideoCamerasPanel({
           {clips && clips.count > 0 && (
             <div className="wide deduction-row">
               <span>
-                Роликов у этого турнира: {clips.count} ({gb(clips.bytes)}).
+                Роликов у этого турнира: {clips.count} ({gb(clips.bytes)}). В архиве они названы понятно: «Бревно №11 Иванова Анна».
               </span>
+              <button type="button" onClick={() => void downloadClips()}>
+                Скачать ролики турнира одним архивом
+              </button>
               <button type="button" className="link danger" onClick={() => void removeClips()}>
                 Удалить ролики турнира
               </button>

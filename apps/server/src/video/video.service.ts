@@ -7,9 +7,11 @@ import { APPARATUS_NAMES, type ReplayView, type SetVideoCamerasInput, type Video
 import { and, eq, gt, inArray, isNotNull, min } from "drizzle-orm";
 import { APP_CONFIG, type AppConfig } from "../config";
 import { DB, type Db } from "../db/db.module";
-import { competitions, marks, performances, settings } from "../db/schema";
+import { competitions, gymnasts, marks, performances, settings } from "../db/schema";
+import { safeName } from "../protocols/zip";
 import { clipWindow, cutArgs, maskUrl, pickSegments, recordedPast } from "./clips";
 import { CameraRecorder, listSegments } from "./recorder";
+import type { ZipFile } from "./zip-stream";
 
 const SETTING = "video.cameras";
 /** Как часто нарезать готовые ролики. */
@@ -180,11 +182,64 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
   private liveDir(apparatus: string): string {
     return join(this.dir!, "live", apparatus);
   }
-  private clipDir(competitionId: string): string {
-    return join(this.dir!, "clips", competitionId);
+  private get clipsRoot(): string {
+    return join(this.dir!, "clips");
   }
-  private clipFile(competitionId: string, performanceId: string, wide: boolean): string {
-    return join(this.clipDir(competitionId), `${performanceId}${wide ? "-wide" : ""}.mp4`);
+
+  // ——— Где лежат ролики ———
+  // Папка турнира «Первенство города [fe057c59]», ролик «Бревно №11 Иванова Анна [14a902bf].mp4»,
+  // широкий — «… [14a902bf шире].mp4». В квадратных скобках — начало номера турнира или выступления:
+  // по нему программа находит файл, даже если участника или турнир потом переименовали.
+
+  /** Папка роликов турнира; create — создать, если её ещё нет. */
+  private async competitionDir(competitionId: string, create = false): Promise<string | null> {
+    const tag = `[${shortId(competitionId)}]`;
+    const found = (await readdir(this.clipsRoot).catch(() => [] as string[])).find((n) => n.endsWith(tag));
+    if (found) return join(this.clipsRoot, found);
+    if (!create) return null;
+    const [c] = await this.db.select({ name: competitions.name }).from(competitions).where(eq(competitions.id, competitionId));
+    const dir = join(this.clipsRoot, `${safeName(c?.name ?? "Турнир")} ${tag}`);
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  /** Ролики турнира по началу номера выступления. */
+  private async clipIndex(competitionId: string): Promise<{ dir: string | null; clips: Map<string, ClipFiles> }> {
+    const dir = await this.competitionDir(competitionId);
+    const clips = new Map<string, ClipFiles>();
+    for (const name of dir ? await readdir(dir).catch(() => [] as string[]) : []) {
+      const m = CLIP_RE.exec(name);
+      if (!m) continue;
+      const entry = clips.get(m[1]!) ?? {};
+      if (m[3] === "fail") entry.fail = name;
+      else if (m[2]) entry.wide = name;
+      else entry.clip = name;
+      clips.set(m[1]!, entry);
+    }
+    return { dir, clips };
+  }
+
+  private async clipFiles(competitionId: string, performanceId: string): Promise<{ dir: string | null; files: ClipFiles }> {
+    const { dir, clips } = await this.clipIndex(competitionId);
+    return { dir, files: clips.get(shortId(performanceId)) ?? {} };
+  }
+
+  /** Понятное имя ролика: снаряд, номер, фамилия, имя; прыжок и финал, если есть. */
+  private async clipTitle(performanceId: string): Promise<string> {
+    const [row] = await this.db
+      .select({
+        apparatus: performances.apparatus,
+        attempt: performances.attempt,
+        stage: performances.stage,
+        bib: gymnasts.bib,
+        lastName: gymnasts.lastName,
+        firstName: gymnasts.firstName,
+      })
+      .from(performances)
+      .innerJoin(gymnasts, eq(gymnasts.id, performances.gymnastId))
+      .where(eq(performances.id, performanceId));
+    if (!row) return "Выступление";
+    return clipTitle(row);
   }
 
   // ——— Ролики ———
@@ -192,22 +247,22 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
   async replay(performanceId: string): Promise<ReplayView> {
     const perf = await this.window(performanceId);
     const view: ReplayView = { performanceId, status: "none", url: null, wideUrl: null, message: null };
-    const hasClip = this.dir ? await exists(this.clipFile(perf.competitionId, perf.id, false)) : false;
-    if (!this.dir || (!this.hasCamera(perf.apparatus) && !hasClip)) {
-      return { ...view, message: "На этом снаряде нет камеры" };
+    if (!this.dir) return { ...view, message: "На этом снаряде нет камеры" };
+    let { files } = await this.clipFiles(perf.competitionId, perf.id);
+    if (!this.hasCamera(perf.apparatus) && !files.clip) return { ...view, message: "На этом снаряде нет камеры" };
+    if (!files.clip && !files.fail) {
+      if (!perf.approvedAt) return { ...view, status: "pending", message: "Ролик появится после утверждения оценки" };
+      // Ещё не нарезан: пробуем сразу, не дожидаясь обхода.
+      await this.build(perf, false);
+      ({ files } = await this.clipFiles(perf.competitionId, perf.id));
     }
-    if (hasClip) {
-      view.status = "ready";
-      view.url = this.link(perf.id, false);
-      if (await exists(this.clipFile(perf.competitionId, perf.id, true))) view.wideUrl = this.link(perf.id, true);
-      return view;
+    if (files.clip) return { ...view, status: "ready", url: this.link(perf.id, false), wideUrl: files.wide ? this.link(perf.id, true) : null };
+    if (files.fail) {
+      const { dir } = await this.clipFiles(perf.competitionId, perf.id);
+      const message = await readFile(join(dir!, files.fail), "utf8").catch(() => "Ролик не получился");
+      return { ...view, status: "failed", message };
     }
-    const failed = await readFile(this.failFile(perf.competitionId, perf.id), "utf8").catch(() => null);
-    if (failed !== null) return { ...view, status: "failed", message: failed };
-    if (!perf.approvedAt) return { ...view, status: "pending", message: "Ролик появится после утверждения оценки" };
-    // Ещё не нарезан: пробуем сразу, не дожидаясь обхода.
-    await this.build(perf, false);
-    return this.replayAfterBuild(perf);
+    return { ...view, status: "pending", message: "Ролик ещё нарезается, через несколько секунд он будет готов" };
   }
 
   /** Ролик пошире (±30 секунд): если на ролике не всё видно. */
@@ -218,18 +273,6 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
     const message = await this.build(perf, true);
     if (message) throw new BadRequestException(message);
     return this.replay(performanceId);
-  }
-
-  private async replayAfterBuild(perf: PerformanceWindow): Promise<ReplayView> {
-    const base: ReplayView = { performanceId: perf.id, status: "pending", url: null, wideUrl: null, message: "Ролик ещё нарезается, через несколько секунд он будет готов" };
-    if (await exists(this.clipFile(perf.competitionId, perf.id, false))) return { ...base, status: "ready", url: this.link(perf.id, false), message: null };
-    const failed = await readFile(this.failFile(perf.competitionId, perf.id), "utf8").catch(() => null);
-    if (failed !== null) return { ...base, status: "failed", message: failed };
-    return base;
-  }
-
-  private failFile(competitionId: string, performanceId: string): string {
-    return join(this.clipDir(competitionId), `${performanceId}.fail`);
   }
 
   private async window(performanceId: string): Promise<PerformanceWindow> {
@@ -254,23 +297,24 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
    * Нарезает ролик. Возвращает null, если ролик готов или ещё рано (камера не дописала
    * нужный кусок), и текст причины, если не получилось.
    */
-  private async build(perf: PerformanceWindow, wide: boolean): Promise<string | null> {
+  private async build(perf: PerformanceWindow, wide: boolean, known?: ClipFiles): Promise<string | null> {
     if (!this.dir || !this.ffmpegOk || !perf.approvedAt) return null;
     const key = `${perf.id}${wide ? "-wide" : ""}`;
     if (this.building.has(key)) return null;
-    const out = this.clipFile(perf.competitionId, perf.id, wide);
+    const existing = known ?? (await this.clipFiles(perf.competitionId, perf.id)).files;
     // Широкий ролик режется заново при каждой просьбе: в нём может прибавиться записи после оценки.
-    if (!wide && (await exists(out))) return null;
+    if (!wide && (existing.clip || existing.fail)) return null;
     const { from, to } = clipWindow(perf.createdAt.getTime(), perf.firstMarkAt?.getTime() ?? null, perf.approvedAt.getTime(), wide);
     const segments = await listSegments(this.liveDir(perf.apparatus));
     const recorder = this.recorders.get(perf.apparatus);
     const waiting = !wide && !recordedPast(segments, to) && Date.now() - to < GIVE_UP_MS && recorder?.status().state === "recording";
     if (waiting) return null;
     const pick = pickSegments(segments, from, to);
+    const tag = `[${shortId(perf.id)}${wide ? " шире" : ""}]`;
     const fail = async (message: string) => {
       if (!wide) {
-        await mkdir(this.clipDir(perf.competitionId), { recursive: true });
-        await writeFile(this.failFile(perf.competitionId, perf.id), message);
+        const dir = (await this.competitionDir(perf.competitionId, true))!;
+        await writeFile(join(dir, `${await this.clipTitle(perf.id)} ${tag}.fail`), message);
       }
       return message;
     };
@@ -279,13 +323,16 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
       return fail(old ? "Запись этого времени уже удалена" : "Камера не записывала во время выступления");
     }
     this.building.add(key);
-    const tmp = `${out}.part`;
-    const list = `${out}.txt`;
+    const dir = (await this.competitionDir(perf.competitionId, true))!;
+    const out = join(dir, `${await this.clipTitle(perf.id)} ${tag}.mp4`);
+    const tmp = join(dir, `.${shortId(perf.id)}${wide ? "-wide" : ""}.part`);
+    const list = `${tmp}.txt`;
     try {
-      await mkdir(this.clipDir(perf.competitionId), { recursive: true });
-      const dir = this.liveDir(perf.apparatus);
-      await writeFile(list, pick.files.map((f) => `file '${join(dir, f).replace(/'/g, "'\\''")}'`).join("\n") + "\n");
+      const live = this.liveDir(perf.apparatus);
+      await writeFile(list, pick.files.map((f) => `file '${join(live, f).replace(/'/g, "'\\''")}'`).join("\n") + "\n");
       await run(this.ffmpeg, cutArgs(list, pick.offset, pick.duration, tmp));
+      // Прежний широкий ролик (возможно, под старым именем) заменяется новым.
+      if (existing.wide && wide) await unlink(join(dir, existing.wide)).catch(() => undefined);
       await rename(tmp, out);
       return null;
     } catch (e) {
@@ -323,10 +370,17 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
           ),
         )
         .groupBy(performances.id);
+      const indexes = new Map<string, Map<string, ClipFiles>>();
       for (const row of rows) {
-        const perf: PerformanceWindow = { ...row, approvedAt: row.approvedAt!, firstMarkAt: row.firstMarkAt ? new Date(row.firstMarkAt) : null };
-        if (await exists(this.failFile(perf.competitionId, perf.id))) continue;
-        await this.build(perf, false);
+        const perf: PerformanceWindow = { ...row, firstMarkAt: row.firstMarkAt ? new Date(row.firstMarkAt) : null };
+        let index = indexes.get(perf.competitionId);
+        if (!index) {
+          index = (await this.clipIndex(perf.competitionId)).clips;
+          indexes.set(perf.competitionId, index);
+        }
+        const files = index.get(shortId(perf.id)) ?? {};
+        if (files.clip || files.fail) continue;
+        await this.build(perf, false, files);
       }
     } catch (e) {
       this.log.warn(`Нарезка роликов: ${(e as Error).message}`);
@@ -338,61 +392,106 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
   /** Удаляет ролики турнира: например, после соревнования, чтобы освободить место. */
   async removeClips(competitionId: string): Promise<{ removed: number }> {
     if (!this.dir) return { removed: 0 };
-    const dir = this.clipDir(competitionId);
+    const dir = await this.competitionDir(competitionId);
+    if (!dir) return { removed: 0 };
     const names = await readdir(dir).catch(() => [] as string[]);
     await rm(dir, { recursive: true, force: true });
     return { removed: names.filter((n) => n.endsWith(".mp4")).length };
   }
 
+  /** Ролики турнира для архива: файлы с понятными именами, без номера в скобках. */
+  async clipList(competitionId: string): Promise<{ folder: string; files: ZipFile[] }> {
+    const dir = this.dir ? await this.competitionDir(competitionId) : null;
+    const [c] = await this.db.select({ name: competitions.name }).from(competitions).where(eq(competitions.id, competitionId));
+    if (!c) throw new NotFoundException("Соревнование не найдено");
+    const folder = safeName(c.name);
+    const files: ZipFile[] = [];
+    const used = new Set<string>();
+    for (const name of (dir ? await readdir(dir).catch(() => [] as string[]) : []).sort((a, b) => a.localeCompare(b, "ru"))) {
+      const m = CLIP_RE.exec(name);
+      if (!m || m[3] !== "mp4") continue;
+      const st = await stat(join(dir!, name)).catch(() => null);
+      if (!st) continue;
+      let title = `${name.slice(0, m.index).trim()}${m[2] ? " (шире)" : ""}`;
+      if (used.has(title)) title = `${title} ${m[1]}`;
+      used.add(title);
+      files.push({ name: `${folder}/${title}.mp4`, path: join(dir!, name), size: st.size });
+    }
+    return { folder, files };
+  }
+
   /** Сколько роликов у турнира и сколько они занимают. */
   async clipsOf(competitionId: string): Promise<{ count: number; bytes: number }> {
     if (!this.dir) return { count: 0, bytes: 0 };
-    const dir = this.clipDir(competitionId);
-    const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".mp4"));
+    const dir = await this.competitionDir(competitionId);
+    const names = (dir ? await readdir(dir).catch(() => [] as string[]) : []).filter((n) => n.endsWith(".mp4"));
     let bytes = 0;
-    for (const n of names) bytes += (await stat(join(dir, n)).catch(() => ({ size: 0 }))).size;
+    for (const n of names) bytes += (await stat(join(dir!, n)).catch(() => ({ size: 0 }))).size;
     return { count: names.length, bytes };
   }
 
-  // ——— Ссылки на ролики ———
+  // ——— Ссылки на ролики и архив ———
 
-  private sign(performanceId: string, wide: boolean, exp: number): string {
-    return createHmac("sha256", this.secret).update(`${performanceId}:${wide ? 1 : 0}:${exp}`).digest("base64url");
+  private sign(subject: string, exp: number): string {
+    return createHmac("sha256", this.secret).update(`${subject}:${exp}`).digest("base64url");
+  }
+
+  private checkSign(subject: string, exp: string, sig: string): void {
+    const expires = Number(exp);
+    if (!Number.isFinite(expires) || expires < Date.now()) throw new NotFoundException("Ссылка устарела: откройте её заново из секретариата");
+    const want = Buffer.from(this.sign(subject, expires));
+    const got = Buffer.from(String(sig ?? ""));
+    if (want.length !== got.length || !timingSafeEqual(want, got)) throw new NotFoundException("Ссылка устарела: откройте её заново из секретариата");
   }
 
   private link(performanceId: string, wide: boolean): string {
     const exp = Date.now() + LINK_TTL_MS;
-    return `/video/clips/${performanceId}${wide ? "-wide" : ""}.mp4?exp=${exp}&sig=${this.sign(performanceId, wide, exp)}`;
+    const name = `${performanceId}${wide ? "-wide" : ""}`;
+    return `/video/clips/${name}.mp4?exp=${exp}&sig=${this.sign(name, exp)}`;
+  }
+
+  /** Ссылка на архив роликов турнира: скачивается браузером напрямую, без токена в заголовке. */
+  archiveLink(competitionId: string): { url: string } {
+    const exp = Date.now() + LINK_TTL_MS;
+    return { url: `/video/archive/${competitionId}.zip?exp=${exp}&sig=${this.sign(`zip:${competitionId}`, exp)}` };
+  }
+
+  checkArchive(competitionId: string, exp: string, sig: string): void {
+    this.checkSign(`zip:${competitionId}`, exp, sig);
   }
 
   /** Файл ролика по подписанной ссылке: проигрыватель браузера не умеет передать токен. */
-  async clipPath(name: string, exp: string, sig: string): Promise<string> {
+  async clipPath(name: string, exp: string, sig: string): Promise<{ path: string; title: string }> {
     const m = /^([0-9a-f-]{36})(-wide)?\.mp4$/.exec(name);
-    const expires = Number(exp);
-    if (!m || !this.dir || !Number.isFinite(expires) || expires < Date.now()) throw new NotFoundException("Ссылка на ролик устарела");
-    const wide = Boolean(m[2]);
-    const want = Buffer.from(this.sign(m[1]!, wide, expires));
-    const got = Buffer.from(String(sig));
-    if (want.length !== got.length || !timingSafeEqual(want, got)) throw new NotFoundException("Ссылка на ролик устарела");
+    if (!m || !this.dir) throw new NotFoundException("Ссылка на ролик устарела");
+    this.checkSign(`${m[1]}${m[2] ?? ""}`, exp, sig);
     const [perf] = await this.db.select({ competitionId: performances.competitionId }).from(performances).where(eq(performances.id, m[1]!));
     if (!perf) throw new NotFoundException("Выступление не найдено");
-    const file = this.clipFile(perf.competitionId, m[1]!, wide);
-    if (!(await exists(file))) throw new NotFoundException("Ролика нет");
-    return file;
+    const { dir, files } = await this.clipFiles(perf.competitionId, m[1]!);
+    const file = m[2] ? files.wide : files.clip;
+    if (!dir || !file) throw new NotFoundException("Ролика нет");
+    return { path: join(dir, file), title: file.replace(/ \[[^\]]+\]\.mp4$/, m[2] ? " (шире).mp4" : ".mp4") };
   }
 
   /** Кадр с камеры сейчас: проверить, что камера смотрит на снаряд. */
   async snapshot(apparatus: string): Promise<Buffer> {
     if (!this.dir || !this.ffmpegOk) throw new BadRequestException(this.unavailableReason() ?? "");
     const segments = await listSegments(this.liveDir(apparatus));
-    // Последний кусок ещё пишется; берём предпоследний, а если он один — последний.
-    const seg = segments.at(-2) ?? segments.at(-1);
-    if (!seg) throw new NotFoundException("С камеры ещё нет записи: подождите 20 секунд после подключения");
-    return runToBuffer(this.ffmpeg, [
-      "-hide_banner", "-loglevel", "error", "-nostdin",
-      "-sseof", "-1", "-i", join(this.liveDir(apparatus), seg.file),
-      "-frames:v", "1", "-vf", "scale=640:-2", "-f", "image2", "-c:v", "mjpeg", "pipe:1",
-    ]);
+    // Последний кусок ещё пишется: начинаем с предпоследнего. Если у куска не нашлось
+    // ключевого кадра ближе к концу, берём первый кадр куска.
+    const candidates = [segments.at(-2), segments.at(-3), segments.at(-1)].filter((s): s is NonNullable<typeof s> => Boolean(s));
+    if (candidates.length === 0) throw new NotFoundException("С камеры ещё нет записи: подождите 20 секунд после подключения");
+    for (const seg of candidates) {
+      for (const seek of [["-sseof", "-3"], []]) {
+        const jpeg = await runToBuffer(this.ffmpeg, [
+          "-hide_banner", "-loglevel", "error", "-nostdin",
+          ...seek, "-i", join(this.liveDir(apparatus), seg.file),
+          "-frames:v", "1", "-vf", "scale=640:-2", "-f", "image2", "-c:v", "mjpeg", "pipe:1",
+        ]).catch(() => Buffer.alloc(0));
+        if (jpeg.length > 0) return jpeg;
+      }
+    }
+    throw new NotFoundException("Не удалось получить кадр: камера присылает видео, которое программа не читает (поставьте в камере H.264)");
   }
 
   // ——— Место на диске ———
@@ -412,9 +511,11 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
       // Ролики: старше clipDays и ролики удалённых турниров.
       const clipsRoot = join(this.dir, "clips");
       const known = new Set((await this.db.select({ id: competitions.id }).from(competitions)).map((c) => c.id));
+      const knownTags = new Set([...known].map((id) => `[${shortId(id)}]`));
       for (const comp of await readdir(clipsRoot).catch(() => [] as string[])) {
         const dir = join(clipsRoot, comp);
-        if (!known.has(comp)) {
+        const tag = /\[[0-9a-f]{8}\]$/.exec(comp)?.[0];
+        if (!tag || !knownTags.has(tag)) {
           await rm(dir, { recursive: true, force: true });
           continue;
         }
@@ -493,4 +594,26 @@ function runToBuffer(cmd: string, args: string[]): Promise<Buffer> {
       else reject(new Error(err.trim() || `ffmpeg завершился с кодом ${code}`));
     });
   });
+}
+
+/** Начало номера: им помечены папки турниров и ролики. */
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** «Бревно №11 Иванова Анна [14a902bf].mp4», «… [14a902bf шире].mp4», «… [14a902bf].fail». */
+const CLIP_RE = /\s*\[([0-9a-f]{8})( шире)?\]\.(mp4|fail)$/;
+
+interface ClipFiles {
+  clip?: string;
+  wide?: string;
+  fail?: string;
+}
+
+/** Понятное имя ролика без номера в скобках. */
+export function clipTitle(p: { apparatus: string; attempt: number; stage: string; bib: number; lastName: string; firstName: string }): string {
+  const parts = [APPARATUS_NAMES[p.apparatus] ?? p.apparatus, `№${p.bib}`, p.lastName, p.firstName];
+  if (p.attempt > 1) parts.push(`прыжок ${p.attempt}`);
+  if (p.stage === "FINAL") parts.push("финал");
+  return safeName(parts.join(" ")).replace(/[\[\]]/g, "");
 }

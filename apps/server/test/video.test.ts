@@ -154,6 +154,35 @@ describe.skipIf(!hasFfmpeg)("камера на бревне", () => {
     const ready = (await admin.get(`/competitions/${id}/readiness`).expect(200)).body as { checks: { group: string; status: string }[] };
     expect(ready.checks.find((c) => c.group === "Видеоповторы")?.status).toBe("ok");
 
+    // На диске — понятные имена: папка турнира и «снаряд №номер фамилия имя».
+    const [folder] = readdirSync(join(dir, "video", "clips"));
+    expect(folder).toBe(`Кубок [${id.slice(0, 8)}]`);
+    expect(readdirSync(join(dir, "video", "clips", folder!)).sort()).toEqual([
+      `Бревно №1 Иванова Анна [${perf.id.slice(0, 8)} шире].mp4`,
+      `Бревно №1 Иванова Анна [${perf.id.slice(0, 8)}].mp4`,
+    ]);
+
+    // Архив всех роликов турнира по подписанной ссылке.
+    const link = (await admin.get(`/competitions/${id}/replays/archive-link`).expect(200)).body.url as string;
+    await request(app.getHttpServer()).get(link.replace(/sig=[^&]+/, "sig=xxx")).expect(404);
+    const archive = await request(app.getHttpServer())
+      .get(link)
+      .buffer(true)
+      .parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => cb(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(archive.headers["content-type"]).toContain("application/zip");
+    expect(Number(archive.headers["content-length"])).toBe(archive.body.length);
+    const zipFile = join(dir, "replays.zip");
+    writeFileSync(zipFile, archive.body);
+    const listing = execFileSync("unzip", ["-l", zipFile]).toString();
+    expect(listing).toContain("Кубок/Бревно №1 Иванова Анна.mp4");
+    expect(listing).toContain("Кубок/Бревно №1 Иванова Анна (шире).mp4");
+    execFileSync("unzip", ["-tq", zipFile]);
+
     expect((await admin.get(`/competitions/${id}/replays`).expect(200)).body.count).toBe(2);
     expect((await admin.delete(`/competitions/${id}/replays`).expect(200)).body.removed).toBe(2);
 
