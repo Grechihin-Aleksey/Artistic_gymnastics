@@ -28,6 +28,52 @@ export type Rules = (typeof RULES)[number];
 export const VAULT_RULES = ["FIG", "BEST"] as const;
 export type VaultRule = (typeof VAULT_RULES)[number];
 
+/**
+ * Строка таблицы допусков расхождения сбавок судей E: при оценке E от from
+ * и выше (до следующей строки) сбавки могут расходиться не больше tolerance.
+ */
+export interface EToleranceRow {
+  from: number;
+  tolerance: number;
+}
+
+/**
+ * Таблица допусков по правилам FIG, как она заложена в программу. Чем ниже
+ * оценка E, тем больше допустимое расхождение. Значения можно поправить
+ * в «Правилах судейства» и вернуть к этим кнопкой «Как в FIG».
+ */
+export const FIG_E_TOLERANCE: readonly EToleranceRow[] = [
+  { from: 9.5, tolerance: 0.2 },
+  { from: 9, tolerance: 0.3 },
+  { from: 8.5, tolerance: 0.4 },
+  { from: 8, tolerance: 0.5 },
+  { from: 7.5, tolerance: 0.6 },
+  { from: 0, tolerance: 0.7 },
+];
+
+/** Допуск по своим правилам, пока секретарь не задал другой. */
+export const DEFAULT_CUSTOM_E_TOLERANCE = 0.5;
+
+/**
+ * Допуск для этих сбавок E. По FIG — строка таблицы по оценке E
+ * (10 − средняя сбавка), по своим правилам — одно число.
+ */
+export function eToleranceFor(
+  settings:
+    { rules?: Rules | undefined; eTolerance?: number | undefined; eToleranceTable?: readonly EToleranceRow[] | undefined }
+    | null
+    | undefined,
+  deductions: number[],
+): number {
+  if (settings?.rules === "CUSTOM") return settings.eTolerance ?? DEFAULT_CUSTOM_E_TOLERANCE;
+  const table = [...(settings?.eToleranceTable?.length ? settings.eToleranceTable : FIG_E_TOLERANCE)].sort(
+    (a, b) => b.from - a.from,
+  );
+  const average = deductions.length ? deductions.reduce((a, b) => a + b, 0) / deductions.length : 0;
+  const eScore = Math.round((10 - average) * 1000) / 1000;
+  return (table.find((r) => eScore >= r.from) ?? table[table.length - 1]!).tolerance;
+}
+
 export const disciplineSchema = z.enum(DISCIPLINES);
 export const apparatusSchema = z.enum(APPARATUS);
 export const judgeRoleSchema = z.enum(JUDGE_ROLES);
@@ -318,6 +364,20 @@ export const setLogoSchema = z.object({
 export const setRulesSchema = z.object({
   rules: z.enum(RULES),
   vaultRule: z.enum(VAULT_RULES).default("FIG"),
+  /** Своих правил: допуск расхождения сбавок E. Не передан — остаётся прежний. */
+  eTolerance: score.max(10).positive().optional(),
+  /**
+   * FIG: таблица допусков по оценке E. null — как в FIG (таблица программы),
+   * не передана — остаётся прежняя. Нижняя строка должна начинаться с 0.
+   */
+  eToleranceTable: z
+    .array(z.object({ from: score.max(10), tolerance: score.max(10).positive() }))
+    .min(1)
+    .max(20)
+    .refine((rows) => rows.some((r) => r.from === 0), "В таблице допусков нужна строка «от 0»")
+    .refine((rows) => new Set(rows.map((r) => r.from)).size === rows.length, "В таблице допусков повторяется «от»")
+    .nullable()
+    .optional(),
   deductions: z
     .array(z.object({ name: z.string().trim().min(1).max(100), value: score.max(10).positive() }))
     .max(40)
@@ -596,6 +656,12 @@ export interface NormativesView {
 export interface RulesView {
   rules: Rules;
   vaultRule: VaultRule;
+  /** Своих правил: допуск расхождения сбавок E. */
+  eTolerance: number;
+  /** FIG: таблица допусков по оценке E, от высшей строки к низшей. */
+  eToleranceTable: EToleranceRow[];
+  /** Таблица не менялась — та, что заложена в программу. */
+  eToleranceTableDefault: boolean;
   deductions: { name: string; value: number }[];
   categories: {
     id: string;

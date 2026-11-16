@@ -58,15 +58,15 @@ export function parseScore(input: string, kind: MarkKind): number | null {
   return value <= max ? value : null;
 }
 
-/** Допуск расхождения сбавок судей E: больше — старший судья видит предупреждение. */
-export const E_TOLERANCE = 0.5;
-
-/** Предупреждение, если сбавки судей E расходятся больше допуска; null — всё в порядке. */
-export function eSpreadWarning(values: number[]): string | null {
+/**
+ * Предупреждение, если сбавки судей E расходятся больше допуска; null — всё в порядке.
+ * Допуск берётся из «Правил судейства» (eToleranceFor). Утверждать оценку это не мешает.
+ */
+export function eSpreadWarning(values: number[], tolerance: number): string | null {
   if (values.length < 2) return null;
   const spread = Math.round((Math.max(...values) - Math.min(...values)) * 1000) / 1000;
-  return spread > E_TOLERANCE
-    ? `Сбавки судей E расходятся на ${spread.toFixed(2)} (допуск ${E_TOLERANCE.toFixed(2)}). Проверьте перед утверждением`
+  return spread > tolerance
+    ? `Сбавки судей E расходятся на ${spread.toFixed(2)} (допуск ${tolerance.toFixed(2)}). Проверьте перед утверждением`
     : null;
 }
 

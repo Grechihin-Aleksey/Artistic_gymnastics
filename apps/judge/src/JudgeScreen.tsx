@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type Discipline, type ScoreBreakdown } from "@ag/scoring";
+import { eToleranceFor } from "@ag/shared";
 import type {
   FinalsView,
   JudgeRole,
@@ -70,6 +71,9 @@ interface Deduction {
  * требования, а база берётся по разряду участника; null — базы нет.
  */
 type Scorer = (d: number, eDeductions: number[], neutral: number) => ScoreBreakdown | null;
+
+/** Предупреждение о расхождении сбавок E с допуском из правил соревнования. */
+type ESpreadCheck = (values: number[]) => string | null;
 
 function makeScorer(rules: Rules | undefined, base: number | null): Scorer {
   return (d, eDeductions, neutral) => {
@@ -182,6 +186,8 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
   const category = rulesView?.categories.find((c) => c.id === currentGymnast?.categoryId);
   const base = category ? (category.apparatus[judge.apparatus as keyof typeof category.apparatus] ?? category.base) : null;
   const scorer = makeScorer(rules, base);
+  // Допуск расхождения сбавок E — из «Правил судейства»: по FIG зависит от оценки E.
+  const eCheck = (values: number[]) => eSpreadWarning(values, eToleranceFor({ ...rulesView, rules }, values));
   const limit = timeLimit(competition.discipline, judge.apparatus);
   const baseNote =
     rules !== "CUSTOM" || !current
@@ -245,6 +251,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
               rules={rules}
               deductions={deductions}
               scorer={scorer}
+              eCheck={eCheck}
               onDone={refresh}
             />
           ) : (
@@ -263,7 +270,14 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
                 ))}
               </div>
               {judge.role === "SUPERVISOR" && (
-                <SupervisorPanel token={token} performance={current} rules={rules} scorer={scorer} onDone={refresh} />
+                <SupervisorPanel
+                  token={token}
+                  performance={current}
+                  rules={rules}
+                  scorer={scorer}
+                  eCheck={eCheck}
+                  onDone={refresh}
+                />
               )}
             </>
           )}
@@ -388,12 +402,14 @@ function SupervisorPanel({
   performance,
   rules,
   scorer,
+  eCheck,
   onDone,
 }: {
   token: string;
   performance: PerformanceView;
   rules: Rules | undefined;
   scorer: Scorer;
+  eCheck: ESpreadCheck;
   onDone: () => Promise<void>;
 }) {
   const custom = rules === "CUSTOM";
@@ -402,7 +418,7 @@ function SupervisorPanel({
   const d = performance.marks.filter((m) => m.kind === "D");
   const e = performance.marks.filter((m) => m.kind === "E");
   const neutral = performance.marks.filter((m) => m.kind === "NEUTRAL");
-  const spread = eSpreadWarning(e.map((m) => m.value));
+  const spread = eCheck(e.map((m) => m.value));
 
   let preview: string | null = null;
   const dValues = new Set(d.map((m) => m.value));
@@ -473,6 +489,7 @@ function TabletScoring({
   rules,
   deductions,
   scorer,
+  eCheck,
   onDone,
   onRecheck,
 }: {
@@ -484,6 +501,7 @@ function TabletScoring({
   rules: Rules | undefined;
   deductions: Deduction[];
   scorer: Scorer;
+  eCheck: ESpreadCheck;
   onDone: () => Promise<void>;
 }) {
   const custom = rules === "CUSTOM";
@@ -524,7 +542,7 @@ function TabletScoring({
   const complete =
     dValue !== null && eValues.every((v): v is number => v !== null) && neutralValue !== null && eJudges.length > 0;
 
-  const spread = eSpreadWarning(eValues.filter((v): v is number => v !== null && v !== undefined));
+  const spread = eCheck(eValues.filter((v): v is number => v !== null && v !== undefined));
 
   let preview: string | null = null;
   if (complete) {
