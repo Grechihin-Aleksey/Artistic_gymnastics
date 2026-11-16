@@ -1767,3 +1767,39 @@ input.secret {
 .admin .hall-board label.inline select {
   width: auto;
 }
+
+/* Готовность к старту */
+.readiness-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.readiness-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  background: var(--muted);
+}
+.readiness-mark.ok {
+  background: var(--ok);
+}
+.readiness-mark.warn {
+  background: var(--warn);
+}
+.readiness-mark.fail {
+  background: var(--bad);
+}
+.readiness-list td {
+  padding: 6px 8px;
+  vertical-align: top;
+}
+.readiness-cell {
+  width: 32px;
+}

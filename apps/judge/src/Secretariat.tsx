@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -334,6 +334,9 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         </button>
         <button type="button" onClick={() => void open("report", "report.pdf", false)}>
           Итоговый отчёт
+        </button>
+        <button type="button" onClick={() => void open("e-judges", "e-judges.pdf", false)}>
+          Работа судей E
         </button>
       </div>
       <h2>Финалы на снарядах</h2>
@@ -1556,6 +1559,11 @@ export function RulesPanel({
             мешает. Допуск выбирается по оценке E (10 − средняя сбавка): строка «от 9.00» действует от 9.000 до
             следующей строки выше.
           </p>
+          <p className="muted">
+            В действующих правилах FIG (2025–2028) готовой таблицы допусков нет: работу судей E там оценивают по
+            отклонению от контрольной оценки. Поэтому таблица программы — ориентир. Если в положении о соревнованиях
+            допуски заданы, впишите их сюда.
+          </p>
           <table className="rules-table">
             <thead>
               <tr>
@@ -1604,9 +1612,9 @@ export function RulesPanel({
               Добавить строку
             </button>
             <button type="button" disabled={eTableFig} onClick={resetETable}>
-              Вернуть как в FIG
+              Вернуть таблицу программы
             </button>
-            <span className="muted">{eTableFig ? "Таблица как в FIG." : "Таблица изменена."}</span>
+            <span className="muted">{eTableFig ? "Таблица программы." : "Таблица изменена."}</span>
           </div>
         </div>
       ) : (
@@ -4858,6 +4866,277 @@ export function JudgesPresencePanel({
         Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
         планшет уснул, связь тоже пропадает, верните его на страницу судьи.
       </p>
+    </section>
+  );
+}
+
+/**
+ * Сбор оценок с планшетов после восстановления базы из резервной копии. Каждый планшет
+ * помнит утверждённые выступления своего снаряда; сервер добавляет те, которых у него нет.
+ */
+export function RecoveryPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<RecoveryReport | null>(null);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+
+  const collect = async () => {
+    setBusy(true);
+    setReport(null);
+    try {
+      const [result, people] = await Promise.all([
+        apiRequest<RecoveryReport>(`/competitions/${competitionId}/recovery`, { token: adminToken, method: "POST" }),
+        apiRequest<Gymnast[]>(`/competitions/${competitionId}/gymnasts`),
+      ]);
+      setNames(new Map(people.map((g) => [g.id, `№${g.bib} ${g.lastName} ${g.firstName}`])));
+      setReport(result);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel no-print">
+      <h2>Оценки с планшетов после восстановления</h2>
+      <p className="muted wide">
+        Если базу восстановили из резервной копии, оценки последних минут перед сбоем в ней могут отсутствовать. Каждый планшет
+        судьи помнит утверждённые оценки своего снаряда. Включите планшеты, дождитесь, пока они выйдут на связь, и нажмите
+        кнопку: пропавшие выступления вернутся на сервер, табло и сайт. Уже утверждённые на сервере оценки не меняются.
+      </p>
+      <div className="wide">
+        <button type="button" className="primary" disabled={busy} onClick={() => void collect()}>
+          {busy ? "Собираем оценки…" : "Собрать оценки с планшетов"}
+        </button>
+      </div>
+      {report && (
+        <div className="wide">
+          <p>
+            Планшетов на связи: {report.tabletsOnline}, ответили: {report.tabletsAnswered}.{" "}
+            {report.restored.length > 0
+              ? `Возвращено выступлений: ${report.restored.length}.`
+              : "Пропавших оценок нет: на сервере всё есть."}
+            {report.alreadyThere > 0 && report.restored.length > 0 && " Остальные оценки с планшетов на сервере уже были."}
+          </p>
+          {report.restored.length > 0 && (
+            <ul>
+              {report.restored.map((r) => (
+                <li key={`${r.gymnastId}:${r.apparatus}:${r.attempt}:${r.stage}`}>
+                  {names.get(r.gymnastId) ?? "Участник"} · {APPARATUS_NAMES[r.apparatus] ?? r.apparatus}
+                  {r.apparatus === "VT" ? `, прыжок ${r.attempt}` : ""}
+                  {r.stage === "FINAL" ? " (финал)" : ""} · {r.total.toFixed(3)}
+                </li>
+              ))}
+            </ul>
+          )}
+          {report.problems.length > 0 && <div className="alert">Не удалось вернуть: {report.problems.join("; ")}</div>}
+          {report.tabletsOnline === 0 && (
+            <div className="alert">Ни один планшет не на связи. Откройте страницы судей на планшетах и повторите.</div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const READINESS_MARK: Record<ReadinessCheck["status"], string> = { ok: "✓", warn: "!", fail: "✕" };
+
+/**
+ * «Готовность к старту»: одним списком всё, что стоит проверить перед соревнованием.
+ * Обновляется сама каждые 10 секунд, пока экран открыт.
+ */
+export function ReadinessPanel({ competitionId, adminToken, onError, active = true }: Omit<Props, "discipline"> & { active?: boolean }) {
+  const [view, setView] = useState<ReadinessView | null>(null);
+  const [open, setOpen] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      setView(await apiRequest<ReadinessView>(`/competitions/${competitionId}/readiness`, { token: adminToken }));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, onError]);
+
+  useEffect(() => {
+    if (!active) return;
+    void load();
+    const timer = setInterval(() => void load(), 10_000);
+    return () => clearInterval(timer);
+  }, [active, load]);
+
+  const fails = view?.checks.filter((c) => c.status === "fail").length ?? 0;
+  const warns = view?.checks.filter((c) => c.status === "warn").length ?? 0;
+  const summary = !view
+    ? "Проверяем…"
+    : fails > 0
+      ? `Без этого не начать: ${fails}${warns > 0 ? `, проверить: ${warns}` : ""}`
+      : warns > 0
+        ? `Можно начинать, но стоит проверить: ${warns}`
+        : "Всё готово к старту";
+
+  return (
+    <section className="panel no-print readiness">
+      <h2>Готовность к старту</h2>
+      <div className="wide readiness-summary">
+        <span className={`readiness-mark ${view?.status ?? "idle"}`}>{view ? READINESS_MARK[view.status] : "…"}</span>
+        <strong>{summary}</strong>
+        <button type="button" className="link" onClick={() => setOpen((o) => !o)}>
+          {open ? "Свернуть" : "Подробнее"}
+        </button>
+        <button type="button" className="link" onClick={() => void load()}>
+          Проверить снова
+        </button>
+      </div>
+      {open && view && (
+        <table className="wide readiness-list">
+          <tbody>
+            {view.checks.map((c, i) => (
+              <tr key={i} className={c.status}>
+                <td className="readiness-cell">
+                  <span className={`readiness-mark ${c.status}`}>{READINESS_MARK[c.status]}</span>
+                </td>
+                <td className="muted">{c.group}</td>
+                <td>{c.text}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+/** Ссылка на экран диктора: открывают с телефона или ноутбука в той же сети Wi-Fi. */
+export function AnnouncerLinkPanel({ competitionId }: { competitionId: string }) {
+  const [copied, setCopied] = useState(false);
+  const link = `${location.origin}/board/#c=${competitionId}&view=announcer`;
+  return (
+    <section className="panel no-print">
+      <h2>Экран диктора</h2>
+      <p className="muted wide">
+        Для диктора на телефоне или ноутбуке в сети зала: кто сейчас на каждом снаряде, последняя оценка с местом на снаряде и в
+        многоборье, кто выходит следующим. Обновляется сам.
+      </p>
+      <div className="wide deduction-row">
+        <a href={link} target="_blank" rel="noreferrer">
+          {link}
+        </a>
+        <button
+          type="button"
+          onClick={() =>
+            void copyText(link).then((ok) => {
+              setCopied(ok);
+              if (ok) setTimeout(() => setCopied(false), 2000);
+            })
+          }
+        >
+          {copied ? "Скопировано" : "Копировать"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const TIMER_PRESETS: { label: string; seconds: number }[] = [
+  { label: "Разминка", seconds: 30 },
+  { label: "Разминка", seconds: 50 },
+  { label: "Переход на снаряды", seconds: 120 },
+  { label: "Общая разминка", seconds: 600 },
+];
+
+const mmss = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+/** «1:30», «90», «10:00» → секунды; null, если не разобрать. */
+export function parseTimerInput(text: string): number | null {
+  const t = text.trim();
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(t);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  return /^\d{1,4}$/.test(t) ? Number(t) : null;
+}
+
+/** Таймер на табло в зале: разминка, переход, перерыв. Табло показывает его только на время отсчёта. */
+export function BoardTimerPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [label, setLabel] = useState("Разминка");
+  const [time, setTime] = useState("0:30");
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    void apiRequest<{ timer: BoardTimer | null }>(`/competitions/${competitionId}/timer`)
+      .then((r) => setEndsAt(r.timer ? Date.now() + r.timer.remainingMs : null))
+      .catch(() => undefined);
+  }, [competitionId]);
+  useEffect(() => {
+    if (endsAt === null) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [endsAt]);
+
+  const send = async (timer: { label: string; seconds: number } | null) => {
+    try {
+      const r = await apiRequest<{ timer: BoardTimer | null }>(`/competitions/${competitionId}/timer`, {
+        token: adminToken,
+        method: "PUT",
+        body: { timer },
+      });
+      setEndsAt(r.timer ? Date.now() + r.timer.remainingMs : null);
+      setNow(Date.now());
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+  const seconds = parseTimerInput(time);
+  const left = endsAt === null ? null : Math.ceil((endsAt - now) / 1000);
+  const running = left !== null && left > -5;
+
+  return (
+    <section className="panel no-print">
+      <h2>Таймер на табло</h2>
+      <p className="muted wide">
+        Обратный отсчёт крупно над результатами на табло в зале. Пока таймер не запущен, табло выглядит как обычно. На сайт
+        таймер не уходит.
+      </p>
+      <div className="wide buttons">
+        {TIMER_PRESETS.map((p) => (
+          <button
+            key={`${p.label}${p.seconds}`}
+            type="button"
+            onClick={() => {
+              setLabel(p.label);
+              setTime(mmss(p.seconds));
+              void send(p);
+            }}
+          >
+            {p.label} {mmss(p.seconds)}
+          </button>
+        ))}
+      </div>
+      <label>
+        Надпись
+        <input value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} />
+      </label>
+      <label>
+        Время (минуты:секунды)
+        <input value={time} inputMode="numeric" onChange={(e) => setTime(e.target.value)} />
+      </label>
+      <div className="wide deduction-row">
+        <button
+          type="button"
+          className="primary"
+          disabled={!label.trim() || seconds === null || seconds < 5 || seconds > 3600}
+          onClick={() => void send({ label: label.trim(), seconds: seconds! })}
+        >
+          Запустить
+        </button>
+        <button type="button" disabled={!running} onClick={() => void send(null)}>
+          Убрать с табло
+        </button>
+        <span className="muted">
+          {running ? (left! > 0 ? `Идёт: осталось ${mmss(left!)}` : "Время вышло") : "Таймер не запущен"}
+        </span>
+      </div>
     </section>
   );
 }

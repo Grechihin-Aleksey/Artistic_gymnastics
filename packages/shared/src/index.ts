@@ -38,9 +38,11 @@ export interface EToleranceRow {
 }
 
 /**
- * Таблица допусков по правилам FIG, как она заложена в программу. Чем ниже
- * оценка E, тем больше допустимое расхождение. Значения можно поправить
- * в «Правилах судейства» и вернуть к этим кнопкой «Как в FIG».
+ * Таблица допусков, заложенная в программу. Чем ниже оценка E, тем больше
+ * допустимое расхождение. В правилах FIG 2025–2028 (CoP, Specific Judges' Rules,
+ * Technical Regulations) готовой таблицы допусков между судьями E нет, поэтому
+ * это ориентир. Значения поправляют в «Правилах судейства» по положению турнира
+ * и возвращают к этим кнопкой «Вернуть таблицу программы».
  */
 export const FIG_E_TOLERANCE: readonly EToleranceRow[] = [
   { from: 9.5, tolerance: 0.2 },
@@ -207,6 +209,24 @@ export const manualScoreSchema = z.object({
   d: score,
   e: z.array(score.max(10)).min(1).max(10),
   neutral: score.optional(),
+});
+
+/**
+ * Утверждённые выступления, которые планшет помнит у себя. После восстановления базы из
+ * резервной копии секретариат просит планшеты прислать их, и сервер добавляет пропавшие.
+ */
+export const recoveredPerformanceSchema = z.object({
+  gymnastId: z.uuid(),
+  apparatus: apparatusSchema,
+  attempt: z.number().int().min(1).max(2),
+  stage: z.enum(STAGES),
+  marks: z
+    .array(z.object({ judgeId: z.uuid(), kind: markKindSchema, value: score }))
+    .min(1)
+    .max(30),
+});
+export const recoverFromTabletSchema = z.object({
+  performances: z.array(recoveredPerformanceSchema).max(2000),
 });
 
 export const reopenPerformanceSchema = z.object({
@@ -588,6 +608,8 @@ export type UpdateJudgeInput = z.infer<typeof updateJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;
+export type RecoveredPerformance = z.infer<typeof recoveredPerformanceSchema>;
+export type RecoverFromTabletInput = z.infer<typeof recoverFromTabletSchema>;
 export type ManualScoreInput = z.infer<typeof manualScoreSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
@@ -712,6 +734,51 @@ export interface PerformanceView {
   marks: MarkView[];
 }
 
+/** Таймер на табло в зале: разминка, ротация, перерыв. null — убрать таймер. */
+export const setBoardTimerSchema = z.object({
+  timer: z
+    .object({
+      label: z.string().trim().min(1).max(40),
+      seconds: z.number().int().min(5).max(3600),
+    })
+    .nullable(),
+});
+export type SetBoardTimerInput = z.infer<typeof setBoardTimerSchema>;
+
+/** Идущий таймер: сколько осталось на момент ответа сервера (часы табло и сервера могут расходиться). */
+export interface BoardTimer {
+  label: string;
+  seconds: number;
+  remainingMs: number;
+}
+
+/** Одна строка «Готовности к старту»: ok — всё в порядке, warn — стоит проверить, fail — без этого не начать. */
+export interface ReadinessCheck {
+  group: string;
+  status: "ok" | "warn" | "fail";
+  text: string;
+}
+
+export interface ReadinessView {
+  status: ReadinessCheck["status"];
+  checks: ReadinessCheck[];
+  checkedAt: string;
+}
+
+/** Итог сбора оценок с планшетов после восстановления базы. */
+export interface RecoveryReport {
+  /** Сколько планшетов судей было на связи, когда секретариат попросил оценки. */
+  tabletsOnline: number;
+  /** Сколько планшетов прислали то, что у них сохранено. */
+  tabletsAnswered: number;
+  /** Выступления, которых не было на сервере и которые добавлены с планшетов. */
+  restored: { gymnastId: string; apparatus: (typeof APPARATUS)[number]; attempt: number; stage: Stage; total: number }[];
+  /** Выступления, которые на сервере уже утверждены: их не трогали. */
+  alreadyThere: number;
+  /** Что не удалось добавить и почему. */
+  problems: string[];
+}
+
 /** События Socket.IO. */
 export const LIVE_EVENTS = {
   /** Клиент → сервер: подписаться на соревнование. */
@@ -730,6 +797,10 @@ export const LIVE_EVENTS = {
   finals: "competition.finals",
   /** Сервер → все: секретариат вывел награждение на табло или убрал его. */
   ceremony: "competition.ceremony",
+  /** Сервер → все: секретариат запустил или убрал таймер на табло (BoardTimer или null). */
+  timer: "competition.timer",
+  /** Сервер → планшеты: секретариат просит прислать оценки, сохранённые на планшетах. */
+  recoveryRequested: "competition.recoveryRequested",
   /** Сервер → все: секретариат поменял, какую часть турнира показывает табло. */
   boardSwitch: "competition.boardSwitch",
 } as const;

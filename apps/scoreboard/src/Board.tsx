@@ -16,6 +16,7 @@ import { ApparatusIcon } from "./ApparatusIcon";
 import { clubList, clubResults } from "./club";
 import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
+import { formatLeft, useBoardTimer } from "./timer";
 import { useBoard, type BoardData } from "./useBoard";
 
 const SHORT: Record<string, string> = {
@@ -50,6 +51,8 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
   }, []);
   const { data, connected, error } = useBoard(route.competitionId, onApproved);
   const protocols = useProtocols(route.competitionId);
+  // Таймер разминки — только на табло в зале, не на сайте.
+  const { timer, now } = useBoardTimer(route.competitionId, !route.embed && !isRelay(location.pathname));
 
   // Имя ищем при показе, а не при получении оценки: свежий снимок мог прийти чуть позже неё.
   const gymnasts = useMemo(() => {
@@ -146,6 +149,13 @@ export function Board({ route }: { route: Route & { competitionId: string } }) {
             </a>
           ))}
         </nav>
+      )}
+
+      {timer && (
+        <div className={`board-timer${timer.endsAt - now <= 0 ? " over" : timer.endsAt - now <= 10_000 ? " soon" : ""}`}>
+          <span className="board-timer-label">{timer.label}</span>
+          <span className="board-timer-left">{timer.endsAt - now <= 0 ? "Время!" : formatLeft(timer.endsAt - now)}</span>
+        </div>
       )}
 
       {flash && (

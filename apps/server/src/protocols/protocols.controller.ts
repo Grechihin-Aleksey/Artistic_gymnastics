@@ -107,6 +107,11 @@ export class ProtocolsController {
       .end(await this.protocols.auditWorkbook(id, group));
   }
 
+  @Get("e-judges")
+  async eJudges(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    send(res, await this.protocols.eJudges(id), "e-judges.pdf");
+  }
+
   @Get("bibs")
   async bibs(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     send(res, await this.protocols.bibs(id), "bibs.pdf");

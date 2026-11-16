@@ -15,6 +15,10 @@ import {
   AuditPanel,
   ShiftsPanel,
   ManualScoresPanel,
+  RecoveryPanel,
+  ReadinessPanel,
+  AnnouncerLinkPanel,
+  BoardTimerPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -787,6 +791,13 @@ export function AdminScreen() {
           </div>
 
           <div {...pane("progress")}>
+            <ReadinessPanel
+              key={`readiness-${competition.id}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "progress"}
+            />
             {partner && (
               <HallBoardPanel
                 key={`hall-board-${competition.id}`}
@@ -798,6 +809,7 @@ export function AdminScreen() {
                 onError={setError}
               />
             )}
+            <BoardTimerPanel key={`timer-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
             <JudgesPresencePanel
               key={`presence-${competition.id}`}
               competitionId={competition.id}
@@ -821,6 +833,13 @@ export function AdminScreen() {
               adminToken={adminToken}
               onError={setError}
               active={tab === "progress"}
+            />
+            <AnnouncerLinkPanel key={`announcer-${competition.id}`} competitionId={competition.id} />
+            <RecoveryPanel
+              key={`recovery-${competition.id}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
             />
             <ProgressPanel
               key={`progress-${competition.id}`}

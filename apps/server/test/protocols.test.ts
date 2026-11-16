@@ -127,7 +127,7 @@ describe("запрос на пересмотр D", () => {
 describe("протоколы", () => {
   it("секретариат получает протоколы в PDF", async () => {
     await perform(gymnastIds[2]!, 4.8, [0.9, 1.0, 1.1, 1.2, 1.3]);
-    for (const path of ["apparatus/BB", "all-around", "teams"]) {
+    for (const path of ["apparatus/BB", "all-around", "teams", "e-judges"]) {
       const res = await pdf(`/competitions/${competitionId}/protocols/${path}`).expect(200);
       expect(res.headers["content-type"]).toBe("application/pdf");
       const body = res.body as Buffer;
