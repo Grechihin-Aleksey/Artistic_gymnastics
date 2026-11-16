@@ -9,3 +9,6 @@ coverage/
 apps/relay/data/
 backups/
 apps/relay/dist-php/
+
+# Закрытый ключ выпуска лицензий никогда не попадает в программу
+*.pem
