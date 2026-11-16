@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
-import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
+import { LOW_BATTERY_PERCENT, AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer, StandbyStatus } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
@@ -4771,6 +4771,7 @@ interface JudgePresence {
   online: boolean;
   since: string | null;
   lastSeen: string | null;
+  battery?: { percent: number; charging: boolean } | null;
 }
 
 /** Как часто секретариат переспрашивает, кто на связи. */
@@ -4831,6 +4832,11 @@ export function JudgesPresencePanel({
   const withTablets = judges.filter(needsTablet);
   const online = withTablets.filter((j) => presence.get(j.id)?.online).length;
   const lost = withTablets.filter((j) => !presence.get(j.id)?.online && presence.get(j.id)?.lastSeen).length;
+  const isLow = (j: PresenceJudge) => {
+    const b = presence.get(j.id)?.battery;
+    return Boolean(presence.get(j.id)?.online && b && !b.charging && b.percent <= LOW_BATTERY_PERCENT);
+  };
+  const low = withTablets.filter(isLow);
 
   return (
     <section className="panel no-print judges-presence">
@@ -4846,6 +4852,12 @@ export function JudgesPresencePanel({
           Код судьи пытаются открыть на другом планшете: {pending.map((j) => j.name).join(", ").replace(/\.$/, "")}. Если судья сменил планшет,
           нажмите «Разрешить новый планшет». Если нет — код мог попасть к постороннему: выдайте судье новый QR-код на экране
           «Судьи».
+        </div>
+      )}
+      {low.length > 0 && (
+        <div className="alert wide">
+          Мало заряда: {low.map((j) => `${APPARATUS_NAMES[j.apparatus] ?? j.apparatus} — ${j.name.replace(/\.$/, "")} (${presence.get(j.id)!.battery!.percent}%)`).join("; ")}. Поставьте
+          планшет на зарядку до следующего выступления.
         </div>
       )}
       <div className="wide presence-grid">
@@ -4875,6 +4887,14 @@ export function JudgesPresencePanel({
                           {state === "never" && "не подключался"}
                           {state === "none" && "без планшета"}
                         </span>
+                        {state === "online" && p?.battery && (
+                          <span
+                            className={`presence-battery${isLow(j) ? " low" : ""}`}
+                            title={p.battery.charging ? "Заряжается" : "Заряд батареи"}
+                          >
+                            {p.battery.charging ? "⚡" : "🔋"} {p.battery.percent}%
+                          </span>
+                        )}
                         {j.tabletPending && (
                           <button type="button" className="primary presence-allow" onClick={() => void allowTablet(j)}>
                             Разрешить новый планшет
@@ -4888,7 +4908,7 @@ export function JudgesPresencePanel({
           ))}
       </div>
       <p className="muted wide">
-        Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
+        Заряд батареи виден у планшетов на Android; iPad свой заряд браузеру не сообщает. Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
         планшет уснул, связь тоже пропадает, верните его на страницу судьи.
       </p>
     </section>

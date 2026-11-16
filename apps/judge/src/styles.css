@@ -1868,3 +1868,13 @@ input.secret {
   font-size: 13px;
   word-break: break-all;
 }
+
+.presence-battery {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.presence-battery.low {
+  color: var(--bad);
+  font-weight: 700;
+}

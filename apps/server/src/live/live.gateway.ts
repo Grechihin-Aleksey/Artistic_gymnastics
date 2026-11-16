@@ -7,7 +7,7 @@ import {
   type OnGatewayConnection,
   type OnGatewayDisconnect,
 } from "@nestjs/websockets";
-import { LIVE_EVENTS, competitionRoom, panelRoom, type PerformanceView } from "@ag/shared";
+import { LIVE_EVENTS, judgeBatterySchema, competitionRoom, panelRoom, type PerformanceView } from "@ag/shared";
 import type { Server, Socket } from "socket.io";
 import { z } from "zod";
 import { AuthService, TABLET_BUSY, deviceOf } from "../auth/auth";
@@ -23,6 +23,8 @@ export interface JudgePresence {
   since: string | null;
   /** Когда связь пропала последний раз (если сейчас не на связи). */
   lastSeen: string | null;
+  /** Заряд планшета в процентах, если браузер его сообщает; null — неизвестно. */
+  battery: { percent: number; charging: boolean } | null;
 }
 
 /**
@@ -35,7 +37,10 @@ export interface JudgePresence {
 export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() private server!: Server;
   /** Открытые подключения судей: у одного судьи может быть несколько вкладок. */
-  private readonly judgeSockets = new Map<string, { sockets: Set<string>; since: Date | null; lastSeen: Date | null }>();
+  private readonly judgeSockets = new Map<
+    string,
+    { sockets: Set<string>; since: Date | null; lastSeen: Date | null; battery?: { percent: number; charging: boolean } }
+  >();
 
   constructor(
     private readonly auth: AuthService,
@@ -95,8 +100,20 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
         online,
         since: online ? (entry!.since?.toISOString() ?? null) : null,
         lastSeen: !online ? (entry?.lastSeen?.toISOString() ?? null) : null,
+        battery: entry?.battery ?? null,
       };
     });
+  }
+
+  /** Планшет сообщает заряд батареи: секретариат увидит его в «Связи судей». */
+  @SubscribeMessage(LIVE_EVENTS.judgeBattery)
+  battery(@ConnectedSocket() client: Socket, @MessageBody() body: unknown) {
+    const judgeId: unknown = client.data?.judgeId;
+    const parsed = judgeBatterySchema.safeParse(body);
+    if (typeof judgeId !== "string" || !parsed.success) return { ok: false };
+    const entry = this.judgeSockets.get(judgeId);
+    if (entry) entry.battery = { percent: Math.round(parsed.data.level * 100), charging: parsed.data.charging };
+    return { ok: true };
   }
 
   @SubscribeMessage(LIVE_EVENTS.join)

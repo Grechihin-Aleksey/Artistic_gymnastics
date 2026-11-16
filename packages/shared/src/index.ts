@@ -768,6 +768,11 @@ export interface StandbyStatus {
   tournaments: { id: string; name: string; copiedAt: string }[];
 }
 
+export const judgeBatterySchema = z.object({ level: z.number().min(0).max(1), charging: z.boolean() });
+
+/** Заряд ниже этого — секретариат предупреждает поставить планшет на зарядку. */
+export const LOW_BATTERY_PERCENT = 20;
+
 /** Одна строка «Готовности к старту»: ok — всё в порядке, warn — стоит проверить, fail — без этого не начать. */
 export interface ReadinessCheck {
   group: string;
@@ -824,6 +829,8 @@ export const LIVE_EVENTS = {
    * До этого события планшет не считает себя на связи.
    */
   judgeReady: "judge.ready",
+  /** Планшет → сервер: заряд батареи { level: 0…1, charging } (браузер сообщает его не везде). */
+  judgeBattery: "judge.battery",
   /** Сервер → планшет: код входа больше не действует (судью удалили или выдали новый QR-код). */
   judgeRejected: "judge.rejected",
 } as const;
