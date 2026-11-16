@@ -1,17 +1,52 @@
-import { useEffect, useState } from "react";
+import { deviceId } from "./device";
+import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { LIVE_EVENTS } from "@ag/shared";
+import { LiveLink, type LinkState } from "./liveLink";
 
-/** Подключение судьи к рассылке: при любом событии по снаряду вызывает onChange. */
-export function useLive(token: string, onChange: () => void, onRecovery?: () => void): boolean {
-  const [connected, setConnected] = useState(false);
+export interface LiveStatus {
+  /** Планшет на связи и подписан на свою бригаду. */
+  connected: boolean;
+  /** Связи нет, планшет сам пытается подключиться. */
+  reconnecting: boolean;
+  /** Подключиться заново прямо сейчас. */
+  reconnectNow: () => void;
+}
+
+/**
+ * Подключение судьи к рассылке: при любом событии по снаряду вызывает onChange.
+ * Связь восстанавливается сама, когда судья с планшетом возвращается в зал (см. LiveLink);
+ * после переподключения onChange вызывается снова, и планшет досылает неотправленные оценки.
+ * onRejected — код входа больше не действует.
+ */
+export function useLive(
+  token: string,
+  competitionId: string,
+  handlers: { onChange: () => void; onRecovery?: () => void; onRejected?: () => void },
+): LiveStatus & { allowAgain: () => void } {
+  const [state, setState] = useState<LinkState>("connecting");
+  // Обработчики меняются при каждой отрисовке; подключение из-за этого переоткрывать не нужно.
+  const latest = useRef(handlers);
+  latest.current = handlers;
+  const link = useRef<LiveLink | null>(null);
+
   useEffect(() => {
-    const socket = io("/live", { auth: { token }, transports: ["websocket", "polling"] });
-    socket.on("connect", () => {
-      setConnected(true);
-      onChange();
+    const socket = io("/live", {
+      auth: { token, device: deviceId() },
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1_000,
+      reconnectionDelayMax: 5_000,
     });
-    socket.on("disconnect", () => setConnected(false));
+    const onChange = () => latest.current.onChange();
+    const live = new LiveLink(socket, competitionId, {
+      onReady: onChange,
+      onRejected: () => latest.current.onRejected?.(),
+    });
+    link.current = live;
+    setState(live.current());
+    const unsubscribe = live.subscribe(setState);
     for (const event of [
       LIVE_EVENTS.called,
       LIVE_EVENTS.approved,
@@ -22,11 +57,14 @@ export function useLive(token: string, onChange: () => void, onRecovery?: () => 
     ]) {
       socket.on(event, onChange);
     }
-    if (onRecovery) socket.on(LIVE_EVENTS.recoveryRequested, onRecovery);
+    socket.on(LIVE_EVENTS.recoveryRequested, () => latest.current.onRecovery?.());
     return () => {
+      unsubscribe();
+      live.stop();
+      link.current = null;
       socket.close();
     };
-  }, [token, onChange, onRecovery]);
+  }, [token, competitionId]);
 
   // Сокет замечает обрыв Wi-Fi не сразу, а браузер сообщает о нём мгновенно.
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -39,7 +77,13 @@ export function useLive(token: string, onChange: () => void, onRecovery?: () => 
       removeEventListener("offline", update);
     };
   }, []);
-  return connected && online;
+  const connected = state === "ready" && online;
+  return {
+    connected,
+    reconnecting: !connected && state !== "rejected",
+    reconnectNow: () => link.current?.reconnectNow(true),
+    allowAgain: () => link.current?.allowAgain(),
+  };
 }
 
 /**

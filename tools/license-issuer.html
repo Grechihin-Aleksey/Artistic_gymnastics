@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Выпуск лицензий</title>
+<!--
+  Выпуск ключей лицензии программы. Открывается двойным щелчком, работает без интернета:
+  закрытый ключ выпуска читается с диска и никуда не отправляется. Нужен Chrome, Edge,
+  Яндекс Браузер или Firefox последних версий (подпись Ed25519).
+-->
+<style>
+  :root { --bg: #f4f6fa; --surface: #fff; --line: #dde2ec; --text: #121826; --muted: #5d6b85; --accent: #1f6feb; --bad: #d64545; --ok: #2f9e44; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f141c; --surface: #18202c; --line: #2a3546; --text: #e8edf5; --muted: #95a3ba; --accent: #4c8dff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  p.muted { color: var(--muted); margin: 0 0 20px; }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+  label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+  input, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  textarea { min-height: 110px; font-family: Consolas, monospace; font-size: 13px; word-break: break-all; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 10px 16px; background: var(--accent); color: #fff; cursor: pointer; justify-self: start; }
+  .error { color: var(--bad); margin: 0; }
+  .ok { color: var(--ok); margin: 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Выпуск лицензий</h1>
+  <p class="muted">Выберите файл закрытого ключа, впишите, кому и до какого дня выдаётся лицензия, и отправьте получившийся ключ организатору. Он вставит его в секретариате, блок «Лицензия».</p>
+  <section>
+    <label>Закрытый ключ выпуска (файл .pem)<input type="file" id="pem" accept=".pem,.txt"></label>
+    <label>Кому выдана лицензия<input id="org" maxlength="200" placeholder="СШОР №1, г. Москва"></label>
+    <label>Действует до (включительно)<input id="until" type="date"></label>
+    <button type="button" id="issue">Выпустить ключ</button>
+    <p class="error" id="error" hidden></p>
+    <div id="done" hidden>
+      <label>Ключ лицензии<textarea id="key" readonly></textarea></label>
+      <p class="ok" id="copied" hidden>Ключ скопирован</p>
+      <button type="button" id="copy">Скопировать ключ</button>
+    </div>
+  </section>
+</main>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const until = new Date();
+  until.setFullYear(until.getFullYear() + 1);
+  $("#until").value = until.toISOString().slice(0, 10);
+
+  async function issue() {
+    const file = $("#pem").files[0];
+    const org = $("#org").value.trim();
+    const date = $("#until").value;
+    if (!file) throw new Error("Выберите файл закрытого ключа");
+    if (!org) throw new Error("Впишите, кому выдана лицензия");
+    if (!date) throw new Error("Укажите дату окончания");
+    const pem = await file.text();
+    const body = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+    if (!pem.includes("PRIVATE KEY") || !body) throw new Error("Это не файл закрытого ключа");
+    const der = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
+    let key;
+    try {
+      key = await crypto.subtle.importKey("pkcs8", der, { name: "Ed25519" }, false, ["sign"]);
+    } catch {
+      throw new Error("Браузер не принял ключ. Обновите браузер (нужна подпись Ed25519) или проверьте файл");
+    }
+    const id = b64url(crypto.getRandomValues(new Uint8Array(6))).toLowerCase();
+    const payload = { id, org, until: date, issued: new Date().toISOString().slice(0, 10) };
+    const data = b64url(new TextEncoder().encode(JSON.stringify(payload)));
+    const signature = await crypto.subtle.sign({ name: "Ed25519" }, key, new TextEncoder().encode(`AG1.${data}`));
+    return `AG1.${data}.${b64url(signature)}`;
+  }
+
+  $("#issue").addEventListener("click", async () => {
+    $("#error").hidden = true;
+    $("#copied").hidden = true;
+    try {
+      $("#key").value = await issue();
+      $("#done").hidden = false;
+    } catch (e) {
+      $("#error").textContent = e.message;
+      $("#error").hidden = false;
+      $("#done").hidden = true;
+    }
+  });
+  $("#copy").addEventListener("click", async () => {
+    $("#key").select();
+    try { await navigator.clipboard.writeText($("#key").value); } catch { document.execCommand("copy"); }
+    $("#copied").hidden = false;
+  });
+</script>
+</body>
+</html>

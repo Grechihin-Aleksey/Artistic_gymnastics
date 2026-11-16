@@ -57,7 +57,8 @@ describe("связь судей", () => {
     // Две вкладки одного судьи: закрытие одной не обрывает связь.
     const e1First = await connect(e1.token);
     const e1Second = await connect(e1.token);
-    list = await presence(competition.id);
+    // Сервер регистрирует планшет после проверки кода в базе, чуть позже события connect у клиента.
+    list = await until(() => presence(competition.id), (l) => [d.id, e1.id].every((id) => l.find((p) => p.judgeId === id)!.online));
     const byId = (id: string) => list.find((p) => p.judgeId === id)!;
     expect(byId(d.id)).toMatchObject({ online: true, lastSeen: null });
     expect(byId(d.id).since).not.toBeNull();
@@ -66,7 +67,10 @@ describe("связь судей", () => {
 
     e1First.close();
     dSocket.close();
-    list = await until(() => presence(competition.id), (l) => !l.find((p) => p.judgeId === d.id)!.online);
+    list = await until(
+      () => presence(competition.id),
+      (l) => !l.find((p) => p.judgeId === d.id)!.online && l.find((p) => p.judgeId === e1.id)!.online,
+    );
     expect(byId(d.id).online).toBe(false);
     expect(byId(d.id).lastSeen).not.toBeNull();
     expect(byId(e1.id).online).toBe(true);
