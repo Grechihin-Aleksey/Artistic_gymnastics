@@ -16,6 +16,8 @@ import { ApparatusIcon } from "./ApparatusIcon";
 import { Keypad } from "./Keypad";
 import { useKeepAwake } from "./keepAwake";
 import { Journal } from "./journal";
+import { useServerFinder } from "./finder";
+import { deviceId } from "./device";
 import { Stopwatch } from "./Stopwatch";
 import {
   APPARATUS_NAMES,
@@ -232,6 +234,8 @@ export function JudgeScreen({
     return () => clearTimeout(timer);
   }, [connected]);
   const awake = useKeepAwake();
+  // Сервер переехал на другой адрес (ноутбук переподключили или заменили) — ищем его в сети сами.
+  const finder = useServerFinder(connected, token, deviceId(), () => ({ queued: queue.items(), journal: journal.all() }));
 
   useEffect(() => {
     void refresh();
@@ -299,6 +303,16 @@ export function JudgeScreen({
       </header>
 
       {error && <div className="alert">{error}</div>}
+      {finder.stage === "searching" && (
+        <div className="notice" role="status">
+          Сервер не отвечает по прежнему адресу. Ищем его в сети зала…
+        </div>
+      )}
+      {finder.stage === "found" && (
+        <div className="notice ok" role="status">
+          Сервер найден по адресу {finder.base}. Досылаем оценки и переходим…
+        </div>
+      )}
       {linkProblem && !connected && <div className="alert">{linkProblem}</div>}
       {restored && (
         <div className="notice ok" role="status">

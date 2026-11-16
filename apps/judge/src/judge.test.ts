@@ -2,6 +2,7 @@ import { eToleranceFor, submitMarkSchema, type PerformanceView, type SubmitMarkI
 import { describe, expect, it, vi } from "vitest";
 import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
 import { Journal } from "./journal";
+import { candidateBases, findServer, handOver } from "./finder";
 import { parseTimerInput } from "./Secretariat";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, splitByGender, teamFormatWarnings } from "./roster";
@@ -316,5 +317,45 @@ describe("время таймера на табло", () => {
     expect(parseTimerInput("90")).toBe(90);
     expect(parseTimerInput("1:5")).toBeNull();
     expect(parseTimerInput("полминуты")).toBeNull();
+  });
+});
+
+describe("поиск сервера по новому адресу", () => {
+  it("перебирает соседние адреса той же сети, ближние сначала", () => {
+    const list = candidateBases("http://192.168.1.23:3000");
+    expect(list.slice(0, 4)).toEqual([
+      "http://192.168.1.24:3000",
+      "http://192.168.1.22:3000",
+      "http://192.168.1.25:3000",
+      "http://192.168.1.21:3000",
+    ]);
+    expect(list).toHaveLength(253);
+    expect(list).not.toContain("http://192.168.1.23:3000");
+    expect(candidateBases("http://gym.local:3000")).toEqual([]);
+  });
+
+  it("находит сервер, который принимает код судьи, и досылает оценки", async () => {
+    const calls: string[] = [];
+    const fake = (async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url === "http://10.0.0.7:3000/me") return new Response("{}", { status: 200 });
+      if (url.endsWith("/me")) return new Response("{}", { status: 401 });
+      return new Response("{}", { status: 201 });
+    }) as typeof fetch;
+    const base = await findServer(["http://10.0.0.5:3000", "http://10.0.0.7:3000"], "t", "d", fake);
+    expect(base).toBe("http://10.0.0.7:3000");
+    calls.length = 0;
+    await handOver(base!, "t", "d", [{ id: uuid(), performanceId: uuid(), kind: "E", value: 1 }], [
+      { gymnastId: uuid(), apparatus: "BB", attempt: 1, stage: "QUAL", marks: [{ judgeId: uuid(), kind: "E", value: 1 }] },
+    ], fake);
+    expect(calls).toEqual(["POST http://10.0.0.7:3000/recovery", "POST http://10.0.0.7:3000/marks"]);
+  });
+
+  it("код входа с прежнего адреса приносит с собой метку планшета", () => {
+    const storage = new Map<string, string>();
+    const fakeStorage = { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => void storage.set(k, v) } as Storage;
+    history.replaceState(null, "", "/judge/#token=abc&device=dev-1");
+    expect(takeTokenFromLocation(location, fakeStorage)).toBe("abc");
+    expect(storage.get("device-id")).toBe("dev-1");
   });
 });
