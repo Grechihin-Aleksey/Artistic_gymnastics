@@ -15,10 +15,13 @@ import {
 import { ApparatusIcon } from "./ApparatusIcon";
 import { clubList, clubResults } from "./club";
 import { CoachInquiry } from "./CoachInquiry";
+import { usePublic } from "./Announcer";
+import { forecastFor, upcoming, type QueuePerson } from "./forecast";
 import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
 import { formatLeft, useBoardTimer } from "./timer";
 import { useBoard, type BoardData } from "./useBoard";
+import type { FinalsView, RotationView } from "@ag/shared";
 
 const SHORT: Record<string, string> = {
   FX: "Вольные",
@@ -217,6 +220,8 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
   const final = data.competition.phase === "FINAL";
   // Запрос на пересмотр подаётся только из сети зала: сайт для зрителей и виджет — только просмотр.
   const hall = !route.embed && !isRelay(location.pathname);
+  const queues = useQueues(data, route.competitionId, hall);
+  const now = useMinute();
   return (
     <section className="club">
       <h1>{route.club}</h1>
@@ -240,6 +245,24 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
                   {APPARATUS_NAMES[p.now]}
                 </div>
               )}
+              {queues &&
+                forecastFor(p.gymnast.id, queues.queues, queues.pace, now).map((f) => (
+                  <div key={f.apparatus} className="club-forecast">
+                    <ApparatusIcon code={f.apparatus} />
+                    {APPARATUS_NAMES[f.apparatus]}:{" "}
+                    {f.ahead === 0 && f.minutes <= 1 ? (
+                      <strong>выходит следующим номером</strong>
+                    ) : (
+                      <>
+                        около <strong>{f.at.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</strong>
+                        <span className="muted">
+                          {" "}
+                          · через ~{f.minutes} мин, впереди {f.ahead}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ))}
               {p.allAround && (
                 <div className="club-aa">
                   Многоборье: <strong>{p.allAround.complete ? `${p.allAround.rank} место` : "идёт"}</strong>
@@ -276,6 +299,29 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
       )}
     </section>
   );
+}
+
+/** Очереди на снарядах для прогноза: только в зале, сайт этих данных не получает. */
+function useQueues(data: BoardData, competitionId: string, hall: boolean) {
+  const version = data.generatedAt;
+  const base = hall ? `/competitions/${encodeURIComponent(competitionId)}` : null;
+  const rotation = usePublic<RotationView>(base && `${base}/rotation`, version);
+  const finals = usePublic<FinalsView>(base && `${base}/finals`, version);
+  const people = usePublic<QueuePerson[]>(base && `${base}/gymnasts`, version);
+  return useMemo(
+    () => (hall && people ? { queues: upcoming(data, rotation, finals, people), pace: rotation?.pace } : null),
+    [hall, data, rotation, finals, people],
+  );
+}
+
+/** Текущее время, раз в полминуты: прогноз «через N мин» обновляется сам. */
+function useMinute(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 
 const protocolsUrl = (competitionId: string, file?: string) =>

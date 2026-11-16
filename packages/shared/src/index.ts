@@ -1036,6 +1036,11 @@ export interface RotationView {
   /** Сколько ротаций в соревновании: по числу снарядов. */
   rotations: number;
   shifts: ShiftView[];
+  /**
+   * Темп по снарядам: сколько секунд в среднем проходит между оценками участников
+   * (по последним выступлениям, без перерывов). Нет снаряда — данных пока мало.
+   */
+  pace?: Partial<Record<(typeof APPARATUS)[number], number>>;
 }
 
 export interface ShiftView {

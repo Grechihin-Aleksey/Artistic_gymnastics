@@ -248,3 +248,27 @@ describe("запрос тренера с телефона", () => {
     expect(parseClaimed("25")).toBeNull();
   });
 });
+
+describe("прогноз выхода для тренера", () => {
+  it("считает очередь смены и темп снаряда", async () => {
+    const { forecastFor, upcoming, DEFAULT_PACE_S } = await import("./forecast");
+    const g = (id: string, bib: number) => ({ id, bib, firstName: "А", lastName: id, club: "Олимп", categoryId: null });
+    const people = [g("a", 1), g("b", 2), g("c", 3), g("d", 4)];
+    const data = {
+      competition: { id: "x", name: "x", discipline: "WAG", phase: "QUAL" },
+      live: [{ apparatus: "BB", current: { performanceId: "p", attempt: 1, gymnast: people[1] }, last: null }],
+      categories: [{ id: null, name: "", allAround: [], teams: [], apparatus: { BB: [{ gymnast: people[0] }] } }],
+      generatedAt: "",
+    } as never;
+    const rotation = { rotation: 0, rotations: 4, shifts: [{ number: 1, startApparatus: "BB", apparatus: "BB", gymnastIds: ["a", "b", "c", "d"] }], pace: { BB: 120 } } as never;
+    const now = new Date("2026-11-16T10:00:00Z");
+    const queues = upcoming(data, rotation, null, people);
+    expect(queues.get("BB")!.queue.map((p) => p.id)).toEqual(["c", "d"]);
+    const [f] = forecastFor("d", queues, { BB: 120 }, now);
+    // Выступающему сейчас — полтемпа, перед «d» ещё один участник.
+    expect(f).toMatchObject({ apparatus: "BB", ahead: 1, minutes: 3 });
+    expect(f!.at.toISOString()).toBe("2026-11-16T10:03:00.000Z");
+    expect(forecastFor("a", queues, undefined, now)).toEqual([]);
+    expect(forecastFor("c", queues, undefined, now)[0]!.minutes).toBe(Math.round(DEFAULT_PACE_S / 2 / 60));
+  });
+});

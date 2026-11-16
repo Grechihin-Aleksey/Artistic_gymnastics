@@ -16,6 +16,25 @@ import { auditLog, categories, competitions, gymnasts, performances, shifts } fr
 import { LiveGateway } from "../live/live.gateway";
 import { CompetitionsService } from "./competitions.service";
 
+/** Интервал между оценками больше 10 минут — перерыв или смена ротации, в темп не входит. */
+const PACE_GAP_S = 600;
+/** Сколько последних интервалов брать в темп. */
+const PACE_WINDOW = 8;
+
+/** Темп снаряда: медиана последних интервалов между утверждёнными оценками, секунды. */
+export function paceFrom(approvedAt: readonly Date[]): number | undefined {
+  const times = [...approvedAt].map((d) => d.getTime()).sort((a, b) => a - b);
+  const gaps: number[] = [];
+  for (let i = 1; i < times.length; i++) {
+    const gap = (times[i]! - times[i - 1]!) / 1000;
+    if (gap > 0 && gap <= PACE_GAP_S) gaps.push(gap);
+  }
+  const recent = gaps.slice(-PACE_WINDOW).sort((a, b) => a - b);
+  if (recent.length < 2) return undefined;
+  const mid = Math.floor(recent.length / 2);
+  return Math.round(recent.length % 2 ? recent[mid]! : (recent[mid - 1]! + recent[mid]!) / 2);
+}
+
 /** Смены и ротации: какая смена на каком снаряде и в каком порядке выходит. */
 @Injectable()
 export class RotationsService {
@@ -36,7 +55,23 @@ export class RotationsService {
         .where(and(eq(gymnasts.competitionId, competitionId), eq(gymnasts.status, "ACTIVE")))
         .orderBy(asc(gymnasts.startOrder), asc(gymnasts.bib)),
     ]);
+    const approved = await this.db
+      .select({ apparatus: performances.apparatus, approvedAt: performances.approvedAt })
+      .from(performances)
+      .where(
+        and(
+          eq(performances.competitionId, competitionId),
+          eq(performances.stage, competition.phase),
+          eq(performances.status, "APPROVED"),
+        ),
+      );
+    const pace: RotationView["pace"] = {};
+    for (const apparatus of apparatusFor(competition.discipline)) {
+      const seconds = paceFrom(approved.filter((p) => p.apparatus === apparatus && p.approvedAt).map((p) => p.approvedAt!));
+      if (seconds !== undefined) pace[apparatus] = seconds;
+    }
     return {
+      pace,
       rotation: competition.rotation,
       rotations: apparatusFor(competition.discipline).length,
       shifts: shiftRows.map((s) => ({

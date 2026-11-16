@@ -741,3 +741,9 @@ nav.categories {
 .coach-inquiry-error {
   color: var(--bad);
 }
+
+/* Прогноз выхода на «Мой клуб» (только в сети зала). */
+.club-forecast {
+  margin-top: 0.3rem;
+  font-size: 0.9em;
+}
