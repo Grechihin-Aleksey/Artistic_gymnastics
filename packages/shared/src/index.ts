@@ -1120,3 +1120,51 @@ export interface InquiryView {
   createdAt: string;
   resolvedAt: string | null;
 }
+
+/** Камера видеоповторов на снаряде: адрес потока (обычно rtsp://…). Пустой список — повторов нет. */
+export const videoCameraSchema = z.object({
+  apparatus: apparatusSchema,
+  url: z.string().trim().min(1).max(500),
+});
+export const setVideoCamerasSchema = z.object({
+  cameras: z.array(videoCameraSchema).max(APPARATUS.length),
+});
+export type VideoCameraInput = z.infer<typeof videoCameraSchema>;
+export type SetVideoCamerasInput = z.infer<typeof setVideoCamerasSchema>;
+
+/** Состояние записи с одной камеры. */
+export interface VideoCameraStatus {
+  apparatus: string;
+  url: string;
+  /** recording — пишет; connecting — подключается или переподключается; error — не удаётся; stopped — запись остановлена (мало места). */
+  state: "recording" | "connecting" | "error" | "stopped";
+  message: string | null;
+  /** Когда пришёл последний кусок записи (ISO). */
+  lastSegmentAt: string | null;
+}
+
+export interface VideoStatus {
+  /** Повторы можно включить: на сервере есть ffmpeg и папка для записи. */
+  available: boolean;
+  /** Почему нельзя включить, если available = false. */
+  reason: string | null;
+  cameras: VideoCameraStatus[];
+  disk: { freeBytes: number; totalBytes: number; videoBytes: number } | null;
+  /** Сколько часов хранится непрерывная запись, из которой нарезаются ролики. */
+  keepHours: number;
+  /** Сколько дней хранятся ролики выступлений. */
+  clipDays: number;
+  /** Ниже стольких гигабайт свободного места запись останавливается. */
+  minFreeGb: number;
+}
+
+/** Ролик выступления: ready — можно смотреть; pending — ещё нарезается; failed — не получилось; none — камеры на снаряде нет. */
+export interface ReplayView {
+  performanceId: string;
+  status: "ready" | "pending" | "failed" | "none";
+  /** Адрес ролика для проигрывателя; живёт несколько часов. */
+  url: string | null;
+  /** Ролик с запасом ±30 секунд, если уже нарезан. */
+  wideUrl: string | null;
+  message: string | null;
+}

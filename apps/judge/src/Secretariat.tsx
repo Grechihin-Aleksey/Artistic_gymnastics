@@ -8,6 +8,7 @@ import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
 import { APPARATUS_NAMES, expandScore, judgeLabel, parsePoints, parseScore } from "./labels";
 import { parseRoster, splitByGender, teamFormatWarnings, type TeamFormat } from "./roster";
+import { ReplayButton, useVideoStatus } from "./Replays";
 import { useCompetitionLive } from "./useLive";
 
 interface Gymnast {
@@ -460,6 +461,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
   const [loaded, setLoaded] = useState(false);
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
   const [inquiries, setInquiries] = useState<InquiryView[]>([]);
+  const [video] = useVideoStatus(adminToken);
   // Снаряд последней загрузки: опоздавший ответ по прежнему снаряду не подменяет список.
   const current = useRef(apparatus);
   current.current = apparatus;
@@ -619,6 +621,13 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
                   {q.note && <div className="muted">{q.note}</div>}
                 </td>
                 <td className="actions">
+                  <ReplayButton
+                    performanceId={q.performanceId}
+                    apparatus={q.apparatus}
+                    title={`${APPARATUS_NAMES[q.apparatus]}, №${q.gymnast.bib} ${q.gymnast.lastName} ${q.gymnast.firstName}`}
+                    adminToken={adminToken}
+                    video={video}
+                  />
                   {q.status === "PENDING" && (
                     <>
                       <button type="button" className="primary" onClick={() => void resolve(q, true)}>

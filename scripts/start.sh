@@ -9,7 +9,7 @@ if [ ! -f .env ]; then
   sed "s/^ADMIN_TOKEN=.*/ADMIN_TOKEN=$token/" .env.example >.env
   echo "Создан файл .env с новым токеном секретариата."
 fi
-mkdir -p backups
+mkdir -p backups video
 
 docker compose up -d --build
 
