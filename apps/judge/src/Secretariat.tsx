@@ -336,7 +336,7 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
           Итоговый отчёт
         </button>
         <button type="button" onClick={() => void open("e-judges", "e-judges.pdf", false)}>
-          Работа судей E
+          Работа судей
         </button>
       </div>
       <h2>Финалы на снарядах</h2>
