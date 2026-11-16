@@ -1556,6 +1556,11 @@ export function RulesPanel({
             мешает. Допуск выбирается по оценке E (10 − средняя сбавка): строка «от 9.00» действует от 9.000 до
             следующей строки выше.
           </p>
+          <p className="muted">
+            В действующих правилах FIG (2025–2028) готовой таблицы допусков нет: работу судей E там оценивают по
+            отклонению от контрольной оценки. Поэтому таблица программы — ориентир. Если в положении о соревнованиях
+            допуски заданы, впишите их сюда.
+          </p>
           <table className="rules-table">
             <thead>
               <tr>
@@ -1604,9 +1609,9 @@ export function RulesPanel({
               Добавить строку
             </button>
             <button type="button" disabled={eTableFig} onClick={resetETable}>
-              Вернуть как в FIG
+              Вернуть таблицу программы
             </button>
-            <span className="muted">{eTableFig ? "Таблица как в FIG." : "Таблица изменена."}</span>
+            <span className="muted">{eTableFig ? "Таблица программы." : "Таблица изменена."}</span>
           </div>
         </div>
       ) : (
