@@ -2,6 +2,7 @@ import { eToleranceFor, submitMarkSchema, type PerformanceView, type SubmitMarkI
 import { describe, expect, it, vi } from "vitest";
 import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
 import { Journal } from "./journal";
+import { parseTimerInput } from "./Secretariat";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, splitByGender, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
@@ -305,5 +306,15 @@ describe("журнал оценок на планшете", () => {
     // Через неделю забывает.
     now += 8 * 24 * 3600 * 1000;
     expect(new Journal(localStorage, "c1", "BB", () => now).all()).toEqual([]);
+  });
+});
+
+describe("время таймера на табло", () => {
+  it("понимает минуты:секунды и просто секунды", () => {
+    expect(parseTimerInput("0:30")).toBe(30);
+    expect(parseTimerInput("10:00")).toBe(600);
+    expect(parseTimerInput("90")).toBe(90);
+    expect(parseTimerInput("1:5")).toBeNull();
+    expect(parseTimerInput("полминуты")).toBeNull();
   });
 });

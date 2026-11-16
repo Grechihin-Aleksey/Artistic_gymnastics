@@ -18,6 +18,7 @@ import {
   RecoveryPanel,
   ReadinessPanel,
   AnnouncerLinkPanel,
+  BoardTimerPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -808,6 +809,7 @@ export function AdminScreen() {
                 onError={setError}
               />
             )}
+            <BoardTimerPanel key={`timer-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
             <JudgesPresencePanel
               key={`presence-${competition.id}`}
               competitionId={competition.id}

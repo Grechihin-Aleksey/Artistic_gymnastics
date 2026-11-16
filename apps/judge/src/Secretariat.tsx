@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -5033,6 +5033,109 @@ export function AnnouncerLinkPanel({ competitionId }: { competitionId: string })
         >
           {copied ? "Скопировано" : "Копировать"}
         </button>
+      </div>
+    </section>
+  );
+}
+
+const TIMER_PRESETS: { label: string; seconds: number }[] = [
+  { label: "Разминка", seconds: 30 },
+  { label: "Разминка", seconds: 50 },
+  { label: "Переход на снаряды", seconds: 120 },
+  { label: "Общая разминка", seconds: 600 },
+];
+
+const mmss = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+/** «1:30», «90», «10:00» → секунды; null, если не разобрать. */
+export function parseTimerInput(text: string): number | null {
+  const t = text.trim();
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(t);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  return /^\d{1,4}$/.test(t) ? Number(t) : null;
+}
+
+/** Таймер на табло в зале: разминка, переход, перерыв. Табло показывает его только на время отсчёта. */
+export function BoardTimerPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [label, setLabel] = useState("Разминка");
+  const [time, setTime] = useState("0:30");
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    void apiRequest<{ timer: BoardTimer | null }>(`/competitions/${competitionId}/timer`)
+      .then((r) => setEndsAt(r.timer ? Date.now() + r.timer.remainingMs : null))
+      .catch(() => undefined);
+  }, [competitionId]);
+  useEffect(() => {
+    if (endsAt === null) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [endsAt]);
+
+  const send = async (timer: { label: string; seconds: number } | null) => {
+    try {
+      const r = await apiRequest<{ timer: BoardTimer | null }>(`/competitions/${competitionId}/timer`, {
+        token: adminToken,
+        method: "PUT",
+        body: { timer },
+      });
+      setEndsAt(r.timer ? Date.now() + r.timer.remainingMs : null);
+      setNow(Date.now());
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+  const seconds = parseTimerInput(time);
+  const left = endsAt === null ? null : Math.ceil((endsAt - now) / 1000);
+  const running = left !== null && left > -5;
+
+  return (
+    <section className="panel no-print">
+      <h2>Таймер на табло</h2>
+      <p className="muted wide">
+        Обратный отсчёт крупно над результатами на табло в зале. Пока таймер не запущен, табло выглядит как обычно. На сайт
+        таймер не уходит.
+      </p>
+      <div className="wide buttons">
+        {TIMER_PRESETS.map((p) => (
+          <button
+            key={`${p.label}${p.seconds}`}
+            type="button"
+            onClick={() => {
+              setLabel(p.label);
+              setTime(mmss(p.seconds));
+              void send(p);
+            }}
+          >
+            {p.label} {mmss(p.seconds)}
+          </button>
+        ))}
+      </div>
+      <label>
+        Надпись
+        <input value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} />
+      </label>
+      <label>
+        Время (минуты:секунды)
+        <input value={time} inputMode="numeric" onChange={(e) => setTime(e.target.value)} />
+      </label>
+      <div className="wide deduction-row">
+        <button
+          type="button"
+          className="primary"
+          disabled={!label.trim() || seconds === null || seconds < 5 || seconds > 3600}
+          onClick={() => void send({ label: label.trim(), seconds: seconds! })}
+        >
+          Запустить
+        </button>
+        <button type="button" disabled={!running} onClick={() => void send(null)}>
+          Убрать с табло
+        </button>
+        <span className="muted">
+          {running ? (left! > 0 ? `Идёт: осталось ${mmss(left!)}` : "Время вышло") : "Таймер не запущен"}
+        </span>
       </div>
     </section>
   );

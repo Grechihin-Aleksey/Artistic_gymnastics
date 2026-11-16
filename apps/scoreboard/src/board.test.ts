@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FinalsView } from "@ag/shared";
+import { formatLeft, toLocal } from "./timer";
 import { announcerView } from "./Announcer";
 import { isRelay, parseRoute, routeHash } from "./route";
 import { buildSlides, pageCount, pageRows } from "./slides";
@@ -220,5 +221,15 @@ describe("экран диктора", () => {
     const [bb] = announcerView({ ...data, competition: { ...data.competition, phase: "FINAL" } }, rotation, finals, people);
     expect(bb!.next.map((p) => p.bib)).toEqual([106]);
     expect(bb!.last?.allAround).toBeNull();
+  });
+});
+
+describe("таймер на табло", () => {
+  it("считает остаток по часам экрана и пишет минуты:секунды", () => {
+    expect(toLocal({ label: "Разминка", seconds: 30, remainingMs: 12_000 }, 1000)).toEqual({ label: "Разминка", endsAt: 13_000 });
+    expect(toLocal(null)).toBeNull();
+    expect(formatLeft(65_000)).toBe("1:05");
+    expect(formatLeft(8_200)).toBe("0:09");
+    expect(formatLeft(-500)).toBe("0:00");
   });
 });

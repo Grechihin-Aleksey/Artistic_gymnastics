@@ -734,6 +734,24 @@ export interface PerformanceView {
   marks: MarkView[];
 }
 
+/** Таймер на табло в зале: разминка, ротация, перерыв. null — убрать таймер. */
+export const setBoardTimerSchema = z.object({
+  timer: z
+    .object({
+      label: z.string().trim().min(1).max(40),
+      seconds: z.number().int().min(5).max(3600),
+    })
+    .nullable(),
+});
+export type SetBoardTimerInput = z.infer<typeof setBoardTimerSchema>;
+
+/** Идущий таймер: сколько осталось на момент ответа сервера (часы табло и сервера могут расходиться). */
+export interface BoardTimer {
+  label: string;
+  seconds: number;
+  remainingMs: number;
+}
+
 /** Одна строка «Готовности к старту»: ok — всё в порядке, warn — стоит проверить, fail — без этого не начать. */
 export interface ReadinessCheck {
   group: string;
@@ -779,6 +797,8 @@ export const LIVE_EVENTS = {
   finals: "competition.finals",
   /** Сервер → все: секретариат вывел награждение на табло или убрал его. */
   ceremony: "competition.ceremony",
+  /** Сервер → все: секретариат запустил или убрал таймер на табло (BoardTimer или null). */
+  timer: "competition.timer",
   /** Сервер → планшеты: секретариат просит прислать оценки, сохранённые на планшетах. */
   recoveryRequested: "competition.recoveryRequested",
   /** Сервер → все: секретариат поменял, какую часть турнира показывает табло. */

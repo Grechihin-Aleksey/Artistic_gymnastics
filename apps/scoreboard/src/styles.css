@@ -661,3 +661,29 @@ nav.categories {
     gap: 2px;
   }
 }
+
+/* Таймер разминки или ротации: появляется только на время отсчёта. */
+.board-timer {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.board-timer-label {
+  font-size: 1.4rem;
+  color: var(--muted);
+}
+.board-timer-left {
+  font-size: 2.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.board-timer.soon .board-timer-left {
+  color: var(--accent);
+}
+.board-timer.over .board-timer-left {
+  color: var(--bad);
+}
