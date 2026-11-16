@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  eJudgeBand,
+  eJudgePercent,
+  summarizeEJudges,
   FINAL_5_3_3,
   defaultStart,
   rotationOrder,
@@ -266,5 +269,30 @@ describe("custom rules", () => {
     const clean = scoreCustomPerformance({ base: 9000, requirements: 0, eDeductions: [0, 0, 0] });
     expect(clean.e).toBe(0);
     expect(Object.is(clean.e, -0)).toBe(false);
+  });
+});
+
+describe("работа судей E по таблице FIG", () => {
+  it("процент по строке контрольной сбавки и столбцу отклонения", () => {
+    expect(eJudgePercent("WAG", 0.3, 0.3)).toBe(100);
+    expect(eJudgePercent("WAG", 0.3, 0.4)).toBe(100);
+    expect(eJudgePercent("WAG", 0.3, 0.5)).toBe(75);
+    expect(eJudgePercent("MAG", 0.3, 0.4)).toBe(75);
+    expect(eJudgePercent("WAG", 1.2, 0.9)).toBe(90);
+    expect(eJudgePercent("WAG", 3, 2)).toBe(50);
+    expect(eJudgePercent("WAG", 0.5, 3)).toBe(0);
+    // 0.15 — это 0.2, а не 0.1, несмотря на дробную погрешность.
+    expect(eJudgePercent("WAG", 0.3, 0.45)).toBe(75);
+  });
+
+  it("сводка по судье: строже или мягче бригады и средний процент", () => {
+    const [s] = summarizeEJudges("WAG", [
+      { judgeId: "e1", deduction: 1.5, reference: 1.2 },
+      { judgeId: "e1", deduction: 1.1, reference: 1.2 },
+      { judgeId: "e1", deduction: 2.0, reference: 1.2 },
+    ]);
+    expect(s).toEqual({ judgeId: "e1", count: 3, bias: 0.333, meanAbs: 0.4, maxAbs: 0.8, over03: 1, percent: 76.67 });
+    expect(eJudgeBand(s!.percent)).toBe("зачёт");
+    expect(eJudgeBand(92)).toBe("отлично");
   });
 });

@@ -24,6 +24,8 @@ export interface AppConfig {
   licenseKey?: string;
   /** Открытый ключ проверки лицензий; по умолчанию — ключ владельца программы. */
   licensePublicKey?: string;
+  /** Папка с копиями базы от контейнера backup: по ней «Готовность к старту» проверяет свежесть копии. */
+  backupDir?: string;
   /** Облачное хранилище S3 для копий базы и турниров; без него копии остаются только на ноутбуке. */
   s3?: S3Target & {
     /** Как часто отправлять, секунды. */
@@ -56,6 +58,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     exportDir: env.EXPORT_DIR || undefined,
     exportInterval: Number(env.EXPORT_INTERVAL ?? 1800),
     entriesSyncInterval: Number(env.ENTRIES_SYNC_INTERVAL ?? 300),
+    backupDir: env.BACKUP_DIR || undefined,
     s3: loadS3(env),
     licenseRequired: true,
     licenseKey: env.LICENSE_KEY || undefined,

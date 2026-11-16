@@ -1,6 +1,8 @@
-import { eToleranceFor, submitMarkSchema, type SubmitMarkInput } from "@ag/shared";
+import { eToleranceFor, submitMarkSchema, type PerformanceView, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
 import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
+import { Journal } from "./journal";
+import { parseTimerInput } from "./Secretariat";
 import { MarkQueue, type SendOutcome } from "./markQueue";
 import { parseRoster, splitByGender, teamFormatWarnings } from "./roster";
 import { takeTokenFromLocation } from "./token";
@@ -274,5 +276,45 @@ describe("список турнира девочек и мальчиков", () 
   });
   it("не принимает непонятный пол", () => {
     expect(parseRoster("1\tБелова\tАнна\t\t\t\t\t\t\t\t\tX").errors[0]).toContain("пол");
+  });
+});
+
+describe("журнал оценок на планшете", () => {
+  const view = (gymnastId: string, status: "APPROVED" | "SCORING", value = 5): PerformanceView => ({
+    id: `p-${gymnastId}`,
+    competitionId: "c",
+    gymnastId,
+    apparatus: "BB",
+    attempt: 1,
+    stage: "QUAL",
+    status,
+    score: null,
+    marks: [{ judgeId: "j1", seat: 1, role: "D", kind: "D", value }],
+  });
+
+  it("помнит только утверждённые выступления и обновляет исправленные", () => {
+    let now = 1_000_000;
+    const journal = new Journal(localStorage, "c1", "BB", () => now);
+    journal.remember([view("g1", "APPROVED"), view("g2", "SCORING")]);
+    journal.remember([view("g1", "APPROVED", 5.5)]);
+    expect(journal.all()).toEqual([
+      { gymnastId: "g1", apparatus: "BB", attempt: 1, stage: "QUAL", marks: [{ judgeId: "j1", kind: "D", value: 5.5 }] },
+    ]);
+    // Удаление выступления на сервере (откат базы) журнал не трогает.
+    journal.remember([]);
+    expect(new Journal(localStorage, "c1", "BB", () => now).all()).toHaveLength(1);
+    // Через неделю забывает.
+    now += 8 * 24 * 3600 * 1000;
+    expect(new Journal(localStorage, "c1", "BB", () => now).all()).toEqual([]);
+  });
+});
+
+describe("время таймера на табло", () => {
+  it("понимает минуты:секунды и просто секунды", () => {
+    expect(parseTimerInput("0:30")).toBe(30);
+    expect(parseTimerInput("10:00")).toBe(600);
+    expect(parseTimerInput("90")).toBe(90);
+    expect(parseTimerInput("1:5")).toBeNull();
+    expect(parseTimerInput("полминуты")).toBeNull();
   });
 });

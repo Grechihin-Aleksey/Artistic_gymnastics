@@ -1,4 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
+import { ReadinessController } from "./readiness/readiness.controller";
+import { ReadinessService } from "./readiness/readiness.service";
+import { TimerController } from "./timer/timer.controller";
 import { APP_GUARD } from "@nestjs/core";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
@@ -74,6 +77,8 @@ export class AppModule {
         SeriesController,
         TransferController,
         CloudBackupController,
+        ReadinessController,
+        TimerController,
       ],
       providers: [
         AuthService,
@@ -95,6 +100,7 @@ export class AppModule {
         CloudBackupService,
         LiveGateway,
         RelayPublisher,
+        ReadinessService,
       ],
     };
   }

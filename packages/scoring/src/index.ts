@@ -9,3 +9,4 @@ export * from "./allAround.js";
 export * from "./team.js";
 export * from "./rotation.js";
 export * from "./custom.js";
+export * from "./judgeReport.js";

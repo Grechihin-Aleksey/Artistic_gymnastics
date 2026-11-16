@@ -6,8 +6,11 @@ import {
 import {
   apparatusFor,
   defaultDrop,
+  eJudgeBand,
   fromPoints,
   rotationOrder,
+  summarizeEJudges,
+  type EJudgeSample,
   shiftApparatus,
   type Apparatus,
 } from "@ag/scoring";
@@ -692,6 +695,90 @@ export class ProtocolsService {
       content.push({ text: "Судьи ещё не заведены.", style: "note" });
     }
     return renderPdf(this.document(competition, "Состав судейской коллегии", content));
+  }
+
+  /**
+   * Работа судей E: насколько сбавка каждого судьи отличалась от итоговой сбавки
+   * бригады, и средний процент по таблице FIG (Specific Judges' Rules, ст. 2.1.2).
+   */
+  async eJudges(competitionId: string): Promise<Buffer> {
+    const competition = await this.competitions.get(competitionId);
+    const custom = competition.rules === "CUSTOM";
+    const rows = await this.db
+      .select({ judgeId: marks.judgeId, value: marks.value, e: performances.e })
+      .from(marks)
+      .innerJoin(performances, eq(performances.id, marks.performanceId))
+      .where(
+        and(eq(performances.competitionId, competitionId), eq(performances.status, "APPROVED"), eq(marks.kind, "E")),
+      );
+    const samples: EJudgeSample[] = rows
+      .filter((r) => r.e !== null)
+      .map((r) => ({
+        judgeId: r.judgeId,
+        deduction: fromPoints(r.value),
+        // Оценка E по FIG — 10 минус итоговая сбавка, по своим правилам — сбавка со знаком минус.
+        reference: fromPoints(custom ? -r.e! : 10_000 - r.e!),
+      }));
+    const summaries = new Map(summarizeEJudges(competition.discipline, samples).map((s) => [s.judgeId, s]));
+    const panel = await this.db
+      .select()
+      .from(judges)
+      .where(and(eq(judges.competitionId, competitionId), eq(judges.role, "E")))
+      .orderBy(asc(judges.seat));
+    const women = competition.discipline === "WAG";
+    const signed = (n: number) => (n > 0 ? `+${n.toFixed(2)}` : n.toFixed(2));
+    const content: Content[] = [
+      {
+        text:
+          "Контрольная сбавка — итоговая сбавка бригады за выступление (10 − оценка E). Отклонение со знаком «+» — " +
+          "судья строже бригады, «−» — мягче. Процент — по таблице FIG «Examination Table» (Specific Judges' Rules " +
+          "2025–2028, ст. 2.1.2): на соревновании FIG там сравнивают с оценкой экспертов, здесь — с итогом бригады, " +
+          "поэтому процент — ориентир для главного судьи, а не официальная аттестация.",
+        style: "note",
+        margin: [0, 0, 0, 8],
+      },
+    ];
+    for (const apparatus of apparatusFor(competition.discipline)) {
+      const here = panel.filter((j) => j.apparatus === apparatus);
+      if (here.length === 0) continue;
+      content.push(
+        { ...withIcon(apparatus, APPARATUS_NAMES[apparatus]!, 13), style: "section" },
+        table(
+          [
+            [
+              th("Судья"),
+              th("Фамилия"),
+              th("Выступл.", "right"),
+              th("Среднее откл.", "right"),
+              th("Строже / мягче", "right"),
+              th("Наиб. откл.", "right"),
+              th("Больше 0.3", "right"),
+              th("% FIG", "right"),
+              ...(women ? [th("Оценка")] : []),
+            ],
+            ...here.map((j): TableCell[] => {
+              const s = summaries.get(j.id);
+              const right = (text: string) => ({ text, alignment: "right" as const });
+              return [
+                `E${j.seat}`,
+                { text: j.name, bold: true },
+                right(String(s?.count ?? 0)),
+                right(s ? s.meanAbs.toFixed(2) : "—"),
+                right(s ? signed(s.bias) : "—"),
+                right(s ? s.maxAbs.toFixed(2) : "—"),
+                right(s ? String(s.over03) : "—"),
+                right(s ? s.percent.toFixed(1) : "—"),
+                ...(women ? [s ? eJudgeBand(s.percent) : ""] : []),
+              ];
+            }),
+          ],
+          1,
+        ),
+      );
+    }
+    if (content.length === 1) content.push({ text: "Судьи E ещё не заведены.", style: "note" });
+    else if (samples.length === 0) content.push(emptyNote());
+    return renderPdf(this.document(competition, "Работа судей E", content));
   }
 
   /**
