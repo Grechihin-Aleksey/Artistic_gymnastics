@@ -13,6 +13,8 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const MAX_PROTOCOLS_BYTES = 40 * 1024 * 1024;
 const MAX_ENTRY_BYTES = 200 * 1024;
 const MAX_ENTRIES = 500;
+/** Сколько заявок принимаем с одного адреса за час: клубу хватает, рассылке спама — нет. */
+const ENTRIES_PER_HOUR = 10;
 /** Старые оценки после обрыва связи на сайте уже не всплывают. */
 const FLASH_TTL = 60;
 const UUID_RE = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
@@ -391,7 +393,13 @@ function club_entry(string $id, string $key, ?string $entryId): void
     if (!$call->open || ($call->deadline && strtotime($call->deadline) < time())) {
         throw new HttpError(409, 'Приём заявок закрыт');
     }
-    $entry = parse_entry(read_body(MAX_ENTRY_BYTES));
+    $body = read_body(MAX_ENTRY_BYTES);
+    if (is_object($body) && is_string($body->website ?? null) && trim($body->website) !== '') {
+        // Поле-ловушка скрыто от людей и заполняется только ботами: делаем вид, что заявка принята.
+        send_json(201, ['id' => uuid4(), 'receivedAt' => now_iso()]);
+        return;
+    }
+    $entry = parse_entry($body);
     $mixed = $call->mixed ?? null;
     foreach ($entry['rows'] as $i => $row) {
         $n = $i + 1;
@@ -407,6 +415,24 @@ function club_entry(string $id, string $key, ?string $entryId): void
             throw new HttpError(400, "Разряда «{$row['category']}» нет в соревновании");
         }
     }
+    // Адрес храним только хешем: в папке data не остаётся адресов посетителей.
+    $ip = hash('sha256', $_SERVER['REMOTE_ADDR'] ?? '');
+    with_lock('entry-rate', function () use ($ip) {
+        $now = time();
+        $rate = load_record('entry-rate') ?: new stdClass();
+        $clean = new stdClass();
+        foreach ($rate as $key => $times) {
+            $fresh = array_values(array_filter((array) $times, function ($t) use ($now) { return $now - $t < 3600; }));
+            if ($fresh) $clean->$key = $fresh;
+        }
+        $mine = $clean->$ip ?? [];
+        if (count($mine) >= ENTRIES_PER_HOUR) {
+            throw new HttpError(429, 'С этого адреса уже отправлено много заявок. Попробуйте через час или свяжитесь с организаторами');
+        }
+        $mine[] = $now;
+        $clean->$ip = $mine;
+        save_record('entry-rate', $clean);
+    });
     $received = $entry + ['id' => uuid4(), 'receivedAt' => now_iso()];
     with_lock("entries-$id", function () use ($id, $received) {
         $saved = load_record("entries-$id");

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -12,6 +12,9 @@ import { SnapshotStore } from "./store.js";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const HEARTBEAT_MS = 25_000;
+/** Сколько заявок принимаем с одного адреса за час: клубу хватает, рассылке спама — нет. */
+export const ENTRIES_PER_HOUR = 10;
+const HOUR_MS = 3600_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Проверяем только то, на что опирается сам ретранслятор; таблицы он передаёт как есть.
@@ -116,6 +119,14 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
   }, HEARTBEAT_MS);
   heartbeat.unref();
 
+  /** Когда с адреса приходили принятые заявки за последний час. */
+  const entryTimes = new Map<string, number[]>();
+  const recentEntries = (ip: string, now: number) => {
+    const times = (entryTimes.get(ip) ?? []).filter((t) => now - t < HOUR_MS);
+    entryTimes.set(ip, times);
+    return times;
+  };
+
   const authorized = (req: IncomingMessage) => {
     const given = Buffer.from(req.headers.authorization ?? "");
     return given.length === expectedAuth.length && timingSafeEqual(given, expectedAuth);
@@ -177,7 +188,12 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       throw new HttpError(409, "Приём заявок закрыт");
     }
     if (entries.entries(id).length >= MAX_ENTRIES) throw new HttpError(409, "Заявок слишком много: свяжитесь с организаторами");
-    const parsed = onlineEntrySchema.safeParse(JSON.parse(await readBody(req, MAX_ENTRY_BYTES)));
+    const body: unknown = JSON.parse(await readBody(req, MAX_ENTRY_BYTES));
+    if (isTrap(body)) {
+      // Поле-ловушка скрыто от людей и заполняется только ботами: делаем вид, что заявка принята.
+      return json(res, 201, { id: randomUUID(), receivedAt: new Date().toISOString() });
+    }
+    const parsed = onlineEntrySchema.safeParse(body);
     if (!parsed.success) {
       const issue = parsed.error.issues[0]!;
       const row = issue.path[0] === "rows" && typeof issue.path[1] === "number" ? `Участник ${issue.path[1] + 1}: ` : "";
@@ -196,7 +212,14 @@ export async function createRelay(config: RelayConfig): Promise<Relay> {
       const unknown = parsed.data.rows.find((r) => r.category && call.categories.length > 0 && !call.categories.includes(r.category));
       if (unknown) throw new HttpError(400, `Разряда «${unknown.category}» нет в соревновании`);
     }
+    const ip = clientIp(req);
+    const now = Date.now();
+    const recent = recentEntries(ip, now);
+    if (recent.length >= ENTRIES_PER_HOUR) {
+      throw new HttpError(429, "С этого адреса уже отправлено много заявок. Попробуйте через час или свяжитесь с организаторами");
+    }
     const received = await entries.add(id, parsed.data);
+    recent.push(now);
     json(res, 201, { id: received.id, receivedAt: received.receivedAt });
   }
 
@@ -342,6 +365,24 @@ function json(res: ServerResponse, status: number, body: unknown): void {
     "access-control-allow-origin": "*",
   });
   res.end(JSON.stringify(body));
+}
+
+/** Скрытое поле формы заявки «website»: человек его не видит, бот заполняет. */
+function isTrap(body: unknown): boolean {
+  return typeof body === "object" && body !== null && "website" in body && typeof body.website === "string" && body.website.trim() !== "";
+}
+
+const LOCAL = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fc|fd)/;
+
+/** Адрес посетителя. За nginx и подобными на том же сервере — последний адрес из X-Forwarded-For. */
+function clientIp(req: IncomingMessage): string {
+  const remote = (req.socket.remoteAddress ?? "").replace(/^::ffff:/, "");
+  const forwarded = String(req.headers["x-forwarded-for"] ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .pop();
+  return forwarded && LOCAL.test(remote) ? forwarded : remote;
 }
 
 function readBody(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<string> {
