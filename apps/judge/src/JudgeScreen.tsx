@@ -14,6 +14,7 @@ import type {
 import { ApiError, apiRequest } from "./api";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { Keypad } from "./Keypad";
+import { useKeepAwake } from "./keepAwake";
 import { Stopwatch } from "./Stopwatch";
 import {
   APPARATUS_NAMES,
@@ -174,6 +175,7 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
     void flush();
   }, [refresh, flush]);
   const connected = useLive(token, onLive);
+  const awake = useKeepAwake();
 
   useEffect(() => {
     void refresh();
@@ -236,6 +238,12 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       </header>
 
       {error && <div className="alert">{error}</div>}
+      {awake === "unsupported" && (
+        <div className="alert">
+          Планшет может гасить экран между выступлениями. Отключите автоблокировку в настройках планшета или
+          поставьте самый долгий тайм-аут экрана.
+        </div>
+      )}
 
       {current ? (
         <main className="work">
