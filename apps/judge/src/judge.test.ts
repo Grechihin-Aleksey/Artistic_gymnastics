@@ -1,7 +1,8 @@
-import { eToleranceFor, submitMarkSchema, type PerformanceView, type SubmitMarkInput } from "@ag/shared";
+import { eToleranceFor, submitMarkSchema, type InquiryView, type PerformanceView, type RulesView, type SubmitMarkInput } from "@ag/shared";
 import { describe, expect, it, vi } from "vitest";
 import { addDeduction, eSpreadWarning, expandScore, formatTime, parsePoints, parseScore, restHint, timeLimit } from "./labels";
 import { Journal } from "./journal";
+import { chiefFlags } from "./ChiefJudge";
 import { candidateBases, findServer, handOver } from "./finder";
 import { parseTimerInput } from "./Secretariat";
 import { MarkQueue, type SendOutcome } from "./markQueue";
@@ -357,5 +358,44 @@ describe("поиск сервера по новому адресу", () => {
     history.replaceState(null, "", "/judge/#token=abc&device=dev-1");
     expect(takeTokenFromLocation(location, fakeStorage)).toBe("abc");
     expect(storage.get("device-id")).toBe("dev-1");
+  });
+});
+
+describe("экран главного судьи", () => {
+  const perf = (over: Partial<PerformanceView>): PerformanceView => ({
+    id: uuid(),
+    competitionId: "c",
+    gymnastId: "g1",
+    apparatus: "BB",
+    attempt: 1,
+    stage: "QUAL",
+    status: "APPROVED",
+    score: { d: 5, e: 8.5, neutral: 0, total: 13.5 },
+    marks: [],
+    calledAt: "2026-11-16T10:00:00Z",
+    approvedAt: "2026-11-16T10:01:00Z",
+    ...over,
+  });
+  const e = (...values: number[]) => values.map((value, i) => ({ judgeId: `e${i}`, seat: i + 1, role: "E" as const, kind: "E" as const, value }));
+  const now = new Date("2026-11-16T10:05:00Z").getTime();
+
+  it("отмечает расхождение E сверх допуска, долгую оценку, нейтральную сбавку и запрос тренера", () => {
+    const flags = chiefFlags(
+      [
+        perf({ marks: e(1.0, 1.2) }),
+        perf({ gymnastId: "g2", marks: e(1.0, 1.9), score: { d: 5, e: 8.55, neutral: 0.1, total: 13.45 } }),
+        perf({ gymnastId: "g3", status: "SCORING", score: null, calledAt: "2026-11-16T10:02:00Z", approvedAt: null }),
+      ],
+      [{ id: "i", competitionId: "c", performanceId: "p", apparatus: "BB", attempt: 1, gymnast: { id: "g1" } as never, coach: "Смирнова", claimedD: null, previousD: 5, newD: null, status: "PENDING", late: false } as unknown as InquiryView],
+      { rules: "CUSTOM", eTolerance: 0.5 } as RulesView,
+      now,
+    );
+    expect(flags.map((f) => [f.kind, f.gymnastId])).toEqual([
+      ["inquiry", "g1"],
+      ["slow", "g3"],
+      ["spread", "g2"],
+      ["neutral", "g2"],
+    ]);
+    expect(flags[1]!.text).toBe("оценку ставят уже 3 мин");
   });
 });

@@ -732,6 +732,9 @@ export interface PerformanceView {
   status: PerformanceStatus;
   score: ScoreView | null;
   marks: MarkView[];
+  /** Когда участника вызвали и когда утвердили оценку (ISO). */
+  calledAt?: string;
+  approvedAt?: string | null;
 }
 
 /** Таймер на табло в зале: разминка, ротация, перерыв. null — убрать таймер. */

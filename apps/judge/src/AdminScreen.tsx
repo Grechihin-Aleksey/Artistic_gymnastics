@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
+import { ChiefJudgePanel } from "./ChiefJudge";
 import { ApiError, apiRequest } from "./api";
 import { copyText } from "./clipboard";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
@@ -80,6 +81,7 @@ const TABS = [
   { id: "roster", title: "Участники" },
   { id: "judges", title: "Судьи" },
   { id: "progress", title: "Ход соревнования" },
+  { id: "chief", title: "Главный судья" },
   { id: "finals", title: "Финалы и награждение" },
   { id: "protocols", title: "Протоколы" },
 ] as const;
@@ -847,6 +849,17 @@ export function AdminScreen() {
               discipline={competition.discipline}
               active={tab === "progress"}
               onError={setError}
+            />
+          </div>
+
+          <div {...pane("chief")}>
+            <ChiefJudgePanel
+              key={`chief-${competition.id}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "chief"}
             />
           </div>
 
