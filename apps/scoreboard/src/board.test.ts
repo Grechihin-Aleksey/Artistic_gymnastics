@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { FinalsView } from "@ag/shared";
+import { announcerView } from "./Announcer";
 import { isRelay, parseRoute, routeHash } from "./route";
 import { buildSlides, pageCount, pageRows } from "./slides";
 import { clubList, clubResults } from "./club";
@@ -145,5 +147,78 @@ describe("части турнира на табло в зале", () => {
   it("без настройки и в режиме «на табло» ничего не меняется", () => {
     expect(nextPart(null, group, "girls", "timer")).toBeNull();
     expect(nextPart({ mode: "board", every: 30, at }, group, "girls", "timer")).toBeNull();
+  });
+});
+
+describe("экран диктора", () => {
+  const g = (id: string, bib: number, lastName: string, categoryId: string | null = "cat") => ({
+    id,
+    bib,
+    firstName: "А",
+    lastName,
+    club: "Олимп",
+    teamId: null,
+    categoryId,
+  });
+  const score = (total: number) => ({ d: 5, e: total - 5, neutral: 0, total });
+  const data = {
+    competition: { id: "c", name: "Кубок", discipline: "WAG" as const },
+    generatedAt: "",
+    live: [
+      {
+        apparatus: "BB" as const,
+        current: { performanceId: "p3", attempt: 1, gymnast: g("g3", 103, "Третья") },
+        last: { performanceId: "p2", attempt: 1, gymnast: g("g2", 102, "Вторая"), score: score(13), approvedAt: "", eMarks: null },
+      },
+    ],
+    categories: [
+      {
+        id: "cat",
+        name: "КМС",
+        teams: [],
+        allAround: [{ rank: 4, gymnast: g("g2", 102, "Вторая"), total: 40.5, complete: false, apparatus: {} }],
+        apparatus: {
+          BB: [
+            { rank: 1, gymnast: g("g1", 101, "Первая"), score: score(13.5) },
+            { rank: 2, gymnast: g("g2", 102, "Вторая"), score: score(13) },
+          ],
+        },
+      },
+    ],
+  };
+  const people = ["g1", "g2", "g3", "g4", "g5", "g6"].map((id, i) => ({
+    ...g(id, 101 + i, `Участница${i + 1}`),
+    status: id === "g4" ? ("DNS" as const) : ("ACTIVE" as const),
+  }));
+  const rotation = { rotation: 0, rotations: 4, shifts: [{ number: 1, startApparatus: "BB" as const, apparatus: "BB" as const, gymnastIds: ["g1", "g2", "g3", "g4", "g5", "g6"] }] };
+
+  it("показывает выступающую, оценку с местами и двух следующих без неявок", () => {
+    const [bb] = announcerView(data, rotation, null, people);
+    expect(bb!.current?.bib).toBe(103);
+    expect(bb!.last).toMatchObject({ total: 13, rank: 2, allAround: { rank: 4, total: 40.5 }, category: "КМС" });
+    expect(bb!.next.map((p) => p.bib)).toEqual([105, 106]);
+  });
+
+  it("в финале следующие — по составу финала", () => {
+    const finals = {
+      phase: "FINAL" as const,
+      size: 8,
+      reserves: 2,
+      perClub: null,
+      started: true,
+      lists: [
+        {
+          apparatus: "BB" as const,
+          category: { id: "cat", name: "КМС" },
+          finalists: [
+            { gymnast: g("g6", 106, "Шестая"), reserve: false },
+            { gymnast: g("g5", 105, "Пятая"), reserve: true },
+          ],
+        },
+      ],
+    } as unknown as FinalsView;
+    const [bb] = announcerView({ ...data, competition: { ...data.competition, phase: "FINAL" } }, rotation, finals, people);
+    expect(bb!.next.map((p) => p.bib)).toEqual([106]);
+    expect(bb!.last?.allAround).toBeNull();
   });
 });

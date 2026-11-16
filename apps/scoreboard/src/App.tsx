@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Announcer } from "./Announcer";
 import { Board } from "./Board";
 import { useHallSwitch } from "./hallSwitch";
 import { isRelay, parseRoute, routeHash, type Route } from "./route";
@@ -64,6 +65,7 @@ export function App() {
   useHallSwitch(route.group, route.competitionId, go, !route.embed && !isRelay(location.pathname));
 
   if (!route.competitionId) return <Picker />;
+  if (route.view === "announcer" && !isRelay(location.pathname)) return <Announcer competitionId={route.competitionId} />;
   return (
     <>
       {route.group && <GroupSwitch route={route} group={route.group} />}

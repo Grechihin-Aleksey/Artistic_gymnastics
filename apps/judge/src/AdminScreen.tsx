@@ -17,6 +17,7 @@ import {
   ManualScoresPanel,
   RecoveryPanel,
   ReadinessPanel,
+  AnnouncerLinkPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -831,6 +832,7 @@ export function AdminScreen() {
               onError={setError}
               active={tab === "progress"}
             />
+            <AnnouncerLinkPanel key={`announcer-${competition.id}`} competitionId={competition.id} />
             <RecoveryPanel
               key={`recovery-${competition.id}`}
               competitionId={competition.id}

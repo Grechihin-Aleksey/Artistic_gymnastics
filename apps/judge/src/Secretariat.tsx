@@ -5003,3 +5003,34 @@ export function ReadinessPanel({ competitionId, adminToken, onError, active = tr
     </section>
   );
 }
+
+/** Ссылка на экран диктора: открывают с телефона или ноутбука в той же сети Wi-Fi. */
+export function AnnouncerLinkPanel({ competitionId }: { competitionId: string }) {
+  const [copied, setCopied] = useState(false);
+  const link = `${location.origin}/board/#c=${competitionId}&view=announcer`;
+  return (
+    <section className="panel no-print">
+      <h2>Экран диктора</h2>
+      <p className="muted wide">
+        Для диктора на телефоне или ноутбуке в сети зала: кто сейчас на каждом снаряде, последняя оценка с местом на снаряде и в
+        многоборье, кто выходит следующим. Обновляется сам.
+      </p>
+      <div className="wide deduction-row">
+        <a href={link} target="_blank" rel="noreferrer">
+          {link}
+        </a>
+        <button
+          type="button"
+          onClick={() =>
+            void copyText(link).then((ok) => {
+              setCopied(ok);
+              if (ok) setTimeout(() => setCopied(false), 2000);
+            })
+          }
+        >
+          {copied ? "Скопировано" : "Копировать"}
+        </button>
+      </div>
+    </section>
+  );
+}

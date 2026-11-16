@@ -591,3 +591,73 @@ nav.categories {
   margin-right: 0.35em;
   flex-shrink: 0;
 }
+
+/* Экран диктора: телефон или ноутбук у микрофона, крупный текст. */
+.announcer {
+  font-size: 18px;
+  padding: 12px 16px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.announcer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.announcer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.announcer-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.announcer-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 22px;
+  color: var(--accent);
+}
+.announcer-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.announcer-row .label {
+  color: var(--muted);
+  font-size: 15px;
+  padding-top: 3px;
+}
+.announcer-row .big {
+  font-size: 22px;
+  font-weight: 700;
+}
+.announcer-row .score {
+  font-size: 30px;
+  color: var(--accent);
+}
+.announcer-row ol {
+  margin: 0;
+  padding-left: 20px;
+}
+@media (max-width: 420px) {
+  .announcer-grid {
+    grid-template-columns: 1fr;
+  }
+  .announcer-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
