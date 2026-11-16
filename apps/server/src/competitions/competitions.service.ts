@@ -114,6 +114,90 @@ export class CompetitionsService {
     });
   }
 
+  /**
+   * Новый турнир по образцу: настройки, разряды и судьи прошлого. Турнир из двух частей
+   * копируется целиком, обе части. Судьям выдаются новые коды: прежние QR остаются у старого турнира.
+   */
+  async copyFrom(sourceId: string, input: { name: string; trial: boolean }): Promise<CompetitionRow[]> {
+    const source = await this.get(sourceId);
+    const parts = source.pairId
+      ? await this.db.select().from(competitions).where(eq(competitions.pairId, source.pairId)).orderBy(asc(competitions.createdAt))
+      : [source];
+    return this.db.transaction(async (tx) => {
+      const created: CompetitionRow[] = [];
+      let pairId: string | null = null;
+      for (const part of parts) {
+        const [row]: CompetitionRow[] = await tx
+          .insert(competitions)
+          .values({
+            name: input.name,
+            discipline: part.discipline,
+            teamRoster: part.teamRoster,
+            teamPerApparatus: part.teamPerApparatus,
+            teamCounting: part.teamCounting,
+            publishJudgeMarks: part.publishJudgeMarks,
+            logo: part.logo,
+            rules: part.rules,
+            vaultRule: part.vaultRule,
+            deductions: part.deductions,
+            eTolerance: part.eTolerance,
+            eToleranceTable: part.eToleranceTable,
+            clubStanding: part.clubStanding,
+            officials: part.officials,
+            finalSize: part.finalSize,
+            finalReserves: part.finalReserves,
+            finalPerClub: part.finalPerClub,
+            boardSwitch: parts.length > 1 ? part.boardSwitch : null,
+            pairId,
+            trial: input.trial,
+          })
+          .returning();
+        // Пара связывается по id первой части, как при обычном создании второй части.
+        if (parts.length > 1 && !pairId) {
+          pairId = row!.id;
+          await tx.update(competitions).set({ pairId }).where(eq(competitions.id, row!.id));
+          row!.pairId = pairId;
+        }
+        const cats = await tx.select().from(categories).where(eq(categories.competitionId, part.id));
+        if (cats.length) {
+          await tx.insert(categories).values(
+            cats.map((c) => ({
+              competitionId: row!.id,
+              name: c.name,
+              position: c.position,
+              base: c.base,
+              apparatusBase: c.apparatusBase,
+              normatives: c.normatives,
+            })),
+          );
+        }
+        const panel = await tx.select().from(judges).where(eq(judges.competitionId, part.id));
+        for (const j of panel) {
+          const token = newToken();
+          await tx.insert(judges).values({
+            competitionId: row!.id,
+            name: j.name,
+            category: j.category,
+            apparatus: j.apparatus,
+            role: j.role,
+            seat: j.seat,
+            enterAllMarks: j.enterAllMarks,
+            tokenHash: hashToken(token),
+            tokenSealed: sealToken(token, this.config.adminToken),
+          });
+        }
+        await tx.insert(auditLog).values({
+          competitionId: row!.id,
+          actor: "admin",
+          action: "competition.copied",
+          details: { from: part.id, fromName: part.name, categories: cats.length, judges: panel.length },
+        });
+        created.push(row!);
+      }
+      return created;
+    });
+  }
+
   list(): Promise<CompetitionRow[]> {
     return this.db.select().from(competitions).orderBy(asc(competitions.createdAt));
   }

@@ -729,6 +729,83 @@ export function NewCompetitionForm({
   );
 }
 
+/**
+ * Новый турнир по образцу прошлого: правила, разряды с базами и нормативами, судьи
+ * (с новыми QR-кодами), логотип, коллегия, зачёт клубов и настройки финалов.
+ * Участники, смены, оценки и заявки не переносятся.
+ */
+export function CopyCompetitionForm({
+  adminToken,
+  competitions,
+  currentId,
+  onCreated,
+  onError,
+}: {
+  adminToken: string;
+  /** По одной строке на турнир; у турнира из двух частей — первая часть. */
+  competitions: { id: string; name: string; trial?: boolean }[];
+  currentId: string;
+  onCreated: (id: string) => void;
+  onError: (message: string | null) => void;
+}) {
+  const real = competitions.filter((c) => !c.trial);
+  const [sourceId, setSourceId] = useState(() => (real.some((c) => c.id === currentId) ? currentId : (real.at(-1)?.id ?? "")));
+  const [busy, setBusy] = useState(false);
+  if (real.length === 0) return <p className="muted panel no-print">Прошлых турниров пока нет: создайте первый в блоке «Новое соревнование».</p>;
+  const source = real.find((c) => c.id === sourceId);
+
+  const copy = async (form: FormData) => {
+    setBusy(true);
+    try {
+      const created = await apiRequest<CompetitionCreated[]>(`/competitions/${sourceId}/copy`, {
+        token: adminToken,
+        method: "POST",
+        body: { name: String(form.get("name")).trim() },
+      });
+      onError(null);
+      onCreated(created[0]!.id);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="panel no-print"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void copy(new FormData(e.currentTarget));
+      }}
+    >
+      <h2>Новое соревнование по образцу прошлого</h2>
+      <label className="wide">
+        Образец
+        <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
+          {real.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="wide">
+        Название нового соревнования
+        <input name="name" required maxLength={200} key={sourceId} defaultValue={source ? `${source.name} (новый)` : ""} />
+      </label>
+      <p className="muted wide">
+        Перейдут правила судейства, разряды с базами и нормативами, судьи (им нужно будет распечатать новые QR-коды — старые
+        остаются у прошлого турнира), логотип, главный судья и секретарь, общекомандный зачёт и настройки финалов. Турнир из двух
+        частей копируется обеими частями. Участники, смены, оценки и заявки не переносятся: загрузите новый список участников.
+      </p>
+      <button type="submit" className="primary" disabled={busy || !sourceId}>
+        {busy ? "Создаём…" : "Создать по образцу"}
+      </button>
+    </form>
+  );
+}
+
 const DEMO_PEOPLE: Record<Discipline, [string, string][]> = {
   WAG: [
     ["Абрамова", "Анна"],

@@ -32,6 +32,7 @@ import {
   ProgressPanel,
   InquiriesPanel,
   NewCompetitionForm,
+  CopyCompetitionForm,
   DemoCompetitionForm,
   ImportCompetitionForm,
   TransferPanel,
@@ -445,6 +446,22 @@ export function AdminScreen() {
             <summary>Новое соревнование</summary>
             <NewCompetitionForm
               adminToken={adminToken}
+              onError={setError}
+              onCreated={(id) => {
+                setIssued([]);
+                setLostCodes([]);
+                void loadCompetitions(id);
+              }}
+            />
+          </details>
+        )}
+        {adminToken && listed.some((c) => !c.trial) && (
+          <details className="no-print new-competition">
+            <summary>Новое соревнование по образцу прошлого</summary>
+            <CopyCompetitionForm
+              adminToken={adminToken}
+              competitions={listed}
+              currentId={listedId}
               onError={setError}
               onCreated={(id) => {
                 setIssued([]);

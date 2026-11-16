@@ -291,6 +291,11 @@ export function describe(
     }
     case "competition.imported":
       return { group: "setup", text: `Турнир загружен из файла, выгруженного ${new Date(String(d.exportedAt)).toLocaleString("ru-RU")}` };
+    case "competition.copied":
+      return {
+        group: "setup",
+        text: `Турнир создан по образцу «${String(d.fromName ?? "")}»: разрядов — ${Number(d.categories ?? 0)}, судей — ${Number(d.judges ?? 0)}`,
+      };
     default:
       return { group: "setup", text: action };
   }

@@ -107,6 +107,17 @@ export const createCompetitionSchema = z.object({
   trial: z.boolean().default(false),
 });
 
+/**
+ * Новый турнир по образцу прошлого: правила, разряды с базами и нормативами, судьи
+ * (с новыми QR-кодами), логотип, коллегия, зачёт клубов и настройки финалов.
+ * Участники, смены, оценки и заявки не переносятся.
+ */
+export const copyCompetitionSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  trial: z.boolean().default(false),
+});
+export type CopyCompetitionInput = z.infer<typeof copyCompetitionSchema>;
+
 export const createTeamSchema = z.object({
   name: z.string().min(1).max(200),
 });
