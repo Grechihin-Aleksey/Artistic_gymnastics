@@ -1937,3 +1937,16 @@ input.secret {
   margin: 16px;
   font-size: 14px;
 }
+
+/* Экран главного судьи на отдельном ПК или планшете. */
+.chief-screen .bar {
+  gap: 16px;
+}
+.chief-screen .chief-title {
+  flex: 1;
+  font-weight: 600;
+}
+.chief-code .chief-link {
+  word-break: break-all;
+  font-size: 12px;
+}

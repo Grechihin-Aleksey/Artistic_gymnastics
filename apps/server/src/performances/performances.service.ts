@@ -38,7 +38,9 @@ const ALLOWED_KINDS: Record<JudgeRow["role"], readonly MarkKind[]> = {
 };
 
 export function actorName(principal: Principal): string {
-  return principal.kind === "admin" ? "admin" : `judge:${principal.judge.id}`;
+  if (principal.kind === "admin") return "admin";
+  if (principal.kind === "chief") return "chief";
+  return `judge:${principal.judge.id}`;
 }
 
 @Injectable()
@@ -631,6 +633,7 @@ export class PerformancesService {
 
   private assertCanApprove(principal: Principal, perf: PerformanceRow): void {
     if (principal.kind === "admin") return;
+    if (principal.kind === "chief") throw new ForbiddenException("Утверждает старший судья этого снаряда или секретариат");
     const { judge } = principal;
     if (
       judge.role !== "SUPERVISOR" ||

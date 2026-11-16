@@ -14,7 +14,7 @@ import {
   type SubmitMarkInput,
   type TabletScoreInput,
 } from "@ag/shared";
-import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
+import { AllowChief, CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { PerformancesService } from "./performances.service";
 
@@ -70,6 +70,7 @@ export class PerformancesController {
 
   @Get("competitions/:id/performances")
   @RequireAccess("admin-or-judge")
+  @AllowChief()
   list(
     @Param("id", ParseUUIDPipe) id: string,
     @Query("apparatus", new ZodPipe(apparatusSchema.optional())) apparatus?: string,

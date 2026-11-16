@@ -77,6 +77,9 @@ export const competitions = pgTable("competitions", {
   boardSwitch: jsonb("board_switch").$type<BoardSwitch>(),
   /** Пробный турнир для репетиции: на сайт не уходит, удаляется одной кнопкой. */
   trial: boolean("trial").notNull().default(false),
+  /** Код главного судьи для отдельного планшета или ПК: SHA-256 и зашифрованный для перепечатки QR. */
+  chiefTokenHash: text("chief_token_hash").unique(),
+  chiefTokenSealed: text("chief_token_sealed"),
   createdAt: createdAt(),
 });
 

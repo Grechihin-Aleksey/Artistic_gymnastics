@@ -2,7 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from "@nestj
 import { fromPoints, toPoints } from "@ag/scoring";
 import type { CoachInquiryInput, CreateInquiryInput, InquiryView, ResolveInquiryInput } from "@ag/shared";
 import { and, asc, desc, eq, gt, isNotNull } from "drizzle-orm";
-import type { Principal } from "../auth/auth";
+import { assertChiefScope, type Principal } from "../auth/auth";
 import { COACH_PHONE_ACTOR } from "../audit/audit.service";
 import { DB, type Db } from "../db/db.module";
 import { auditLog, competitions, gymnasts, inquiries, performances } from "../db/schema";
@@ -23,7 +23,12 @@ export class InquiriesService {
     private readonly performances: PerformancesService,
   ) {}
 
-  create(principal: Principal, performanceId: string, input: CreateInquiryInput): Promise<InquiryView> {
+  async create(principal: Principal, performanceId: string, input: CreateInquiryInput): Promise<InquiryView> {
+    if (principal.kind === "chief") {
+      const [perf] = await this.db.select({ competitionId: performances.competitionId }).from(performances).where(eq(performances.id, performanceId));
+      if (!perf) throw new NotFoundException("Выступление не найдено");
+      assertChiefScope(principal, perf.competitionId);
+    }
     return this.record(actorName(principal), "secretariat", performanceId, input);
   }
 
@@ -135,6 +140,7 @@ export class InquiriesService {
     const { competitionId, performanceId, changed } = await this.db.transaction(async (tx) => {
       const [inquiry] = await tx.select().from(inquiries).where(eq(inquiries.id, id)).for("update");
       if (!inquiry) throw new NotFoundException("Запрос не найден");
+      assertChiefScope(principal, inquiry.competitionId);
       if (inquiry.status !== "PENDING") throw new ConflictException("Запрос уже рассмотрен");
       const [perf] = await tx
         .select()

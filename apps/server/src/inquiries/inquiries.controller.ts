@@ -8,13 +8,14 @@ import {
   type CreateInquiryInput,
   type ResolveInquiryInput,
 } from "@ag/shared";
-import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
+import { AllowChief, CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { InquiriesService } from "./inquiries.service";
 
-/** Запросы записывает и решения жюри вносит секретариат. */
+/** Запросы записывает и решения жюри вносит секретариат или главный судья со своего планшета. */
 @Controller()
 @RequireAccess("admin")
+@AllowChief()
 export class InquiriesController {
   constructor(private readonly inquiries: InquiriesService) {}
 

@@ -169,6 +169,13 @@
       "when": 1794840233815,
       "tag": "0023_inquiry_source",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794858291863,
+      "tag": "0024_chief_code",
+      "breakpoints": true
     }
   ]
 }
