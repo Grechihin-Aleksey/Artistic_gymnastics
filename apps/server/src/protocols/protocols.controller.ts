@@ -107,6 +107,20 @@ export class ProtocolsController {
       .end(await this.protocols.auditWorkbook(id, group));
   }
 
+  /** Все документы турнира одним ZIP-архивом — например, отправить в федерацию. */
+  @Get("package.zip")
+  async documentsPackage(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
+    const { file, name } = await this.protocols.documentsPackage(id);
+    res
+      .status(200)
+      .set({
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="documents.zip"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        "Cache-Control": "no-store",
+      })
+      .end(file);
+  }
+
   @Get("e-judges")
   async eJudges(@Param("id", ParseUUIDPipe) id: string, @Res() res: Response) {
     send(res, await this.protocols.eJudges(id), "e-judges.pdf");

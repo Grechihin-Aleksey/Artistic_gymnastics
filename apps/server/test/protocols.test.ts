@@ -136,6 +136,19 @@ describe("протоколы", () => {
     }
   });
 
+  it("пакет документов одним ZIP-архивом", async () => {
+    const res = await pdf(`/competitions/${competitionId}/protocols/package.zip`).expect(200);
+    expect(res.headers["content-type"]).toBe("application/zip");
+    expect(res.headers["content-disposition"]).toContain("filename*=UTF-8''");
+    const body = res.body as Buffer;
+    expect(body.subarray(0, 4).toString("hex")).toBe("504b0304");
+    const text = body.toString("utf8");
+    for (const name of ["Состав пакета.txt", "01 Стартовый протокол.pdf", "Протокол — Бревно.pdf", "20 Итоги.xlsx", "23 Работа судей.pdf", "31 Журнал изменений.xlsx"]) {
+      expect(text).toContain(name);
+    }
+    await pdf(`/competitions/${competitionId}/protocols/package.zip`, "").expect(401);
+  });
+
   it("пустой протокол тоже собирается, а без токена секретариата недоступен", async () => {
     await pdf(`/competitions/${competitionId}/protocols/apparatus/VT`).expect(200);
     await pdf(`/competitions/${competitionId}/protocols/all-around`, "").expect(401);

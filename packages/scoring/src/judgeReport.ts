@@ -55,6 +55,10 @@ export interface EJudgeSample {
   deduction: number;
   /** Итоговая сбавка бригады (10 − оценка E), баллы. */
   reference: number;
+  /** Допуск для этого выступления из «Правил судейства», баллы. */
+  tolerance?: number;
+  /** Сколько секунд прошло от вызова участника до оценки судьи. */
+  seconds?: number;
 }
 
 export interface EJudgeSummary {
@@ -69,6 +73,10 @@ export interface EJudgeSummary {
   over03: number;
   /** Средний процент по таблице FIG. */
   percent: number;
+  /** Выступлений, где судья отклонился от бригады больше допуска. */
+  overTolerance: number;
+  /** Среднее время от вызова до оценки, секунды; null — время неизвестно. */
+  avgSeconds: number | null;
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -88,6 +96,11 @@ export function summarizeEJudges(discipline: Discipline, samples: readonly EJudg
       maxAbs: round3(Math.max(...abs)),
       over03: abs.filter((d) => d > 0.3 + 1e-9).length,
       percent: Math.round((sum(list.map((s) => eJudgePercent(discipline, s.reference, s.deduction))) / list.length) * 100) / 100,
+      overTolerance: list.filter((s) => s.tolerance !== undefined && Math.abs(s.deduction - s.reference) > s.tolerance + 1e-9).length,
+      avgSeconds: (() => {
+        const times = list.map((s) => s.seconds).filter((t): t is number => t !== undefined && t >= 0);
+        return times.length ? Math.round(sum(times) / times.length) : null;
+      })(),
     };
   });
 }

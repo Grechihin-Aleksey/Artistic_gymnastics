@@ -291,8 +291,17 @@ describe("работа судей E по таблице FIG", () => {
       { judgeId: "e1", deduction: 1.1, reference: 1.2 },
       { judgeId: "e1", deduction: 2.0, reference: 1.2 },
     ]);
-    expect(s).toEqual({ judgeId: "e1", count: 3, bias: 0.333, meanAbs: 0.4, maxAbs: 0.8, over03: 1, percent: 76.67 });
+    expect(s).toEqual({ judgeId: "e1", count: 3, bias: 0.333, meanAbs: 0.4, maxAbs: 0.8, over03: 1, percent: 76.67, overTolerance: 0, avgSeconds: null });
     expect(eJudgeBand(s!.percent)).toBe("зачёт");
     expect(eJudgeBand(92)).toBe("отлично");
+  });
+
+  it("сводка по судье: выходы за допуск и среднее время до оценки", () => {
+    const [s] = summarizeEJudges("WAG", [
+      { judgeId: "e1", deduction: 1.5, reference: 1.2, tolerance: 0.5, seconds: 40 },
+      { judgeId: "e1", deduction: 2.0, reference: 1.2, tolerance: 0.5, seconds: 80 },
+      { judgeId: "e1", deduction: 0.7, reference: 1.2, tolerance: 0.5 },
+    ]);
+    expect(s).toMatchObject({ overTolerance: 1, avgSeconds: 60 });
   });
 });

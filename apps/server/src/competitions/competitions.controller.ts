@@ -38,6 +38,8 @@ import {
   type SetOfficialsInput,
   type SetRulesInput,
   type UpdateGymnastInput,
+  copyCompetitionSchema,
+  type CopyCompetitionInput,
 } from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
 import { LicenseService } from "../license/license.service";
@@ -59,6 +61,14 @@ export class CompetitionsController {
   async create(@Body(new ZodPipe(createCompetitionSchema)) body: CreateCompetitionInput) {
     await this.licenses.assertCanCreate(body.trial);
     return publicCompetition(await this.competitions.create(body));
+  }
+
+  /** Новый турнир по образцу этого: отдаёт созданные части (одну или две). */
+  @Post(":id/copy")
+  @RequireAccess("admin")
+  async copy(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(copyCompetitionSchema)) body: CopyCompetitionInput) {
+    await this.licenses.assertCanCreate(body.trial);
+    return (await this.competitions.copyFrom(id, body)).map(publicCompetition);
   }
 
   @Get()

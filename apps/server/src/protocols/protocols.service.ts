@@ -22,6 +22,7 @@ import {
   officialLabel,
   scoreLabels,
   AUDIT_GROUP_NAMES,
+  eToleranceFor,
   type AuditGroup,
   type GymnastView,
   type Official,
@@ -39,6 +40,7 @@ import type {
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
 import {
+  auditLog,
   categories,
   gymnasts,
   inquiries,
@@ -55,9 +57,15 @@ import ExcelJS from "exceljs";
 import { renderPdf } from "./pdf";
 import { resultsWorkbook } from "./workbook";
 import { APPARATUS_EVENT, diplomasDocument, type Diploma } from "./diplomas";
+import { safeName, zip, type ZipEntry } from "./zip";
 
 const DISCIPLINE_NAMES = { MAG: "мужчины", WAG: "женщины" } as const;
 const fmt = (n: number) => n.toFixed(3);
+/** Секунды словами для отчёта: «45 с», «2 мин 05 с». */
+export const duration = (seconds: number) => {
+  const total = Math.max(0, Math.round(seconds));
+  return total < 60 ? `${total} с` : `${Math.floor(total / 60)} мин ${String(total % 60).padStart(2, "0")} с`;
+};
 const printed = () =>
   new Date().toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" });
 const fullName = (g: GymnastView) => `${g.lastName} ${g.firstName}`;
@@ -340,6 +348,58 @@ export class ProtocolsService {
       .sort((a, b) => order[a.role] - order[b.role] || a.seat - b.seat)
       .map((j) => `${j.role === "SUPERVISOR" ? "Старший судья" : `${j.role}${j.seat}`} — ${officialLabel(j)}`)
       .join("; ");
+  }
+
+  /**
+   * Пакет документов турнира одним архивом: протоколы, итоги в Excel, отчёт, разряды,
+   * коллегия, работа судей и журнал для жюри. У турнира из двух частей — папка на часть.
+   * Документ, который собрать не удалось, не ломает архив: он указан в «Состав пакета.txt».
+   */
+  async documentsPackage(competitionId: string): Promise<{ file: Buffer; name: string }> {
+    const competition = await this.competitions.get(competitionId);
+    const parts = competition.pairId
+      ? (await this.competitions.list()).filter((c) => c.pairId === competition.pairId)
+      : [competition];
+    const entries: ZipEntry[] = [];
+    const lines: string[] = [`${competition.name}`, `Собрано ${new Date().toLocaleString("ru-RU")}`, ""];
+    for (const part of parts) {
+      const folder = parts.length > 1 ? `${part.discipline === "WAG" ? "Девочки" : "Мальчики"}/` : "";
+      const finals = await this.finals.view(part.id).catch(() => null);
+      const docs: [string, () => Promise<Buffer>][] = [
+        ["01 Стартовый протокол.pdf", () => this.startList(part.id)],
+        ...apparatusFor(part.discipline).map(
+          (a, i): [string, () => Promise<Buffer>] => [
+            `${String(i + 2).padStart(2, "0")} Протокол — ${APPARATUS_NAMES[a]}.pdf`,
+            () => this.apparatus(part.id, a, undefined, "QUAL"),
+          ],
+        ),
+        ["10 Многоборье.pdf", () => this.allAround(part.id, undefined)],
+        ["11 Командное первенство.pdf", () => this.teams(part.id, undefined)],
+        ["12 Общекомандный зачёт клубов.pdf", () => this.clubs(part.id)],
+        ...apparatusFor(part.discipline)
+          .filter((a) => finals?.lists.some((l) => l.apparatus === a && l.finalists.length > 0))
+          .map((a): [string, () => Promise<Buffer>] => [`13 Финал — ${APPARATUS_NAMES[a]}.pdf`, () => this.apparatus(part.id, a, undefined, "FINAL")]),
+        ["20 Итоги.xlsx", () => this.workbook(part.id)],
+        ["21 Выполнили разряды.pdf", () => this.earned(part.id)],
+        ["22 Судейская коллегия.pdf", () => this.officials(part.id)],
+        ["23 Работа судей.pdf", () => this.eJudges(part.id)],
+        ["24 Итоговый отчёт.pdf", () => this.report(part.id)],
+        ["30 Журнал изменений.pdf", () => this.auditLog(part.id)],
+        ["31 Журнал изменений.xlsx", () => this.auditWorkbook(part.id)],
+      ];
+      if (folder) lines.push(folder.slice(0, -1));
+      for (const [name, make] of docs) {
+        try {
+          entries.push({ name: `${folder}${name}`, data: await make() });
+          lines.push(`  ${name}`);
+        } catch (e) {
+          lines.push(`  ${name} — не собран: ${(e as Error).message}`);
+        }
+      }
+    }
+    entries.unshift({ name: "Состав пакета.txt", data: Buffer.from(`\ufeff${lines.join("\r\n")}\r\n`, "utf8") });
+    const date = new Date().toISOString().slice(0, 10);
+    return { file: zip(entries), name: `${safeName(competition.name)} — документы ${date}.zip` };
   }
 
   /** Общекомандный зачёт клубов: очки по видам и места. */
@@ -704,13 +764,24 @@ export class ProtocolsService {
   async eJudges(competitionId: string): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
     const custom = competition.rules === "CUSTOM";
+    const rules = await this.competitions.getRules(competitionId);
     const rows = await this.db
-      .select({ judgeId: marks.judgeId, value: marks.value, e: performances.e })
+      .select({
+        judgeId: marks.judgeId,
+        performanceId: marks.performanceId,
+        value: marks.value,
+        markedAt: marks.createdAt,
+        calledAt: performances.createdAt,
+        e: performances.e,
+      })
       .from(marks)
       .innerJoin(performances, eq(performances.id, marks.performanceId))
       .where(
         and(eq(performances.competitionId, competitionId), eq(performances.status, "APPROVED"), eq(marks.kind, "E")),
       );
+    // Допуск — по сбавкам всей бригады за выступление, как на экране главного судьи.
+    const byPerformance = new Map<string, number[]>();
+    for (const r of rows) byPerformance.set(r.performanceId, [...(byPerformance.get(r.performanceId) ?? []), fromPoints(r.value)]);
     const samples: EJudgeSample[] = rows
       .filter((r) => r.e !== null)
       .map((r) => ({
@@ -718,8 +789,18 @@ export class ProtocolsService {
         deduction: fromPoints(r.value),
         // Оценка E по FIG — 10 минус итоговая сбавка, по своим правилам — сбавка со знаком минус.
         reference: fromPoints(custom ? -r.e! : 10_000 - r.e!),
+        tolerance: eToleranceFor(rules, byPerformance.get(r.performanceId) ?? []),
+        seconds: Math.round((r.markedAt.getTime() - r.calledAt.getTime()) / 1000),
       }));
     const summaries = new Map(summarizeEJudges(competition.discipline, samples).map((s) => [s.judgeId, s]));
+    // Сколько раз судья сам исправлял отправленную оценку до утверждения.
+    const edits = new Map<string, number>();
+    for (const row of await this.db
+      .select({ actor: auditLog.actor })
+      .from(auditLog)
+      .where(and(eq(auditLog.competitionId, competitionId), eq(auditLog.action, "mark.changed")))) {
+      if (row.actor.startsWith("judge:")) edits.set(row.actor.slice(6), (edits.get(row.actor.slice(6)) ?? 0) + 1);
+    }
     const panel = await this.db
       .select()
       .from(judges)
@@ -733,7 +814,9 @@ export class ProtocolsService {
           "Контрольная сбавка — итоговая сбавка бригады за выступление (10 − оценка E). Отклонение со знаком «+» — " +
           "судья строже бригады, «−» — мягче. Процент — по таблице FIG «Examination Table» (Specific Judges' Rules " +
           "2025–2028, ст. 2.1.2): на соревновании FIG там сравнивают с оценкой экспертов, здесь — с итогом бригады, " +
-          "поэтому процент — ориентир для главного судьи, а не официальная аттестация.",
+          "поэтому процент — ориентир для главного судьи, а не официальная аттестация. «Вне допуска» — сколько раз " +
+          "отклонение судьи от бригады было больше допуска из «Правил судейства». «Исправлял» — сколько раз судья " +
+          "сам менял отправленную оценку. «Ср. время» — от вызова участника до оценки судьи.",
         style: "note",
         margin: [0, 0, 0, 8],
       },
@@ -752,7 +835,9 @@ export class ProtocolsService {
               th("Среднее откл.", "right"),
               th("Строже / мягче", "right"),
               th("Наиб. откл.", "right"),
-              th("Больше 0.3", "right"),
+              th("Вне допуска", "right"),
+              th("Исправлял", "right"),
+              th("Ср. время", "right"),
               th("% FIG", "right"),
               ...(women ? [th("Оценка")] : []),
             ],
@@ -766,7 +851,9 @@ export class ProtocolsService {
                 right(s ? s.meanAbs.toFixed(2) : "—"),
                 right(s ? signed(s.bias) : "—"),
                 right(s ? s.maxAbs.toFixed(2) : "—"),
-                right(s ? String(s.over03) : "—"),
+                right(s ? String(s.overTolerance) : "—"),
+                right(String(edits.get(j.id) ?? 0)),
+                right(s?.avgSeconds != null ? duration(s.avgSeconds) : "—"),
                 right(s ? s.percent.toFixed(1) : "—"),
                 ...(women ? [s ? eJudgeBand(s.percent) : ""] : []),
               ];
@@ -778,7 +865,60 @@ export class ProtocolsService {
     }
     if (content.length === 1) content.push({ text: "Судьи E ещё не заведены.", style: "note" });
     else if (samples.length === 0) content.push(emptyNote());
-    return renderPdf(this.document(competition, "Работа судей E", content));
+    content.push(...(await this.panelsSection(competitionId, competition.discipline, scoreLabels(competition.rules).d)));
+    return renderPdf(this.document(competition, "Работа судей", content));
+  }
+
+  /** Бригады по снарядам: темп (от вызова до утверждения) и запросы тренеров на пересмотр D. */
+  private async panelsSection(competitionId: string, discipline: "MAG" | "WAG", dLabel: string): Promise<Content[]> {
+    const perfs = await this.db
+      .select({ id: performances.id, apparatus: performances.apparatus, calledAt: performances.createdAt, approvedAt: performances.approvedAt })
+      .from(performances)
+      .where(and(eq(performances.competitionId, competitionId), eq(performances.status, "APPROVED")));
+    if (perfs.length === 0) return [];
+    const asked = await this.db
+      .select({ apparatus: performances.apparatus, status: inquiries.status, previousD: inquiries.previousD, newD: inquiries.newD })
+      .from(inquiries)
+      .innerJoin(performances, eq(performances.id, inquiries.performanceId))
+      .where(eq(inquiries.competitionId, competitionId));
+    const right = (text: string) => ({ text, alignment: "right" as const });
+    const body: TableCell[][] = [
+      [
+        th("Снаряд"),
+        th("Выступлений", "right"),
+        th("Ср. время до оценки", "right"),
+        th("Дольше всего", "right"),
+        th("Запросов", "right"),
+        th(`${dLabel} изменена`, "right"),
+        th("Отклонено", "right"),
+        th("Ждут решения", "right"),
+      ],
+    ];
+    for (const apparatus of apparatusFor(discipline)) {
+      const here = perfs.filter((p) => p.apparatus === apparatus);
+      if (here.length === 0) continue;
+      const times = here.filter((p) => p.approvedAt).map((p) => (p.approvedAt!.getTime() - p.calledAt.getTime()) / 1000);
+      const q = asked.filter((a) => a.apparatus === apparatus);
+      body.push([
+        withIcon(apparatus, APPARATUS_NAMES[apparatus]!, 10),
+        right(String(here.length)),
+        right(times.length ? duration(times.reduce((a, b) => a + b, 0) / times.length) : "—"),
+        right(times.length ? duration(Math.max(...times)) : "—"),
+        right(String(q.length)),
+        right(String(q.filter((a) => a.status === "ACCEPTED" && a.newD !== a.previousD).length)),
+        right(String(q.filter((a) => a.status === "REJECTED" || (a.status === "ACCEPTED" && a.newD === a.previousD)).length)),
+        right(String(q.filter((a) => a.status === "PENDING").length)),
+      ]);
+    }
+    return [
+      { text: "Бригады на снарядах", style: "section" },
+      {
+        text: `Время — от вызова участника до утверждения оценки старшим судьёй. Запросы — запросы тренеров на пересмотр ${dLabel} и решения жюри.`,
+        style: "note",
+        margin: [0, 0, 0, 6],
+      },
+      table(body, 0),
+    ];
   }
 
   /**
