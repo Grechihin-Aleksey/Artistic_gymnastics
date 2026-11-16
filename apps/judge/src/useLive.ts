@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import { LIVE_EVENTS } from "@ag/shared";
 
 /** Подключение судьи к рассылке: при любом событии по снаряду вызывает onChange. */
-export function useLive(token: string, onChange: () => void): boolean {
+export function useLive(token: string, onChange: () => void, onRecovery?: () => void): boolean {
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     const socket = io("/live", { auth: { token }, transports: ["websocket", "polling"] });
@@ -22,10 +22,11 @@ export function useLive(token: string, onChange: () => void): boolean {
     ]) {
       socket.on(event, onChange);
     }
+    if (onRecovery) socket.on(LIVE_EVENTS.recoveryRequested, onRecovery);
     return () => {
       socket.close();
     };
-  }, [token, onChange]);
+  }, [token, onChange, onRecovery]);
 
   // Сокет замечает обрыв Wi-Fi не сразу, а браузер сообщает о нём мгновенно.
   const [online, setOnline] = useState(() => navigator.onLine);

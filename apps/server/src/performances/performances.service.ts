@@ -11,6 +11,8 @@ import {
   LIVE_EVENTS,
   type CreatePerformanceInput,
   type ManualScoreInput,
+  type RecoverFromTabletInput,
+  type RecoveryReport,
   type MarkKind,
   type PerformanceView,
   type SubmitMarkInput,
@@ -260,6 +262,131 @@ export class PerformancesService {
     });
 
     return this.announceApproved(competitionId, id);
+  }
+
+  /** Идёт сбор оценок с планшетов: сюда складывается, что они прислали. */
+  private readonly recoveries = new Map<string, RecoveryReport & { answered: Set<string> }>();
+
+  /**
+   * После восстановления базы из резервной копии: секретариат просит планшеты прислать
+   * утверждённые выступления, которые они помнят. Ждёт ответов несколько секунд и
+   * сообщает, что добавлено.
+   */
+  async collectFromTablets(competitionId: string, waitMs = 6000): Promise<RecoveryReport> {
+    await this.competitions.get(competitionId);
+    const panel = await this.db.select({ id: judges.id }).from(judges).where(eq(judges.competitionId, competitionId));
+    const report = {
+      tabletsOnline: this.live.presence(panel.map((j) => j.id)).filter((p) => p.online).length,
+      tabletsAnswered: 0,
+      restored: [],
+      alreadyThere: 0,
+      problems: [],
+      answered: new Set<string>(),
+    };
+    this.recoveries.set(competitionId, report);
+    this.live.toCompetition(competitionId, LIVE_EVENTS.recoveryRequested, {});
+    try {
+      // Ответили все планшеты на связи — дальше ждать незачем.
+      for (let waited = 0; waited < waitMs && report.answered.size < report.tabletsOnline; waited += 200) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    } finally {
+      this.recoveries.delete(competitionId);
+    }
+    const { answered, ...rest } = report;
+    return { ...rest, tabletsAnswered: answered.size, problems: [...new Set(rest.problems)] };
+  }
+
+  /**
+   * Планшет присылает утверждённые выступления своего снаряда. Те, что уже утверждены
+   * на сервере, не трогаем; пропавшие создаём с оценками тех же судей и утверждаем.
+   */
+  async recoverFromTablet(judge: JudgeRow, input: RecoverFromTabletInput): Promise<RecoveryReport> {
+    const competitionId = judge.competitionId;
+    const report: RecoveryReport = { tabletsOnline: 0, tabletsAnswered: 1, restored: [], alreadyThere: 0, problems: [] };
+    const principal: Principal = { kind: "judge", judge };
+    const panel = await this.db
+      .select({ id: judges.id })
+      .from(judges)
+      .where(and(eq(judges.competitionId, competitionId), eq(judges.apparatus, judge.apparatus)));
+    const panelIds = new Set(panel.map((j) => j.id));
+    const restoredIds: string[] = [];
+
+    for (const rec of input.performances) {
+      if (rec.apparatus !== judge.apparatus) continue;
+      const [gymnast] = await this.db
+        .select({ id: gymnasts.id, lastName: gymnasts.lastName })
+        .from(gymnasts)
+        .where(and(eq(gymnasts.id, rec.gymnastId), eq(gymnasts.competitionId, competitionId)));
+      if (!gymnast) {
+        report.problems.push("Участника с планшета нет в турнире на сервере");
+        continue;
+      }
+      if (rec.marks.some((m) => !panelIds.has(m.judgeId))) {
+        report.problems.push(`${gymnast.lastName}: на сервере нет судьи, который ставил оценку`);
+        continue;
+      }
+      try {
+        const id = await this.db.transaction(async (tx) => {
+          await tx
+            .insert(performances)
+            .values({ competitionId, gymnastId: rec.gymnastId, apparatus: rec.apparatus, attempt: rec.attempt, stage: rec.stage })
+            .onConflictDoNothing();
+          const [perf] = await tx
+            .select()
+            .from(performances)
+            .where(
+              and(
+                eq(performances.gymnastId, rec.gymnastId),
+                eq(performances.apparatus, rec.apparatus),
+                eq(performances.stage, rec.stage),
+                eq(performances.attempt, rec.attempt),
+              ),
+            )
+            .for("update");
+          if (!perf) throw new NotFoundException("Выступление не найдено");
+          if (perf.status === "APPROVED") return null;
+          await tx.delete(marks).where(eq(marks.performanceId, perf.id));
+          const rows = rec.marks.map((m) => ({ judgeId: m.judgeId, kind: m.kind, value: toPoints(m.value) }));
+          await tx.insert(marks).values(rows.map((r) => ({ id: randomUUID(), performanceId: perf.id, ...r })));
+          await tx.insert(auditLog).values({
+            competitionId,
+            actor: actorName(principal),
+            action: "marks.recovered_from_tablet",
+            details: { performanceId: perf.id, marks: rows },
+          });
+          await this.finish(tx, principal, perf);
+          return perf.id;
+        });
+        if (id === null) {
+          report.alreadyThere++;
+          continue;
+        }
+        restoredIds.push(id);
+      } catch (e) {
+        report.problems.push(`${gymnast.lastName}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    for (const id of restoredIds) {
+      const view = await this.announceApproved(competitionId, id);
+      report.restored.push({
+        gymnastId: view.gymnastId,
+        apparatus: view.apparatus,
+        attempt: view.attempt,
+        stage: view.stage,
+        total: view.score?.total ?? 0,
+      });
+    }
+
+    const session = this.recoveries.get(competitionId);
+    if (session) {
+      session.answered.add(judge.id);
+      session.restored.push(...report.restored);
+      session.alreadyThere += report.alreadyThere;
+      session.problems.push(...report.problems);
+    }
+    return report;
   }
 
   /** Итог по правилам соревнования из оценок бригады: выступление утверждено, запись в журнале. */

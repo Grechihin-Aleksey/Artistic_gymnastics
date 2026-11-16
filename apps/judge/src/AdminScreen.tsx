@@ -15,6 +15,7 @@ import {
   AuditPanel,
   ShiftsPanel,
   ManualScoresPanel,
+  RecoveryPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -821,6 +822,12 @@ export function AdminScreen() {
               adminToken={adminToken}
               onError={setError}
               active={tab === "progress"}
+            />
+            <RecoveryPanel
+              key={`recovery-${competition.id}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
             />
             <ProgressPanel
               key={`progress-${competition.id}`}

@@ -15,6 +15,7 @@ import { ApiError, apiRequest } from "./api";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { Keypad } from "./Keypad";
 import { useKeepAwake } from "./keepAwake";
+import { Journal } from "./journal";
 import { Stopwatch } from "./Stopwatch";
 import {
   APPARATUS_NAMES,
@@ -139,6 +140,10 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       }),
     [judge.id, token],
   );
+  const journal = useMemo(
+    () => new Journal(localStorage, competition.id, judge.apparatus),
+    [competition.id, judge.apparatus],
+  );
   const queued = useSyncExternalStore(
     (cb) => queue.subscribe(cb),
     () => queue.items(),
@@ -158,12 +163,13 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       setRulesView(rulesNow);
       setFinals(finalsNow);
       setPerformances(list);
+      journal.remember(list);
       setGymnasts(new Map(people.map((g) => [g.id, g])));
       setRotation(rotationView);
     } catch {
       // покажем старые данные; индикатор связи скажет, что сервер недоступен
     }
-  }, [competition.id, judge.apparatus, token]);
+  }, [competition.id, judge.apparatus, token, journal]);
 
   const flush = useCallback(async () => {
     const rejected: Rejected[] = await queue.flush();
@@ -174,7 +180,14 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
     void refresh();
     void flush();
   }, [refresh, flush]);
-  const connected = useLive(token, onLive);
+  // Секретариат восстановил базу из копии и просит прислать оценки, сохранённые на планшете.
+  const onRecovery = useCallback(() => {
+    const performances = journal.all();
+    void apiRequest("/recovery", { token, method: "POST", body: { performances } })
+      .then(refresh)
+      .catch(() => undefined);
+  }, [journal, token, refresh]);
+  const connected = useLive(token, onLive, onRecovery);
   const awake = useKeepAwake();
 
   useEffect(() => {

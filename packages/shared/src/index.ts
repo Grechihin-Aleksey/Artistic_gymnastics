@@ -209,6 +209,24 @@ export const manualScoreSchema = z.object({
   neutral: score.optional(),
 });
 
+/**
+ * Утверждённые выступления, которые планшет помнит у себя. После восстановления базы из
+ * резервной копии секретариат просит планшеты прислать их, и сервер добавляет пропавшие.
+ */
+export const recoveredPerformanceSchema = z.object({
+  gymnastId: z.uuid(),
+  apparatus: apparatusSchema,
+  attempt: z.number().int().min(1).max(2),
+  stage: z.enum(STAGES),
+  marks: z
+    .array(z.object({ judgeId: z.uuid(), kind: markKindSchema, value: score }))
+    .min(1)
+    .max(30),
+});
+export const recoverFromTabletSchema = z.object({
+  performances: z.array(recoveredPerformanceSchema).max(2000),
+});
+
 export const reopenPerformanceSchema = z.object({
   reason: z.string().min(1).max(500),
 });
@@ -588,6 +606,8 @@ export type UpdateJudgeInput = z.infer<typeof updateJudgeSchema>;
 export type CreatePerformanceInput = z.infer<typeof createPerformanceSchema>;
 export type SubmitMarkInput = z.infer<typeof submitMarkSchema>;
 export type TabletScoreInput = z.infer<typeof tabletScoreSchema>;
+export type RecoveredPerformance = z.infer<typeof recoveredPerformanceSchema>;
+export type RecoverFromTabletInput = z.infer<typeof recoverFromTabletSchema>;
 export type ManualScoreInput = z.infer<typeof manualScoreSchema>;
 export type ReopenPerformanceInput = z.infer<typeof reopenPerformanceSchema>;
 export type ImportGymnastsInput = z.infer<typeof importGymnastsSchema>;
@@ -712,6 +732,20 @@ export interface PerformanceView {
   marks: MarkView[];
 }
 
+/** Итог сбора оценок с планшетов после восстановления базы. */
+export interface RecoveryReport {
+  /** Сколько планшетов судей было на связи, когда секретариат попросил оценки. */
+  tabletsOnline: number;
+  /** Сколько планшетов прислали то, что у них сохранено. */
+  tabletsAnswered: number;
+  /** Выступления, которых не было на сервере и которые добавлены с планшетов. */
+  restored: { gymnastId: string; apparatus: (typeof APPARATUS)[number]; attempt: number; stage: Stage; total: number }[];
+  /** Выступления, которые на сервере уже утверждены: их не трогали. */
+  alreadyThere: number;
+  /** Что не удалось добавить и почему. */
+  problems: string[];
+}
+
 /** События Socket.IO. */
 export const LIVE_EVENTS = {
   /** Клиент → сервер: подписаться на соревнование. */
@@ -730,6 +764,8 @@ export const LIVE_EVENTS = {
   finals: "competition.finals",
   /** Сервер → все: секретариат вывел награждение на табло или убрал его. */
   ceremony: "competition.ceremony",
+  /** Сервер → планшеты: секретариат просит прислать оценки, сохранённые на планшетах. */
+  recoveryRequested: "competition.recoveryRequested",
   /** Сервер → все: секретариат поменял, какую часть турнира показывает табло. */
   boardSwitch: "competition.boardSwitch",
 } as const;

@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -4858,6 +4858,76 @@ export function JudgesPresencePanel({
         Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
         планшет уснул, связь тоже пропадает, верните его на страницу судьи.
       </p>
+    </section>
+  );
+}
+
+/**
+ * Сбор оценок с планшетов после восстановления базы из резервной копии. Каждый планшет
+ * помнит утверждённые выступления своего снаряда; сервер добавляет те, которых у него нет.
+ */
+export function RecoveryPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<RecoveryReport | null>(null);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+
+  const collect = async () => {
+    setBusy(true);
+    setReport(null);
+    try {
+      const [result, people] = await Promise.all([
+        apiRequest<RecoveryReport>(`/competitions/${competitionId}/recovery`, { token: adminToken, method: "POST" }),
+        apiRequest<Gymnast[]>(`/competitions/${competitionId}/gymnasts`),
+      ]);
+      setNames(new Map(people.map((g) => [g.id, `№${g.bib} ${g.lastName} ${g.firstName}`])));
+      setReport(result);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel no-print">
+      <h2>Оценки с планшетов после восстановления</h2>
+      <p className="muted wide">
+        Если базу восстановили из резервной копии, оценки последних минут перед сбоем в ней могут отсутствовать. Каждый планшет
+        судьи помнит утверждённые оценки своего снаряда. Включите планшеты, дождитесь, пока они выйдут на связь, и нажмите
+        кнопку: пропавшие выступления вернутся на сервер, табло и сайт. Уже утверждённые на сервере оценки не меняются.
+      </p>
+      <div className="wide">
+        <button type="button" className="primary" disabled={busy} onClick={() => void collect()}>
+          {busy ? "Собираем оценки…" : "Собрать оценки с планшетов"}
+        </button>
+      </div>
+      {report && (
+        <div className="wide">
+          <p>
+            Планшетов на связи: {report.tabletsOnline}, ответили: {report.tabletsAnswered}.{" "}
+            {report.restored.length > 0
+              ? `Возвращено выступлений: ${report.restored.length}.`
+              : "Пропавших оценок нет: на сервере всё есть."}
+            {report.alreadyThere > 0 && ` Уже были на сервере: ${report.alreadyThere}.`}
+          </p>
+          {report.restored.length > 0 && (
+            <ul>
+              {report.restored.map((r) => (
+                <li key={`${r.gymnastId}:${r.apparatus}:${r.attempt}:${r.stage}`}>
+                  {names.get(r.gymnastId) ?? "Участник"} · {APPARATUS_NAMES[r.apparatus] ?? r.apparatus}
+                  {r.apparatus === "VT" ? `, прыжок ${r.attempt}` : ""}
+                  {r.stage === "FINAL" ? " (финал)" : ""} · {r.total.toFixed(3)}
+                </li>
+              ))}
+            </ul>
+          )}
+          {report.problems.length > 0 && <div className="alert">Не удалось вернуть: {report.problems.join("; ")}</div>}
+          {report.tabletsOnline === 0 && (
+            <div className="alert">Ни один планшет не на связи. Откройте страницы судей на планшетах и повторите.</div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

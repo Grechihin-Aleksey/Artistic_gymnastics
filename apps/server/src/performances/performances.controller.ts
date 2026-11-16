@@ -3,11 +3,13 @@ import {
   apparatusSchema,
   createPerformanceSchema,
   manualScoreSchema,
+  recoverFromTabletSchema,
   reopenPerformanceSchema,
   submitMarkSchema,
   tabletScoreSchema,
   type CreatePerformanceInput,
   type ManualScoreInput,
+  type RecoverFromTabletInput,
   type ReopenPerformanceInput,
   type SubmitMarkInput,
   type TabletScoreInput,
@@ -40,6 +42,24 @@ export class PerformancesController {
     @Body(new ZodPipe(manualScoreSchema)) body: ManualScoreInput,
   ) {
     return this.performances.scoreManually(principal, id, body);
+  }
+
+  /** После восстановления базы: попросить планшеты прислать сохранённые у них оценки. */
+  @Post("competitions/:id/recovery")
+  @RequireAccess("admin")
+  collectFromTablets(@Param("id", ParseUUIDPipe) id: string) {
+    return this.performances.collectFromTablets(id);
+  }
+
+  /** Планшет присылает утверждённые выступления своего снаряда, которые помнит. */
+  @Post("recovery")
+  @RequireAccess("judge")
+  recoverFromTablet(
+    @CurrentPrincipal() principal: Principal,
+    @Body(new ZodPipe(recoverFromTabletSchema)) body: RecoverFromTabletInput,
+  ) {
+    if (principal.kind !== "judge") throw new Error("unreachable");
+    return this.performances.recoverFromTablet(principal.judge, body);
   }
 
   @Delete("performances/:id")
