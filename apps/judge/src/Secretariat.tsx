@@ -4762,6 +4762,8 @@ interface PresenceJudge {
   role: "SUPERVISOR" | "D" | "E";
   seat: number;
   enterAllMarks: boolean;
+  /** Другой планшет просит вход по коду этого судьи и ждёт разрешения. */
+  tabletPending?: boolean;
 }
 
 interface JudgePresence {
@@ -4812,7 +4814,18 @@ export function JudgesPresencePanel({
     return () => clearInterval(timer);
   }, [active, load]);
 
+  const allowTablet = async (j: PresenceJudge) => {
+    if (!confirm(`Разрешить вход ${j.name} на новом планшете? На прежнем планшете код судьи перестанет работать.`)) return;
+    try {
+      await apiRequest(`/judges/${j.id}/allow-tablet`, { token: adminToken, method: "POST" });
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
   if (judges.length === 0) return null;
+  const pending = judges.filter((j) => j.tabletPending);
   const singleTablet = new Set(judges.filter((j) => j.role === "SUPERVISOR" && j.enterAllMarks).map((j) => j.apparatus));
   const needsTablet = (j: PresenceJudge) => !singleTablet.has(j.apparatus) || j.role === "SUPERVISOR";
   const withTablets = judges.filter(needsTablet);
@@ -4828,6 +4841,13 @@ export function JudgesPresencePanel({
         </strong>
         {lost > 0 && <span className="warning-text"> · отключились: {lost}</span>}
       </p>
+      {pending.length > 0 && (
+        <div className="alert wide">
+          Код судьи пытаются открыть на другом планшете: {pending.map((j) => j.name).join(", ").replace(/\.$/, "")}. Если судья сменил планшет,
+          нажмите «Разрешить новый планшет». Если нет — код мог попасть к постороннему: выдайте судье новый QR-код на экране
+          «Судьи».
+        </div>
+      )}
       <div className="wide presence-grid">
         {apparatusFor(discipline)
           .filter((a) => judges.some((j) => j.apparatus === a))
@@ -4855,6 +4875,11 @@ export function JudgesPresencePanel({
                           {state === "never" && "не подключался"}
                           {state === "none" && "без планшета"}
                         </span>
+                        {j.tabletPending && (
+                          <button type="button" className="primary presence-allow" onClick={() => void allowTablet(j)}>
+                            Разрешить новый планшет
+                          </button>
+                        )}
                       </li>
                     );
                   })}

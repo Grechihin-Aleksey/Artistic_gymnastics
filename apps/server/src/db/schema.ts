@@ -176,6 +176,10 @@ export const judges = pgTable(
     tokenHash: text("token_hash").notNull().unique(),
     /** Тот же токен, зашифрованный ключом из токена секретариата: для перепечатки QR-кода. */
     tokenSealed: text("token_sealed"),
+    /** Планшет, на котором QR-код открыли первым: на другом код не работает без разрешения секретариата. */
+    deviceId: text("device_id"),
+    /** Другой планшет, который просит вход по этому коду и ждёт разрешения секретариата. */
+    pendingDeviceId: text("pending_device_id"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("judges_seat_unique").on(t.competitionId, t.apparatus, t.role, t.seat)],
@@ -299,4 +303,18 @@ export const series = pgTable("series", {
   /** id соревнований-этапов по порядку; удалённое соревнование просто пропадает из зачёта. */
   stages: jsonb("stages").$type<string[]>().notNull().default([]),
   createdAt: createdAt(),
+});
+
+/** Вход в секретариат по паролю: токен входа хранится только хешем и живёт ограниченное время. */
+export const adminSessions = pgTable("admin_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});
+
+/** Настройки программы, общие для всех турниров: например, хеш пароля секретариата. */
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
 });

@@ -20,6 +20,12 @@ export interface AppConfig {
   entriesSyncInterval?: number;
   /** Папка с копиями базы от контейнера backup: по ней «Готовность к старту» проверяет свежесть копии. */
   backupDir?: string;
+  /** Без действующей лицензии — только пробные турниры. В тестах по умолчанию выключено. */
+  licenseRequired?: boolean;
+  /** Ключ лицензии из .env; ключ, введённый в секретариате, главнее. */
+  licenseKey?: string;
+  /** Открытый ключ проверки лицензий; по умолчанию — ключ владельца программы. */
+  licensePublicKey?: string;
   /** Облачное хранилище S3 для копий базы и турниров; без него копии остаются только на ноутбуке. */
   s3?: S3Target & {
     /** Как часто отправлять, секунды. */
@@ -54,6 +60,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     entriesSyncInterval: Number(env.ENTRIES_SYNC_INTERVAL ?? 300),
     backupDir: env.BACKUP_DIR || undefined,
     s3: loadS3(env),
+    licenseRequired: true,
+    licenseKey: env.LICENSE_KEY || undefined,
   };
 }
 

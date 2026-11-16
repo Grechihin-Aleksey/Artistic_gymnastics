@@ -200,12 +200,15 @@ export function JudgeScreen({
   }, [journal, token, refresh]);
   // Сервер не принял код входа: проверяем ещё раз обычным запросом, чтобы не выкинуть судью из-за сбоя.
   const allowAgain = useRef<() => void>(() => undefined);
+  const [linkProblem, setLinkProblem] = useState<string | null>(null);
   const onRejected = useCallback(() => {
     void apiRequest<Me>("/me", { token })
       .then(() => allowAgain.current())
       .catch((e: unknown) => {
-        if (e instanceof ApiError && e.status === 401) onSignedOut();
-        else setTimeout(() => allowAgain.current(), 3000);
+        if (e instanceof ApiError && e.status === 401) return onSignedOut();
+        // Например, код занят другим планшетом: показываем причину и пробуем снова, пока секретариат не разрешит.
+        if (e instanceof ApiError && e.status === 403) setLinkProblem(e.message);
+        setTimeout(() => allowAgain.current(), 3000);
       });
   }, [token, onSignedOut]);
   const live = useLive(token, competition.id, { onChange: onLive, onRecovery, onRejected });
@@ -215,6 +218,7 @@ export function JudgeScreen({
   const everConnected = useRef(false);
   const [restored, setRestored] = useState(false);
   useEffect(() => {
+    if (connected) setLinkProblem(null);
     if (!connected) {
       setRestored(false);
       return;
@@ -295,6 +299,7 @@ export function JudgeScreen({
       </header>
 
       {error && <div className="alert">{error}</div>}
+      {linkProblem && !connected && <div className="alert">{linkProblem}</div>}
       {restored && (
         <div className="notice ok" role="status">
           Связь восстановлена{queued.length > 0 ? ", досылаем оценки…" : ", все оценки на сервере"}

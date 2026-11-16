@@ -1,3 +1,5 @@
+import { deviceId } from "./device";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -18,7 +20,7 @@ export async function apiRequest<T>(
       method: options.method ?? "GET",
       headers: {
         ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+        ...(options.token ? { Authorization: `Bearer ${options.token}`, "X-Device": deviceId() } : {}),
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : null,
     });

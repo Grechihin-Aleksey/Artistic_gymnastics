@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Заявка на соревнования</title>
 <style>
+  .trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
   :root {
     --bg: #f4f6fa; --surface: #ffffff; --line: #dde2ec; --text: #121826; --muted: #5d6b85;
     --accent: #1f6feb; --bad: #d64545; --ok: #2f9e44;
@@ -69,6 +70,8 @@
           <label>Город<input name="city" maxlength="200" autocomplete="address-level2"></label>
           <label>Контакт: ФИО, телефон или почта *<input name="contact" required maxlength="300"></label>
         </div>
+        <!-- Ловушка для ботов: человек это поле не видит и не заполняет. -->
+        <label class="trap" aria-hidden="true">Сайт<input name="website" tabindex="-1" autocomplete="off"></label>
       </section>
 
       <section>
@@ -245,6 +248,7 @@
       })
       .filter((r) => Object.keys(r).length > 0);
     const entry = { club: text("club"), contact: text("contact"), rows };
+    if (text("website")) entry.website = text("website");
     if (text("city")) entry.city = text("city");
     if (text("comment")) entry.comment = text("comment");
     return entry;

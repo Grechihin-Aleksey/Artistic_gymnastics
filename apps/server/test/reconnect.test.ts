@@ -17,8 +17,8 @@ afterAll(async () => {
   await app?.close();
 });
 
-const open = (token?: string) =>
-  io(`${url}/live`, { transports: ["websocket"], reconnection: false, ...(token ? { auth: { token } } : {}) });
+const open = (token?: string, device = "tablet-1") =>
+  io(`${url}/live`, { transports: ["websocket"], reconnection: false, ...(token ? { auth: { token, device } } : {}) });
 
 const once = (socket: Socket, event: string, ms = 3000) =>
   new Promise<unknown[]>((resolve, reject) => {
@@ -59,6 +59,23 @@ describe("переподключение планшета судьи", () => {
     await rejected;
     const [reason] = await closed;
     expect(reason).toBe("io server disconnect");
+  });
+
+  it("код, открытый на другом планшете: второй планшет не подписывается на бригаду", async () => {
+    const competition = (await admin.post("/competitions", { name: "Кубок 2", discipline: "WAG" }).expect(201)).body;
+    const judge = (
+      await admin.post(`/competitions/${competition.id}/judges`, { name: "Судья D1", apparatus: "BB", role: "D", seat: 1 }).expect(201)
+    ).body as { id: string; token: string };
+    const own = open(judge.token, "tablet-own");
+    await once(own, LIVE_EVENTS.judgeReady);
+    const other = open(judge.token, "tablet-other");
+    await once(other, LIVE_EVENTS.judgeRejected);
+    // Свой планшет после обрыва снова подключается без вопросов.
+    own.close();
+    const back = open(judge.token, "tablet-own");
+    await once(back, LIVE_EVENTS.judgeReady);
+    back.close();
+    other.close();
   });
 
   it("табло и секретариат без кода подключаются как раньше", async () => {

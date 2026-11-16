@@ -1,3 +1,4 @@
+import { deviceId } from "./device";
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { LIVE_EVENTS } from "@ag/shared";
@@ -31,7 +32,7 @@ export function useLive(
 
   useEffect(() => {
     const socket = io("/live", {
-      auth: { token },
+      auth: { token, device: deviceId() },
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: Infinity,

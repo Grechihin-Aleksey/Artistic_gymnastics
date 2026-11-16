@@ -10,7 +10,7 @@ import {
 import { LIVE_EVENTS, competitionRoom, panelRoom, type PerformanceView } from "@ag/shared";
 import type { Server, Socket } from "socket.io";
 import { z } from "zod";
-import { AuthService } from "../auth/auth";
+import { AuthService, TABLET_BUSY, deviceOf } from "../auth/auth";
 import { RelayPublisher } from "../relay/relay.publisher";
 
 const joinSchema = z.object({ competitionId: z.uuid() });
@@ -46,13 +46,16 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const token: unknown = client.handshake.auth?.token;
     let principal: Awaited<ReturnType<AuthService["resolve"]>>;
     try {
-      principal = await this.auth.resolve(typeof token === "string" ? token : undefined);
+      principal = await this.auth.resolve(
+        typeof token === "string" ? token : undefined,
+        deviceOf(client.handshake.auth?.device),
+      );
     } catch {
       // База на миг недоступна: рвём подключение, планшет сам переподключится через пару секунд.
       if (typeof token === "string" && token) client.disconnect();
       return;
     }
-    if (principal?.kind === "judge") {
+    if (principal && principal !== TABLET_BUSY && principal.kind === "judge") {
       const { competitionId, apparatus } = principal.judge;
       await client.join([competitionRoom(competitionId), panelRoom(competitionId, apparatus)]);
       client.data.judgeId = principal.judge.id;
@@ -63,7 +66,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Планшет считает себя на связи только после этого: так он не пропустит оценки бригады,
       // пришедшие между подключением и подпиской.
       client.emit(LIVE_EVENTS.judgeReady, { judgeId: principal.judge.id });
-    } else if (typeof token === "string" && token && !principal) {
+    } else if (typeof token === "string" && token && (!principal || principal === TABLET_BUSY)) {
+      // Код не действует или занят другим планшетом: планшет уточнит причину запросом /me.
       client.emit(LIVE_EVENTS.judgeRejected);
       client.disconnect();
     }

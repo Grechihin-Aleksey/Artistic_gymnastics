@@ -226,6 +226,33 @@ describe("ретранслятор", () => {
     expect(((await hall.json()) as { entries: { rows: unknown[] }[] }).entries[0]!.rows).toEqual(rows);
   });
 
+  it("молча отбрасывает заявки ботов и ограничивает число заявок с одного адреса", async () => {
+    const SID = "5c1a4e33-2b7d-4c55-9a1e-0f2d6b7c8e90";
+    const KEY = "spam-key-0123456789abcdef";
+    const call = { name: "Открытое первенство", discipline: "WAG", open: true, deadline: null, categories: [] };
+    const put = await fetch(`${base}/entries/${SID}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ key: KEY, call }),
+    });
+    expect(put.status).toBe(200);
+    const club = (body: unknown) =>
+      fetch(`${base}/api/entries/${SID}?k=${KEY}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const entry = { club: "Олимп", contact: "Иванова И. И.", rows: [{ lastName: "Абрамова", firstName: "Анна" }] };
+    const stored = async () =>
+      ((await (await fetch(`${base}/entries/${SID}`, { headers: { authorization: `Bearer ${TOKEN}` } })).json()) as { entries: unknown[] }).entries.length;
+
+    const bot = await club({ ...entry, website: "http://spam.example" });
+    expect(bot.status).toBe(201);
+    expect(await stored()).toBe(0);
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) statuses.push((await club(entry)).status);
+    expect(statuses.at(-1)).toBe(429);
+    expect(statuses.filter((s) => s === 201).length).toBeLessThanOrEqual(10);
+    expect(await stored()).toBe(statuses.filter((s) => s === 201).length);
+  });
+
   it("хранит выложенные протоколы, отдаёт их сайту и снимает по запросу зала", async () => {
     const put = (body: unknown, token = TOKEN, method = "PUT") =>
       fetch(`${base}/protocols/${ID}`, {
