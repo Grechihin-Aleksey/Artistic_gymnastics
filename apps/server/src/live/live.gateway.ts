@@ -10,7 +10,7 @@ import {
 import { LIVE_EVENTS, competitionRoom, panelRoom, type PerformanceView } from "@ag/shared";
 import type { Server, Socket } from "socket.io";
 import { z } from "zod";
-import { AuthService } from "../auth/auth";
+import { AuthService, TABLET_BUSY, deviceOf } from "../auth/auth";
 import { RelayPublisher } from "../relay/relay.publisher";
 
 const joinSchema = z.object({ competitionId: z.uuid() });
@@ -44,8 +44,8 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket): Promise<void> {
     const token: unknown = client.handshake.auth?.token;
-    const principal = await this.auth.resolve(typeof token === "string" ? token : undefined);
-    if (principal?.kind === "judge") {
+    const principal = await this.auth.resolve(typeof token === "string" ? token : undefined, deviceOf(client.handshake.auth?.device));
+    if (principal && principal !== TABLET_BUSY && principal.kind === "judge") {
       const { competitionId, apparatus } = principal.judge;
       await client.join([competitionRoom(competitionId), panelRoom(competitionId, apparatus)]);
       client.data.judgeId = principal.judge.id;

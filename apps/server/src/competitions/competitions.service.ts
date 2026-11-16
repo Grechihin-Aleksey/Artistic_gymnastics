@@ -50,12 +50,20 @@ const PNG = [0x89, 0x50, 0x4e, 0x47];
 const JPEG = [0xff, 0xd8, 0xff];
 
 /** Судья без секретов входа. */
-export function withoutSecrets<T extends { tokenHash: string; tokenSealed: string | null }>({
+type JudgeSecrets = { tokenHash: string; tokenSealed: string | null; deviceId: string | null; pendingDeviceId: string | null };
+
+/**
+ * Судья без секретов. Вместо самих меток планшетов — только признаки: код уже открыт
+ * на планшете и другой планшет просит вход по этому коду.
+ */
+export function withoutSecrets<T extends JudgeSecrets>({
   tokenHash: _hash,
   tokenSealed: _sealed,
+  deviceId,
+  pendingDeviceId,
   ...judge
-}: T): Omit<T, "tokenHash" | "tokenSealed"> {
-  return judge;
+}: T): Omit<T, keyof JudgeSecrets> & { tabletBound: boolean; tabletPending: boolean } {
+  return { ...judge, tabletBound: deviceId !== null, tabletPending: pendingDeviceId !== null };
 }
 
 @Injectable()
@@ -708,7 +716,8 @@ export class CompetitionsService {
     const token = newToken();
     const [row] = await this.db
       .update(judges)
-      .set({ tokenHash: hashToken(token), tokenSealed: sealToken(token, this.config.adminToken) })
+      // Новый код — с чистого листа: его снова можно открыть на любом планшете.
+      .set({ tokenHash: hashToken(token), tokenSealed: sealToken(token, this.config.adminToken), deviceId: null, pendingDeviceId: null })
       .where(eq(judges.id, judgeId))
       .returning();
     if (!row) throw new NotFoundException("Судья не найден");
@@ -741,6 +750,21 @@ export class CompetitionsService {
       .where(eq(judges.competitionId, competitionId))
       .orderBy(asc(judges.apparatus), asc(judges.role), asc(judges.seat));
     return rows.map((row) => ({ ...withoutSecrets(row), token: openToken(row.tokenSealed, this.config.adminToken) }));
+  }
+
+  /** Секретариат разрешает вход по коду судьи на новом планшете; прежний планшет код больше не открывает. */
+  async allowTablet(judgeId: string) {
+    const [current] = await this.db.select().from(judges).where(eq(judges.id, judgeId));
+    if (!current) throw new NotFoundException("Судья не найден");
+    const [row] = await this.db
+      .update(judges)
+      .set({ deviceId: current.pendingDeviceId, pendingDeviceId: null })
+      .where(eq(judges.id, judgeId))
+      .returning();
+    await this.db
+      .insert(auditLog)
+      .values({ competitionId: row!.competitionId, actor: "admin", action: "judge.tablet_allowed", details: { judgeId: row!.id } });
+    return withoutSecrets(row!);
   }
 
   async listJudges(competitionId: string) {

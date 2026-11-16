@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
-import { apiRequest } from "./api";
+import { ApiError, apiRequest } from "./api";
 import { copyText } from "./clipboard";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
 import {
@@ -195,10 +195,11 @@ export function AdminScreen() {
     scrollTo({ top: 0 });
   };
 
-  const remember = (token: string) => {
+  const remember = useCallback((token: string) => {
     setAdminToken(token);
-    sessionStorage.setItem(ADMIN_KEY, token);
-  };
+    if (token) sessionStorage.setItem(ADMIN_KEY, token);
+    else sessionStorage.removeItem(ADMIN_KEY);
+  }, []);
 
   const addJudge = async (form: FormData) => {
     const post = (body: Record<string, unknown>) =>
@@ -377,20 +378,7 @@ export function AdminScreen() {
         <SiteBadge adminToken={adminToken} />
       </header>
       <section className="panel no-print">
-        <label>
-          Токен секретариата
-          {/* Не поле пароля: иначе браузер при каждом сохранении оценки предлагает запомнить «пароль». */}
-          <input
-            className="secret"
-            value={adminToken}
-            onChange={(e) => remember(e.target.value)}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            data-1p-ignore
-            data-lpignore="true"
-          />
-        </label>
+        <AccessPanel adminToken={adminToken} onToken={remember} />
         <label>
           Соревнование
           <select value={listedId} onChange={(e) => setCompetitionId(e.target.value)}>
@@ -435,7 +423,11 @@ export function AdminScreen() {
       </nav>
 
       {error && <div className="alert no-print">{error}</div>}
-      {!adminToken && <div className="alert no-print">Введите токен секретариата: он показан в окне запуска сервера.</div>}
+      {!adminToken && (
+        <div className="alert no-print">
+          Войдите паролем секретариата. Если пароль ещё не задан или забыт, войдите токеном из окна запуска сервера.
+        </div>
+      )}
 
       <div {...pane("competition")}>
         {adminToken && (
@@ -1069,5 +1061,149 @@ function JudgeRow({
         </form>
       </td>
     </tr>
+  );
+}
+
+const SESSION_CHECK_MS = 60_000;
+
+/**
+ * Вход в секретариат: паролем (после 5 ошибок вход с устройства закрывается на 15 минут)
+ * или токеном из окна запуска. Здесь же смена пароля и «Выйти на всех устройствах».
+ */
+function AccessPanel({ adminToken, onToken }: { adminToken: string; onToken: (token: string) => void }) {
+  const [secret, setSecret] = useState("");
+  const [passwordSet, setPasswordSet] = useState<boolean | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!adminToken) return;
+    let cancelled = false;
+    const check = () =>
+      apiRequest<{ passwordSet: boolean }>("/auth/session", { token: adminToken })
+        .then((r) => !cancelled && setPasswordSet(r.passwordSet))
+        .catch((e: ApiError) => {
+          if (cancelled || e.status !== 401) return;
+          onToken("");
+          setMessage("Вход больше не действует: войдите снова.");
+        });
+    void check();
+    const timer = setInterval(() => void check(), SESSION_CHECK_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [adminToken, onToken]);
+
+  const login = async () => {
+    setBusy(true);
+    try {
+      const r = await apiRequest<{ token: string; passwordSet: boolean }>("/auth/login", { method: "POST", body: { secret } });
+      setSecret("");
+      setPasswordSet(r.passwordSet);
+      setMessage(r.passwordSet ? null : "Пароль секретариата ещё не задан. Задайте его в «Пароль и вход», чтобы не носить с собой токен.");
+      onToken(r.token);
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePassword = async (form: HTMLFormElement) => {
+    const data = new FormData(form);
+    const password = String(data.get("password") ?? "");
+    if (password !== String(data.get("repeat") ?? "")) {
+      setMessage("Пароли не совпадают.");
+      return;
+    }
+    try {
+      const r = await apiRequest<{ token: string }>("/auth/password", { token: adminToken, method: "PUT", body: { password } });
+      form.reset();
+      setPasswordSet(true);
+      setMessage("Пароль сохранён. На других компьютерах и планшетах секретариата нужно войти заново, уже новым паролем.");
+      onToken(r.token);
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  };
+
+  const logout = async (everywhere: boolean) => {
+    if (everywhere && !confirm("Выйти на всех устройствах? Всем компьютерам секретариата придётся войти заново.")) return;
+    await apiRequest(everywhere ? "/auth/logout-all" : "/auth/logout", { token: adminToken, method: "POST" }).catch(() => undefined);
+    onToken("");
+    setMessage(everywhere ? "Все входы в секретариат закрыты. Войдите снова." : null);
+  };
+
+  if (!adminToken) {
+    return (
+      <form
+        className="access-login"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void login();
+        }}
+      >
+        <label>
+          Пароль секретариата
+          {/* Не поле пароля: иначе браузер на общем компьютере секретариата предлагает запомнить пароль. */}
+          <input
+            className="secret"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            autoFocus
+          />
+        </label>
+        <button type="submit" className="primary" disabled={busy || !secret.trim()}>
+          Войти
+        </button>
+        {message && <p className="warning-text access-message">{message}</p>}
+      </form>
+    );
+  }
+  return (
+    <div className="access-status">
+      <span className="ok-text">Вход выполнен</span>
+      <button type="button" onClick={() => void logout(false)}>
+        Выйти
+      </button>
+      <details className="access-settings">
+        <summary>Пароль и вход</summary>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void changePassword(e.currentTarget);
+          }}
+        >
+          <p className="muted">
+            {passwordSet
+              ? "Новый пароль закроет все прежние входы."
+              : "Пароль ещё не задан: сейчас войти можно только токеном из окна запуска сервера."}
+          </p>
+          <label>
+            {passwordSet ? "Новый пароль" : "Пароль"}, не короче 8 символов
+            <input type="password" name="password" minLength={8} required autoComplete="new-password" />
+          </label>
+          <label>
+            Ещё раз
+            <input type="password" name="repeat" minLength={8} required autoComplete="new-password" />
+          </label>
+          <button type="submit">{passwordSet ? "Сменить пароль" : "Задать пароль"}</button>
+        </form>
+        <p className="muted">
+          Если пароль мог узнать посторонний или забыт компьютер с открытым секретариатом, нажмите кнопку ниже и задайте новый
+          пароль.
+        </p>
+        <button type="button" className="primary danger" onClick={() => void logout(true)}>
+          Выйти на всех устройствах
+        </button>
+      </details>
+      {message && <p className="warning-text access-message">{message}</p>}
+    </div>
   );
 }

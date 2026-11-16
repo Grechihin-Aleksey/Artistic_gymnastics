@@ -259,6 +259,15 @@ export function describe(
         text: action === "judge.added" ? `Заведён судья: ${who}` : `Выдан новый QR-код: ${who}, прежний больше не действует`,
       };
     }
+    case "judge.tablet_allowed": {
+      const judge = ctx.judge(d.judgeId);
+      const who = judge ? judgeLabel(judge) : "судья (позже удалён)";
+      return {
+        group: "setup",
+        ...(judge ? { apparatus: judge.apparatus } : {}),
+        text: `Код судьи перенесён на другой планшет: ${who}`,
+      };
+    }
     case "judge.updated": {
       const was = d.before as Judge | undefined;
       const now = (d.after as Judge | undefined) ?? ctx.judge(d.judgeId);

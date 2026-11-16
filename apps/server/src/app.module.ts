@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
 import { AuthGuard, AuthService } from "./auth/auth";
+import { AuthController } from "./auth/auth.controller";
 import { CloudBackupController } from "./backup/cloud-backup.controller";
 import { CloudBackupService } from "./backup/cloud-backup.service";
 import { BoardSwitchController } from "./competitions/board-switch.controller";
@@ -52,6 +53,7 @@ export class AppModule {
         DbModule,
       ],
       controllers: [
+        AuthController,
         CompetitionsController,
         BoardSwitchController,
         JudgesController,

@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export function newToken(): string {
   return randomBytes(24).toString("base64url");
@@ -39,4 +39,18 @@ export function openToken(sealed: string | null, adminToken: string): string | n
   } catch {
     return null;
   }
+}
+
+/** Пароль секретариата хранится только солёным хешем scrypt: scrypt.соль.хеш в hex. */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  return ["scrypt", salt.toString("hex"), scryptSync(password, salt, 32).toString("hex")].join(".");
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const [kind, salt, hash] = stored.split(".");
+  if (kind !== "scrypt" || !salt || !hash) return false;
+  const expected = Buffer.from(hash, "hex");
+  const actual = scryptSync(password, Buffer.from(salt, "hex"), expected.length);
+  return timingSafeEqual(actual, expected);
 }

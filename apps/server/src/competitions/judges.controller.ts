@@ -52,6 +52,13 @@ export class JudgesController {
     return this.competitions.removeJudge(id);
   }
 
+  /** Код судьи открыт на одном планшете; на другом он заработает только после этого разрешения. */
+  @Post("judges/:id/allow-tablet")
+  @RequireAccess("admin")
+  allowTablet(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.allowTablet(id);
+  }
+
   @Post("judges/:id/token")
   @RequireAccess("admin")
   reissueToken(@Param("id", ParseUUIDPipe) id: string) {

@@ -1,3 +1,4 @@
+import { deviceId } from "./device";
 import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { LIVE_EVENTS } from "@ag/shared";
@@ -6,7 +7,7 @@ import { LIVE_EVENTS } from "@ag/shared";
 export function useLive(token: string, onChange: () => void): boolean {
   const [connected, setConnected] = useState(false);
   useEffect(() => {
-    const socket = io("/live", { auth: { token }, transports: ["websocket", "polling"] });
+    const socket = io("/live", { auth: { token, device: deviceId() }, transports: ["websocket", "polling"] });
     socket.on("connect", () => {
       setConnected(true);
       onChange();

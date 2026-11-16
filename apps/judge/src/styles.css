@@ -1767,3 +1767,37 @@ input.secret {
 .admin .hall-board label.inline select {
   width: auto;
 }
+
+/* Вход в секретариат и настройки пароля. */
+.access-login,
+.access-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+.access-status {
+  align-items: center;
+}
+.access-login label {
+  flex: 1 1 14rem;
+}
+.access-message {
+  flex-basis: 100%;
+  margin: 0;
+}
+.access-settings {
+  flex-basis: 100%;
+}
+.access-settings form {
+  display: grid;
+  gap: 8px;
+  max-width: 24rem;
+  margin: 8px 0;
+}
+
+.presence-allow {
+  grid-column: 2 / -1;
+  justify-self: start;
+  margin: 0.2rem 0 0.4rem;
+}
