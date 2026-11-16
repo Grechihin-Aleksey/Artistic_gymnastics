@@ -29,6 +29,7 @@ const presence = async (competitionId: string) =>
     online: boolean;
     since: string | null;
     lastSeen: string | null;
+    battery: { percent: number; charging: boolean } | null;
   }[];
 
 /** Ждём, пока сервер обработает отключение. */
