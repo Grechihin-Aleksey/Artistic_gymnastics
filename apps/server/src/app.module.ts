@@ -2,6 +2,8 @@ import { Module, type DynamicModule } from "@nestjs/common";
 import { ReadinessController } from "./readiness/readiness.controller";
 import { ReadinessService } from "./readiness/readiness.service";
 import { TimerController } from "./timer/timer.controller";
+import { StandbyController } from "./standby/standby.controller";
+import { StandbyService } from "./standby/standby.service";
 import { APP_GUARD } from "@nestjs/core";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
@@ -79,6 +81,7 @@ export class AppModule {
         CloudBackupController,
         ReadinessController,
         TimerController,
+        StandbyController,
       ],
       providers: [
         AuthService,
@@ -101,6 +104,7 @@ export class AppModule {
         LiveGateway,
         RelayPublisher,
         ReadinessService,
+        StandbyService,
       ],
     };
   }

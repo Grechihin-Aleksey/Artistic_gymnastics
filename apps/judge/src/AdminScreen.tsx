@@ -19,6 +19,7 @@ import {
   ReadinessPanel,
   AnnouncerLinkPanel,
   BoardTimerPanel,
+  StandbyPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -461,6 +462,12 @@ export function AdminScreen() {
                 void loadCompetitions(id);
               }}
             />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
+            <summary>Запасной ноутбук</summary>
+            <StandbyPanel adminToken={adminToken} onError={setError} onTakenOver={(id) => void loadCompetitions(id)} />
           </details>
         )}
         {adminToken && (

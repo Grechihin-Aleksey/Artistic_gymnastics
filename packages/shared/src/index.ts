@@ -752,6 +752,22 @@ export interface BoardTimer {
   remainingMs: number;
 }
 
+/** Запасной ноутбук: адрес основного и токен его секретариата; пустой адрес — выключить резерв. */
+export const setStandbySchema = z.object({
+  primaryUrl: z.string().trim().max(200).optional(),
+  token: z.string().trim().max(200).optional(),
+});
+export type SetStandbyInput = z.infer<typeof setStandbySchema>;
+
+export interface StandbyStatus {
+  enabled: boolean;
+  primaryUrl: string | null;
+  /** Когда последний раз удалось забрать все турниры (ISO). */
+  lastSyncAt: string | null;
+  lastError: string | null;
+  tournaments: { id: string; name: string; copiedAt: string }[];
+}
+
 /** Одна строка «Готовности к старту»: ok — всё в порядке, warn — стоит проверить, fail — без этого не начать. */
 export interface ReadinessCheck {
   group: string;

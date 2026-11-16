@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer, StandbyStatus } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -5162,6 +5162,131 @@ export function BoardTimerPanel({ competitionId, adminToken, onError }: Omit<Pro
           {running ? (left! > 0 ? `Идёт: осталось ${mmss(left!)}` : "Время вышло") : "Таймер не запущен"}
         </span>
       </div>
+    </section>
+  );
+}
+
+const timeAgo = (iso: string | null, now: number) => {
+  if (!iso) return "ещё не забирал";
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  return s < 60 ? `${s} с назад` : `${Math.floor(s / 60)} мин назад`;
+};
+
+/**
+ * Запасной ноутбук: каждые 15 секунд забирает турниры с основного. Если основной сломался,
+ * одна кнопка загружает их сюда, и работа продолжается с теми же QR-кодами.
+ */
+export function StandbyPanel({ adminToken, onError, onTakenOver }: { adminToken: string; onError: (m: string | null) => void; onTakenOver: (id: string) => void }) {
+  const [status, setStatus] = useState<StandbyStatus | null>(null);
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [done, setDone] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await apiRequest<StandbyStatus>("/standby", { token: adminToken }));
+      setNow(Date.now());
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [adminToken, onError]);
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await action();
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const enable = () =>
+    run(async () => {
+      setStatus(await apiRequest<StandbyStatus>("/standby", { token: adminToken, method: "PUT", body: { primaryUrl: url, token } }));
+      setToken("");
+    });
+  const disable = () =>
+    run(async () => {
+      setStatus(await apiRequest<StandbyStatus>("/standby", { token: adminToken, method: "PUT", body: {} }));
+    });
+  const takeOver = () => {
+    if (
+      !window.confirm(
+        "Продолжить соревнование на этом ноутбуке? Делайте это, только если основной ноутбук сломан или выключен: " +
+          "иначе судьи могут ставить оценки на двух ноутбуках сразу.",
+      )
+    )
+      return;
+    void run(async () => {
+      const r = await apiRequest<{ loaded: { id: string; name: string }[]; copiedAt: string | null }>("/standby/take-over", {
+        token: adminToken,
+        method: "POST",
+      });
+      setDone(`Загружено: ${r.loaded.map((l) => `«${l.name}»`).join(", ")}. Копия от ${r.copiedAt ? new Date(r.copiedAt).toLocaleTimeString("ru-RU") : "—"}.`);
+      await load();
+      if (r.loaded[0]) onTakenOver(r.loaded[0].id);
+    });
+  };
+
+  const stale = status?.lastSyncAt ? now - new Date(status.lastSyncAt).getTime() > 60_000 : true;
+  return (
+    <section className="panel no-print">
+      <p className="muted wide">
+        Второй ноутбук в той же сети Wi-Fi, с установленной программой и лицензией. Включите здесь резерв: этот ноутбук будет
+        каждые 15 секунд забирать с основного все турниры целиком. Если основной сломается, нажмите «Продолжить на этом
+        ноутбуке»: турниры загрузятся с теми же QR-кодами, а планшеты судей сами найдут новый адрес примерно за минуту и
+        дошлют оценки, которых не было в копии.
+      </p>
+      {done && <div className="notice ok wide">{done} Откройте экран «Ход соревнования» и нажмите «Собрать оценки с планшетов».</div>}
+      {status?.enabled ? (
+        <>
+          <div className="wide">
+            <p>
+              Резерв включён. Основной ноутбук: <strong>{status.primaryUrl}</strong>. Последняя копия:{" "}
+              <strong>{timeAgo(status.lastSyncAt, now)}</strong>
+              {status.tournaments.length > 0 && <> · турниры: {status.tournaments.map((t) => `«${t.name}»`).join(", ")}</>}
+            </p>
+            {status.lastError && (
+              <div className={stale ? "alert" : "notice"}>
+                Не удалось забрать копию: {status.lastError}. {stale ? "Проверьте, что основной ноутбук включён и в той же сети." : ""}
+              </div>
+            )}
+          </div>
+          <div className="wide deduction-row">
+            <button type="button" className="primary danger" disabled={busy || status.tournaments.length === 0} onClick={takeOver}>
+              Основной сломался — продолжить на этом ноутбуке
+            </button>
+            <button type="button" disabled={busy} onClick={() => void disable()}>
+              Выключить резерв
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="wide">
+            Адрес секретариата основного ноутбука
+            <input value={url} placeholder="http://192.168.1.23:3000" onChange={(e) => setUrl(e.target.value)} />
+          </label>
+          <label className="wide">
+            Токен секретариата основного ноутбука (строка ADMIN_TOKEN в его файле .env)
+            <input value={token} type="password" autoComplete="off" onChange={(e) => setToken(e.target.value)} />
+          </label>
+          <div className="wide">
+            <button type="button" className="primary" disabled={busy || !url.trim() || token.trim().length < 16} onClick={() => void enable()}>
+              Включить резерв
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }
