@@ -198,6 +198,10 @@ describe("экран диктора", () => {
     expect(bb!.current?.bib).toBe(103);
     expect(bb!.last).toMatchObject({ total: 13, rank: 2, allAround: { rank: 4, total: 40.5 }, category: "КМС" });
     expect(bb!.next.map((p) => p.bib)).toEqual([105, 106]);
+    expect(bb!.idle).toBe(false);
+    // Смены на снаряде нет — так и пишем; без смен вообще — все по номерам.
+    expect(announcerView(data, { ...rotation, shifts: [{ ...rotation.shifts[0]!, apparatus: "FX" as const }] }, null, people)[0]!.idle).toBe(true);
+    expect(announcerView(data, { ...rotation, shifts: [] }, null, people)[0]!.next.map((p) => p.bib)).toEqual([105, 106]);
   });
 
   it("в финале следующие — по составу финала", () => {

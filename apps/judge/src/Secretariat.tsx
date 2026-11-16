@@ -4917,7 +4917,7 @@ export function RecoveryPanel({ competitionId, adminToken, onError }: Omit<Props
             {report.restored.length > 0
               ? `Возвращено выступлений: ${report.restored.length}.`
               : "Пропавших оценок нет: на сервере всё есть."}
-            {report.alreadyThere > 0 && ` Уже были на сервере: ${report.alreadyThere}.`}
+            {report.alreadyThere > 0 && report.restored.length > 0 && " Остальные оценки с планшетов на сервере уже были."}
           </p>
           {report.restored.length > 0 && (
             <ul>

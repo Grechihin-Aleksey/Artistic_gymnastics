@@ -41,6 +41,8 @@ export interface AnnouncerApparatus {
     allAround: { rank: number; total: number } | null;
   } | null;
   next: (Person & { category: string })[];
+  /** В этой ротации на снаряде нет смены. */
+  idle: boolean;
 }
 
 /**
@@ -65,9 +67,14 @@ export function announcerView(
     for (const c of data.categories) for (const row of c.apparatus[app] ?? []) done.add(row.gymnast.id);
     if (live.current) done.add(live.current.gymnast.id);
 
+    // Без смен — как у старшего судьи: все участники по возрастанию номеров.
+    const noShifts = !rotation || rotation.shifts.length === 0;
+    const shiftsHere = (rotation?.shifts ?? []).filter((s) => s.apparatus === app);
     const order: string[] = isFinal
       ? (finals?.lists ?? []).filter((l) => l.apparatus === app).flatMap((l) => l.finalists.filter((f) => !f.reserve).map((f) => f.gymnast.id))
-      : (rotation?.shifts ?? []).filter((s) => s.apparatus === app).flatMap((s) => s.gymnastIds);
+      : noShifts
+        ? [...people].sort((a, b) => a.bib - b.bib).map((p) => p.id)
+        : shiftsHere.flatMap((s) => s.gymnastIds);
     const next = order
       .filter((id) => !done.has(id))
       .map((id) => byId.get(id))
@@ -98,6 +105,7 @@ export function announcerView(
       current: live.current ? { ...live.current.gymnast, attempt: live.current.attempt, category: catOf(live.current.gymnast.categoryId) } : null,
       last,
       next,
+      idle: !isFinal && !noShifts && shiftsHere.length === 0,
     };
   });
 }
@@ -197,7 +205,9 @@ export function Announcer({ competitionId }: { competitionId: string }) {
                   ))}
                 </ol>
               ) : (
-                <div className="muted">Смена выступила на этом снаряде</div>
+                <div className="muted">
+                  {a.idle ? "Смены на этом снаряде сейчас нет" : data.competition.phase === "FINAL" ? "Финалисты выступили" : "Смена выступила на этом снаряде"}
+                </div>
               )}
             </div>
           </section>
