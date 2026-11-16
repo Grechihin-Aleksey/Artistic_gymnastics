@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { LIVE_EVENTS } from "@ag/shared";
 import { LiveLink, type LinkState } from "./liveLink";
+import { reportBattery } from "./battery";
 
 export interface LiveStatus {
   /** Планшет на связи и подписан на свою бригаду. */
@@ -58,7 +59,9 @@ export function useLive(
       socket.on(event, onChange);
     }
     socket.on(LIVE_EVENTS.recoveryRequested, () => latest.current.onRecovery?.());
+    const stopBattery = reportBattery(socket);
     return () => {
+      stopBattery();
       unsubscribe();
       live.stop();
       link.current = null;

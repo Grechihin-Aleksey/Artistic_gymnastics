@@ -131,6 +131,8 @@ export class PerformancesService {
               total: fromPoints(row.total),
             },
       marks: markRows.map((m) => ({ ...m, value: fromPoints(m.value) })),
+      calledAt: row.createdAt.toISOString(),
+      approvedAt: row.approvedAt?.toISOString() ?? null,
     };
   }
 

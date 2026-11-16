@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Inject, Injectable } from "@nestjs/common";
 import { apparatusFor } from "@ag/scoring";
-import { APPARATUS_NAMES, type ReadinessCheck, type ReadinessView } from "@ag/shared";
+import { APPARATUS_NAMES, LOW_BATTERY_PERCENT, type ReadinessCheck, type ReadinessView } from "@ag/shared";
 import { and, eq } from "drizzle-orm";
 import { CloudBackupService } from "../backup/cloud-backup.service";
 import { CompetitionsService } from "../competitions/competitions.service";
@@ -79,8 +79,17 @@ export class ReadinessService {
 
     // Планшеты на связи
     if (needTablets.length > 0) {
-      const presence = new Map(this.live.presence(needTablets.map((j) => j.id)).map((p) => [p.judgeId, p.online]));
+      const states = new Map(this.live.presence(needTablets.map((j) => j.id)).map((p) => [p.judgeId, p]));
+      const presence = new Map([...states].map(([id, p]) => [id, p.online]));
       const offline = needTablets.filter((j) => !presence.get(j.id));
+      const low = needTablets.filter((j) => {
+        const b = states.get(j.id)?.battery;
+        return states.get(j.id)?.online && b && !b.charging && b.percent <= LOW_BATTERY_PERCENT;
+      });
+      if (low.length > 0) {
+        const list = low.map((j) => `${APPARATUS_NAMES[j.apparatus] ?? j.apparatus} — ${judgeTitle(j)} (${states.get(j.id)!.battery!.percent}%)`);
+        add("Планшеты", "warn", `Мало заряда: ${list.join("; ")}. Поставьте на зарядку.`);
+      }
       if (offline.length === 0) add("Планшеты", "ok", `Все планшеты на связи: ${needTablets.length}.`);
       else {
         const list = offline.map((j) => `${APPARATUS_NAMES[j.apparatus] ?? j.apparatus} — ${judgeTitle(j)}`).join("; ");

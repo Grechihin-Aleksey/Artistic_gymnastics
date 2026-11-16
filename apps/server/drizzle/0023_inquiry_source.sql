@@ -1,0 +1,1 @@
+ALTER TABLE "inquiries" ADD COLUMN "source" text DEFAULT 'secretariat' NOT NULL;

@@ -1,10 +1,11 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { fromPoints, toPoints } from "@ag/scoring";
-import type { CreateInquiryInput, InquiryView, ResolveInquiryInput } from "@ag/shared";
-import { and, asc, eq, gt } from "drizzle-orm";
+import type { CoachInquiryInput, CreateInquiryInput, InquiryView, ResolveInquiryInput } from "@ag/shared";
+import { and, asc, desc, eq, gt, isNotNull } from "drizzle-orm";
 import type { Principal } from "../auth/auth";
+import { COACH_PHONE_ACTOR } from "../audit/audit.service";
 import { DB, type Db } from "../db/db.module";
-import { auditLog, gymnasts, inquiries, performances } from "../db/schema";
+import { auditLog, competitions, gymnasts, inquiries, performances } from "../db/schema";
 import { actorName, PerformancesService } from "../performances/performances.service";
 
 /** Письменный запрос подаётся не позже чем через 4 минуты после показа оценки. */
@@ -22,7 +23,47 @@ export class InquiriesService {
     private readonly performances: PerformancesService,
   ) {}
 
-  async create(principal: Principal, performanceId: string, input: CreateInquiryInput): Promise<InquiryView> {
+  create(principal: Principal, performanceId: string, input: CreateInquiryInput): Promise<InquiryView> {
+    return this.record(actorName(principal), "secretariat", performanceId, input);
+  }
+
+  /**
+   * Тренер подаёт запрос сам, с телефона в сети зала: на последнюю утверждённую оценку
+   * участника на снаряде в текущей части турнира. С телефона — только в срок; опоздавший
+   * запрос, как и раньше, записывает секретариат.
+   */
+  async createFromCoach(competitionId: string, input: CoachInquiryInput): Promise<InquiryView> {
+    const [competition] = await this.db
+      .select({ phase: competitions.phase })
+      .from(competitions)
+      .where(eq(competitions.id, competitionId));
+    if (!competition) throw new NotFoundException("Соревнование не найдено");
+    const [perf] = await this.db
+      .select({ id: performances.id, approvedAt: performances.approvedAt })
+      .from(performances)
+      .where(
+        and(
+          eq(performances.competitionId, competitionId),
+          eq(performances.gymnastId, input.gymnastId),
+          eq(performances.apparatus, input.apparatus),
+          eq(performances.stage, competition.phase),
+          eq(performances.status, "APPROVED"),
+          isNotNull(performances.approvedAt),
+        ),
+      )
+      .orderBy(desc(performances.approvedAt))
+      .limit(1);
+    if (!perf) throw new NotFoundException("У участника нет утверждённой оценки на этом снаряде");
+    return this.record(COACH_PHONE_ACTOR, "phone", perf.id, input, true);
+  }
+
+  private async record(
+    actor: string,
+    source: "secretariat" | "phone",
+    performanceId: string,
+    input: CreateInquiryInput,
+    onlyInTime = false,
+  ): Promise<InquiryView> {
     const id = await this.db.transaction(async (tx) => {
       const [perf] = await tx
         .select()
@@ -52,6 +93,11 @@ export class InquiriesService {
         )
         .limit(1);
       const late = Boolean(next) || Date.now() - perf.approvedAt.getTime() > DEADLINE_MS;
+      if (late && onlyInTime) {
+        throw new ConflictException(
+          "Срок подачи прошёл: запрос подаётся до показа оценки следующего участника на этом снаряде и не позже 4 минут. Обратитесь в секретариат.",
+        );
+      }
 
       const [row] = await tx
         .insert(inquiries)
@@ -62,13 +108,14 @@ export class InquiriesService {
           claimedD: input.claimedD === undefined ? null : toPoints(input.claimedD),
           previousD: perf.d,
           late,
+          source,
         })
         .returning({ id: inquiries.id });
       await tx.insert(auditLog).values({
         competitionId: perf.competitionId,
-        actor: actorName(principal),
+        actor,
         action: "inquiry.created",
-        details: { inquiryId: row!.id, performanceId: perf.id, coach: input.coach, claimedD: input.claimedD ?? null, late },
+        details: { inquiryId: row!.id, performanceId: perf.id, coach: input.coach, claimedD: input.claimedD ?? null, late, source },
       });
       return row!.id;
     });
@@ -157,6 +204,7 @@ export class InquiriesService {
       newD: inquiry.newD === null ? null : fromPoints(inquiry.newD),
       status: inquiry.status,
       late: inquiry.late,
+      source: inquiry.source === "phone" ? "phone" : "secretariat",
       note: inquiry.note,
       createdAt: inquiry.createdAt.toISOString(),
       resolvedAt: inquiry.resolvedAt?.toISOString() ?? null,

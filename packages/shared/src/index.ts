@@ -107,6 +107,17 @@ export const createCompetitionSchema = z.object({
   trial: z.boolean().default(false),
 });
 
+/**
+ * Новый турнир по образцу прошлого: правила, разряды с базами и нормативами, судьи
+ * (с новыми QR-кодами), логотип, коллегия, зачёт клубов и настройки финалов.
+ * Участники, смены, оценки и заявки не переносятся.
+ */
+export const copyCompetitionSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  trial: z.boolean().default(false),
+});
+export type CopyCompetitionInput = z.infer<typeof copyCompetitionSchema>;
+
 export const createTeamSchema = z.object({
   name: z.string().min(1).max(200),
 });
@@ -594,6 +605,15 @@ export const createInquirySchema = z.object({
   claimedD: score.optional(),
 });
 
+/**
+ * Запрос тренера с телефона (страница «Мой клуб» в сети зала): сервер сам находит
+ * последнюю утверждённую оценку участника на снаряде.
+ */
+export const coachInquirySchema = createInquirySchema.extend({
+  gymnastId: z.string().uuid(),
+  apparatus: apparatusSchema,
+});
+
 /** Решение апелляционного жюри: оставить оценку или поставить новую D. */
 export const resolveInquirySchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("accept"), d: score, note: z.string().max(500).optional() }),
@@ -636,6 +656,9 @@ export type DistributeShiftsInput = z.infer<typeof distributeShiftsSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
+export type CoachInquiryInput = z.infer<typeof coachInquirySchema>;
+/** Кто записал запрос: секретариат или тренер со своего телефона. */
+export type InquirySource = "secretariat" | "phone";
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
 
@@ -732,6 +755,9 @@ export interface PerformanceView {
   status: PerformanceStatus;
   score: ScoreView | null;
   marks: MarkView[];
+  /** Когда участника вызвали и когда утвердили оценку (ISO). */
+  calledAt?: string;
+  approvedAt?: string | null;
 }
 
 /** Таймер на табло в зале: разминка, ротация, перерыв. null — убрать таймер. */
@@ -751,6 +777,39 @@ export interface BoardTimer {
   seconds: number;
   remainingMs: number;
 }
+
+/** Запасной ноутбук: адрес основного и токен его секретариата; пустой адрес — выключить резерв. */
+export const setStandbySchema = z.object({
+  primaryUrl: z.string().trim().max(200).optional(),
+  token: z.string().trim().max(200).optional(),
+});
+export type SetStandbyInput = z.infer<typeof setStandbySchema>;
+
+/** Версия программы: в зале и последняя выпущенная (проверяется, когда у сервера есть интернет). */
+export interface UpdateStatus {
+  current: string;
+  /** Последняя выпущенная версия; null — проверить пока не удалось (нет интернета). */
+  latest: string | null;
+  /** Что нового в последней версии, коротко. */
+  notes: string[];
+  available: boolean;
+  /** Когда последний раз удалось проверить (ISO). */
+  checkedAt: string | null;
+}
+
+export interface StandbyStatus {
+  enabled: boolean;
+  primaryUrl: string | null;
+  /** Когда последний раз удалось забрать все турниры (ISO). */
+  lastSyncAt: string | null;
+  lastError: string | null;
+  tournaments: { id: string; name: string; copiedAt: string }[];
+}
+
+export const judgeBatterySchema = z.object({ level: z.number().min(0).max(1), charging: z.boolean() });
+
+/** Заряд ниже этого — секретариат предупреждает поставить планшет на зарядку. */
+export const LOW_BATTERY_PERCENT = 20;
 
 /** Одна строка «Готовности к старту»: ok — всё в порядке, warn — стоит проверить, fail — без этого не начать. */
 export interface ReadinessCheck {
@@ -808,6 +867,8 @@ export const LIVE_EVENTS = {
    * До этого события планшет не считает себя на связи.
    */
   judgeReady: "judge.ready",
+  /** Планшет → сервер: заряд батареи { level: 0…1, charging } (браузер сообщает его не везде). */
+  judgeBattery: "judge.battery",
   /** Сервер → планшет: код входа больше не действует (судью удалили или выдали новый QR-код). */
   judgeRejected: "judge.rejected",
 } as const;
@@ -986,6 +1047,11 @@ export interface RotationView {
   /** Сколько ротаций в соревновании: по числу снарядов. */
   rotations: number;
   shifts: ShiftView[];
+  /**
+   * Темп по снарядам: сколько секунд в среднем проходит между оценками участников
+   * (по последним выступлениям, без перерывов). Нет снаряда — данных пока мало.
+   */
+  pace?: Partial<Record<(typeof APPARATUS)[number], number>>;
 }
 
 export interface ShiftView {
@@ -1049,6 +1115,7 @@ export interface InquiryView {
    * на этом снаряде или больше чем через 4 минуты. Решение всё равно за жюри.
    */
   late: boolean;
+  source: InquirySource;
   note: string | null;
   createdAt: string;
   resolvedAt: string | null;

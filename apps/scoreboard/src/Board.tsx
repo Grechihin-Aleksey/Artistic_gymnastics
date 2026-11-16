@@ -13,11 +13,15 @@ import {
   type TeamResultRow,
 } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
-import { clubList, clubResults } from "./club";
+import { clubKey, clubList, clubResults, type ClubGymnast } from "./club";
+import { CoachInquiry } from "./CoachInquiry";
+import { usePublic } from "./Announcer";
+import { forecastFor, upcoming, type QueuePerson } from "./forecast";
 import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
 import { formatLeft, useBoardTimer } from "./timer";
 import { useBoard, type BoardData } from "./useBoard";
+import type { FinalsView, RotationView } from "@ag/shared";
 
 const SHORT: Record<string, string> = {
   FX: "Вольные",
@@ -212,8 +216,13 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
       </section>
     );
   }
-  const people = clubResults(data, route.club);
   const final = data.competition.phase === "FINAL";
+  // Запрос на пересмотр подаётся только из сети зала: сайт для зрителей и виджет — только просмотр.
+  const hall = !route.embed && !isRelay(location.pathname);
+  const queues = useQueues(data, route.competitionId, hall);
+  const now = useMinute();
+  // В зале видны и те, кто ещё не выступал, но уже стоит в очереди на снаряд: для них — прогноз выхода.
+  const people = withWaiting(clubResults(data, route.club), queues, route.club, data, now);
   return (
     <section className="club">
       <h1>{route.club}</h1>
@@ -237,6 +246,24 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
                   {APPARATUS_NAMES[p.now]}
                 </div>
               )}
+              {queues &&
+                forecastFor(p.gymnast.id, queues.queues, queues.pace, now).map((f) => (
+                  <div key={f.apparatus} className="club-forecast">
+                    <ApparatusIcon code={f.apparatus} />
+                    {APPARATUS_NAMES[f.apparatus]}:{" "}
+                    {f.ahead === 0 && f.minutes <= 1 ? (
+                      <strong>выходит следующим номером</strong>
+                    ) : (
+                      <>
+                        около <strong>{f.at.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</strong>
+                        <span className="muted">
+                          {" "}
+                          · через ~{f.minutes} мин, впереди {f.ahead}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ))}
               {p.allAround && (
                 <div className="club-aa">
                   Многоборье: <strong>{p.allAround.complete ? `${p.allAround.rank} место` : "идёт"}</strong>
@@ -259,12 +286,73 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
                   </tbody>
                 </table>
               )}
+              {hall && p.apparatus.length > 0 && (
+                <CoachInquiry
+                  competitionId={route.competitionId}
+                  gymnast={p.gymnast}
+                  apparatus={p.apparatus.map((a) => a.apparatus)}
+                  dLabel={scoreLabels(data.competition.rules).d}
+                />
+              )}
             </article>
           ))}
         </div>
       )}
     </section>
   );
+}
+
+/** Участники клуба без оценок, у которых уже есть прогноз выхода, — в конец списка, по номерам. */
+function withWaiting(
+  people: ClubGymnast[],
+  queues: ReturnType<typeof useQueues>,
+  club: string,
+  data: BoardData,
+  now: Date,
+): ClubGymnast[] {
+  if (!queues) return people;
+  const known = new Set(people.map((p) => p.gymnast.id));
+  const waiting = new Map<string, QueuePerson>();
+  for (const { queue } of queues.queues.values()) {
+    for (const p of queue) {
+      if (!known.has(p.id) && clubKey(p.club) === clubKey(club) && forecastFor(p.id, queues.queues, queues.pace, now).length > 0) waiting.set(p.id, p);
+    }
+  }
+  const extra = [...waiting.values()]
+    .sort((a, b) => a.bib - b.bib)
+    .map(
+      (p): ClubGymnast => ({
+        gymnast: { teamId: null, ...p } as unknown as GymnastView,
+        category: data.categories.find((c) => c.id === p.categoryId)?.name ?? "",
+        allAround: null,
+        apparatus: [],
+        now: null,
+      }),
+    );
+  return [...people, ...extra];
+}
+
+/** Очереди на снарядах для прогноза: только в зале, сайт этих данных не получает. */
+function useQueues(data: BoardData, competitionId: string, hall: boolean) {
+  const version = data.generatedAt;
+  const base = hall ? `/competitions/${encodeURIComponent(competitionId)}` : null;
+  const rotation = usePublic<RotationView>(base && `${base}/rotation`, version);
+  const finals = usePublic<FinalsView>(base && `${base}/finals`, version);
+  const people = usePublic<QueuePerson[]>(base && `${base}/gymnasts`, version);
+  return useMemo(
+    () => (hall && people ? { queues: upcoming(data, rotation, finals, people), pace: rotation?.pace } : null),
+    [hall, data, rotation, finals, people],
+  );
+}
+
+/** Текущее время, раз в полминуты: прогноз «через N мин» обновляется сам. */
+function useMinute(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 
 const protocolsUrl = (competitionId: string, file?: string) =>

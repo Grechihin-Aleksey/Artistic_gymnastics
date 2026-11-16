@@ -188,6 +188,8 @@ function ingest(string $id): void
             'seq' => $seq,
             'approved' => $flashes,
         ]);
+        // Номер снимка отдельным маленьким файлом: зрителю без новостей не нужно читать весь снимок.
+        save_record("seq-$id", $seq);
         return false;
     });
     send_json(200, $stale ? ['ok' => true, 'stale' => true] : ['ok' => true]);
@@ -231,10 +233,13 @@ function events(string $id): void
     header('X-Accel-Buffering: no');
     header('Access-Control-Allow-Origin: *');
     echo "retry: $POLL_MS\n\n";
-    $record = load_record("results-$id");
-    if (!$record) return;
     $header = $_SERVER['HTTP_LAST_EVENT_ID'] ?? '';
     $last = ctype_digit($header) ? (int) $header : -1;
+    // Большинство опросов — «ничего нового»: отвечаем по маленькому файлу с номером, не читая снимок.
+    $seq = load_record("seq-$id");
+    if (is_int($seq) && $last >= 0 && $last === $seq) return;
+    $record = load_record("results-$id");
+    if (!$record) return;
     // Номер больше нашего — данные ретранслятора обнулили: отдаём всё заново.
     if ($last > $record->seq) $last = -1;
     if ($last >= $record->seq) return;

@@ -7,19 +7,13 @@ import {
   type RotationView,
 } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
+import { upcoming, type QueuePerson } from "./forecast";
 import { useBoard } from "./useBoard";
+import { useVoice } from "./voice";
 
 const fmt = (n: number) => n.toFixed(3);
 
-interface Person {
-  id: string;
-  bib: number;
-  firstName: string;
-  lastName: string;
-  club: string | null;
-  categoryId: string | null;
-  status?: "ACTIVE" | "DNS" | "WITHDRAWN";
-}
+type Person = QueuePerson;
 
 /** Сколько следующих участников показывать на каждом снаряде. */
 const NEXT_COUNT = 2;
@@ -56,31 +50,15 @@ export function announcerView(
   finals: FinalsView | null,
   people: Person[],
 ): AnnouncerApparatus[] {
-  const byId = new Map(people.map((p) => [p.id, p]));
   const categoryName = new Map(data.categories.map((c) => [c.id, c.name]));
   const catOf = (id: string | null | undefined) => (id ? (categoryName.get(id) ?? "") : "");
   const isFinal = data.competition.phase === "FINAL";
+  const queues = upcoming(data, rotation, finals, people);
 
   return data.live.map((live) => {
     const app = live.apparatus;
-    const done = new Set<string>();
-    for (const c of data.categories) for (const row of c.apparatus[app] ?? []) done.add(row.gymnast.id);
-    if (live.current) done.add(live.current.gymnast.id);
-
-    // Без смен — как у старшего судьи: все участники по возрастанию номеров.
-    const noShifts = !rotation || rotation.shifts.length === 0;
-    const shiftsHere = (rotation?.shifts ?? []).filter((s) => s.apparatus === app);
-    const order: string[] = isFinal
-      ? (finals?.lists ?? []).filter((l) => l.apparatus === app).flatMap((l) => l.finalists.filter((f) => !f.reserve).map((f) => f.gymnast.id))
-      : noShifts
-        ? [...people].sort((a, b) => a.bib - b.bib).map((p) => p.id)
-        : shiftsHere.flatMap((s) => s.gymnastIds);
-    const next = order
-      .filter((id) => !done.has(id))
-      .map((id) => byId.get(id))
-      .filter((p): p is Person => Boolean(p) && (p!.status ?? "ACTIVE") === "ACTIVE")
-      .slice(0, NEXT_COUNT)
-      .map((p) => ({ ...p, category: catOf(p.categoryId) }));
+    const { queue, idle } = queues.get(app)!;
+    const next = queue.slice(0, NEXT_COUNT).map((p) => ({ ...p, category: catOf(p.categoryId) }));
 
     let last: AnnouncerApparatus["last"] = null;
     if (live.last) {
@@ -105,14 +83,16 @@ export function announcerView(
       current: live.current ? { ...live.current.gymnast, attempt: live.current.attempt, category: catOf(live.current.gymnast.categoryId) } : null,
       last,
       next,
-      idle: !isFinal && !noShifts && shiftsHere.length === 0,
+      idle,
     };
   });
 }
 
-function usePublic<T>(path: string, version: string | undefined): T | null {
+/** Открытые данные сервера в зале, заново при каждом новом снимке табло. */
+export function usePublic<T>(path: string | null, version: string | undefined): T | null {
   const [value, setValue] = useState<T | null>(null);
   useEffect(() => {
+    if (!path) return;
     let alive = true;
     fetch(path)
       .then((r) => (r.ok ? (r.json() as Promise<T>) : null))
@@ -140,6 +120,8 @@ export function Announcer({ competitionId }: { competitionId: string }) {
     [data, rotation, finals, people],
   );
 
+  const voice = useVoice(data?.live);
+
   if (!data) return <div className="center">{error ?? "Подключаемся к серверу…"}</div>;
   return (
     <div className="announcer">
@@ -148,6 +130,26 @@ export function Announcer({ competitionId }: { competitionId: string }) {
           <div className="title">{data.competition.name}</div>
           <div className="muted">Экран диктора{data.competition.phase === "FINAL" ? " · финалы" : ""}</div>
         </div>
+        {voice.supported && (
+          <div className="announcer-voice">
+            <button
+              type="button"
+              className={voice.settings.on ? "on" : undefined}
+              aria-pressed={voice.settings.on}
+              onClick={() => voice.update({ ...voice.settings, on: !voice.settings.on })}
+            >
+              {voice.settings.on ? "🔊 Голос включён" : "🔈 Включить голосовой вызов"}
+            </button>
+            <label>
+              <input
+                type="checkbox"
+                checked={voice.settings.scores}
+                onChange={(e) => voice.update({ ...voice.settings, scores: e.target.checked })}
+              />
+              объявлять оценки
+            </label>
+          </div>
+        )}
         <span className={connected ? "dot ok" : "dot down"} title={connected ? "На связи" : "Нет связи"} />
       </header>
       <main className="announcer-grid">

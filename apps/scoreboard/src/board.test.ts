@@ -237,3 +237,65 @@ describe("таймер на табло", () => {
     expect(formatLeft(-500)).toBe("0:00");
   });
 });
+
+describe("запрос тренера с телефона", () => {
+  it("понимает оценку с запятой и с точкой, пустое поле — без оценки", async () => {
+    const { parseClaimed } = await import("./CoachInquiry");
+    expect(parseClaimed("5,4")).toBe(5.4);
+    expect(parseClaimed(" 5.45 ")).toBe(5.45);
+    expect(parseClaimed("")).toBeUndefined();
+    expect(parseClaimed("abc")).toBeNull();
+    expect(parseClaimed("25")).toBeNull();
+  });
+});
+
+describe("прогноз выхода для тренера", () => {
+  it("считает очередь смены и темп снаряда", async () => {
+    const { forecastFor, upcoming, DEFAULT_PACE_S } = await import("./forecast");
+    const g = (id: string, bib: number) => ({ id, bib, firstName: "А", lastName: id, club: "Олимп", categoryId: null });
+    const people = [g("a", 1), g("b", 2), g("c", 3), g("d", 4)];
+    const data = {
+      competition: { id: "x", name: "x", discipline: "WAG", phase: "QUAL" },
+      live: [
+        { apparatus: "BB", current: { performanceId: "p", attempt: 1, gymnast: people[1] }, last: null },
+        { apparatus: "UB", current: null, last: null },
+      ],
+      categories: [{ id: null, name: "", allAround: [], teams: [], apparatus: { BB: [{ gymnast: people[0] }] } }],
+      generatedAt: "",
+    } as never;
+    const rotation = { rotation: 0, rotations: 4, shifts: [{ number: 1, startApparatus: "BB", apparatus: "BB", gymnastIds: ["a", "b", "c", "d"] }], pace: { BB: 120 } } as never;
+    const now = new Date("2026-11-16T10:00:00Z");
+    const queues = upcoming(data, rotation, null, people);
+    expect(queues.get("BB")!.queue.map((p) => p.id)).toEqual(["c", "d"]);
+    const list = forecastFor("d", queues, { BB: 120 }, now);
+    // На брусьях ещё не начинали — там прогноза нет.
+    expect(list.map((x) => x.apparatus)).toEqual(["BB"]);
+    const [f] = list;
+    // Выступающему сейчас — полтемпа, перед «d» ещё один участник.
+    expect(f).toMatchObject({ apparatus: "BB", ahead: 1, minutes: 3 });
+    expect(f!.at.toISOString()).toBe("2026-11-16T10:03:00.000Z");
+    expect(forecastFor("a", queues, undefined, now)).toEqual([]);
+    expect(forecastFor("c", queues, undefined, now)[0]!.minutes).toBe(Math.round(DEFAULT_PACE_S / 2 / 60));
+  });
+});
+
+describe("голосовой вызов диктора", () => {
+  it("объявляет только новое: сначала оценку, потом вызов следующего", async () => {
+    const { announcements } = await import("./voice");
+    const g = (bib: number, lastName: string) => ({ id: lastName, bib, firstName: "Анна", lastName, club: "Олимп", categoryId: null, teamId: null });
+    const live1 = [{ apparatus: "BB", current: { performanceId: "p1", attempt: 1, gymnast: g(101, "Иванова") }, last: null }] as never;
+    const first = announcements(null, live1, { on: true, scores: true });
+    expect(first.texts).toEqual([]);
+    const live2 = [
+      {
+        apparatus: "BB",
+        current: { performanceId: "p2", attempt: 1, gymnast: { ...g(102, "Петрова"), club: null } },
+        last: { performanceId: "p1", attempt: 1, gymnast: g(101, "Иванова"), score: { d: 5, e: 8.85, neutral: 0, total: 13.85 }, approvedAt: "", eMarks: null },
+      },
+    ] as never;
+    const second = announcements(first.said, live2, { on: true, scores: true });
+    expect(second.texts).toEqual(["Бревно. Номер 101, Иванова Анна: 13,850.", "Бревно. Выступает номер 102, Петрова Анна."]);
+    expect(announcements(second.said, live2, { on: true, scores: true }).texts).toEqual([]);
+    expect(announcements(first.said, live2, { on: true, scores: false }).texts).toEqual(["Бревно. Выступает номер 102, Петрова Анна."]);
+  });
+});

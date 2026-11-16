@@ -8,7 +8,10 @@ export function takeTokenFromLocation(location: Location, storage: Storage): str
   const match = /(?:^#|&)token=([^&]+)/.exec(location.hash);
   if (match?.[1]) {
     const token = decodeURIComponent(match[1]);
+    // Переход с прежнего адреса сервера: метка планшета едет вместе с кодом, иначе код сочтут занятым.
+    const device = /(?:^#|&)device=([^&]+)/.exec(location.hash)?.[1];
     try {
+      if (device) storage.setItem("device-id", decodeURIComponent(device));
       storage.setItem(KEY, token);
     } catch {
       // приватный режим: токен живёт только в этой вкладке

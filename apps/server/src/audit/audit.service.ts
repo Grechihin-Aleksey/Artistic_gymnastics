@@ -111,8 +111,12 @@ function judgeLabel(j: Judge): string {
   return `${judgeRole(j)} · ${APPARATUS_NAMES[j.apparatus]} · ${j.name}`;
 }
 
+/** Запрос, поданный тренером со страницы «Мой клуб» в сети зала. */
+export const COACH_PHONE_ACTOR = "coach-phone";
+
 function actorLabel(actor: string, judgeById: Map<string, Judge>): string {
   if (actor === "admin") return "Секретариат";
+  if (actor === COACH_PHONE_ACTOR) return "Тренер с телефона";
   const judge = actor.startsWith("judge:") ? judgeById.get(actor.slice(6)) : undefined;
   // Снаряд судьи — в своей колонке записи.
   return judge ? `${judgeRole(judge)} · ${judge.name}` : "Судья";
@@ -287,6 +291,11 @@ export function describe(
     }
     case "competition.imported":
       return { group: "setup", text: `Турнир загружен из файла, выгруженного ${new Date(String(d.exportedAt)).toLocaleString("ru-RU")}` };
+    case "competition.copied":
+      return {
+        group: "setup",
+        text: `Турнир создан по образцу «${String(d.fromName ?? "")}»: разрядов — ${Number(d.categories ?? 0)}, судей — ${Number(d.judges ?? 0)}`,
+      };
     default:
       return { group: "setup", text: action };
   }

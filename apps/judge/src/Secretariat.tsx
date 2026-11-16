@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
-import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
+import { LOW_BATTERY_PERCENT, AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer, StandbyStatus } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -240,9 +240,11 @@ async function fetchProtocol(competitionId: string, adminToken: string, path: st
   const url = URL.createObjectURL(await response.blob());
   if (tab) tab.location.href = url;
   else {
+    // Русское имя файла сервер отдаёт в filename* (например, пакет документов).
+    const named = /filename\*=UTF-8''([^;]+)/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
     const link = document.createElement("a");
     link.href = url;
-    link.download = filename;
+    link.download = named ? decodeURIComponent(named) : filename;
     link.click();
   }
 }
@@ -262,7 +264,7 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
 
   /** PDF открывается в новой вкладке, Excel скачивается файлом. */
   const open = async (path: string, filename: string, byCategory = true) => {
-    const download = filename.endsWith(".xlsx");
+    const download = filename.endsWith(".xlsx") || filename.endsWith(".zip");
     // Окно открываем сразу по нажатию, иначе браузер сочтёт его всплывающей рекламой.
     const tab = download ? null : window.open("", "_blank");
     const query =
@@ -336,7 +338,10 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
           Итоговый отчёт
         </button>
         <button type="button" onClick={() => void open("e-judges", "e-judges.pdf", false)}>
-          Работа судей E
+          Работа судей
+        </button>
+        <button type="button" onClick={() => void open("package.zip", "documents.zip", false)}>
+          Все документы одним архивом (ZIP)
         </button>
       </div>
       <h2>Финалы на снарядах</h2>
@@ -600,6 +605,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
                   {q.attempt > 1 ? `, прыжок ${q.attempt}` : ""}
                   <div className="muted">
                     {q.coach}, {new Date(q.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                    {q.source === "phone" && <span className="from-phone"> · 📱 с телефона тренера</span>}
                     {q.late && <span className="late"> · подан после срока</span>}
                   </div>
                 </td>
@@ -723,6 +729,83 @@ export function NewCompetitionForm({
       </label>
       <button type="submit" className="primary">
         Создать
+      </button>
+    </form>
+  );
+}
+
+/**
+ * Новый турнир по образцу прошлого: правила, разряды с базами и нормативами, судьи
+ * (с новыми QR-кодами), логотип, коллегия, зачёт клубов и настройки финалов.
+ * Участники, смены, оценки и заявки не переносятся.
+ */
+export function CopyCompetitionForm({
+  adminToken,
+  competitions,
+  currentId,
+  onCreated,
+  onError,
+}: {
+  adminToken: string;
+  /** По одной строке на турнир; у турнира из двух частей — первая часть. */
+  competitions: { id: string; name: string; trial?: boolean }[];
+  currentId: string;
+  onCreated: (id: string) => void;
+  onError: (message: string | null) => void;
+}) {
+  const real = competitions.filter((c) => !c.trial);
+  const [sourceId, setSourceId] = useState(() => (real.some((c) => c.id === currentId) ? currentId : (real.at(-1)?.id ?? "")));
+  const [busy, setBusy] = useState(false);
+  if (real.length === 0) return <p className="muted panel no-print">Прошлых турниров пока нет: создайте первый в блоке «Новое соревнование».</p>;
+  const source = real.find((c) => c.id === sourceId);
+
+  const copy = async (form: FormData) => {
+    setBusy(true);
+    try {
+      const created = await apiRequest<CompetitionCreated[]>(`/competitions/${sourceId}/copy`, {
+        token: adminToken,
+        method: "POST",
+        body: { name: String(form.get("name")).trim() },
+      });
+      onError(null);
+      onCreated(created[0]!.id);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="panel no-print"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void copy(new FormData(e.currentTarget));
+      }}
+    >
+      <h2>Новое соревнование по образцу прошлого</h2>
+      <label className="wide">
+        Образец
+        <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
+          {real.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="wide">
+        Название нового соревнования
+        <input name="name" required maxLength={200} key={sourceId} defaultValue={source ? `${source.name} (новый)` : ""} />
+      </label>
+      <p className="muted wide">
+        Перейдут правила судейства, разряды с базами и нормативами, судьи (им нужно будет распечатать новые QR-коды — старые
+        остаются у прошлого турнира), логотип, главный судья и секретарь, общекомандный зачёт и настройки финалов. Турнир из двух
+        частей копируется обеими частями. Участники, смены, оценки и заявки не переносятся: загрузите новый список участников.
+      </p>
+      <button type="submit" className="primary" disabled={busy || !sourceId}>
+        {busy ? "Создаём…" : "Создать по образцу"}
       </button>
     </form>
   );
@@ -4771,6 +4854,7 @@ interface JudgePresence {
   online: boolean;
   since: string | null;
   lastSeen: string | null;
+  battery?: { percent: number; charging: boolean } | null;
 }
 
 /** Как часто секретариат переспрашивает, кто на связи. */
@@ -4831,6 +4915,11 @@ export function JudgesPresencePanel({
   const withTablets = judges.filter(needsTablet);
   const online = withTablets.filter((j) => presence.get(j.id)?.online).length;
   const lost = withTablets.filter((j) => !presence.get(j.id)?.online && presence.get(j.id)?.lastSeen).length;
+  const isLow = (j: PresenceJudge) => {
+    const b = presence.get(j.id)?.battery;
+    return Boolean(presence.get(j.id)?.online && b && !b.charging && b.percent <= LOW_BATTERY_PERCENT);
+  };
+  const low = withTablets.filter(isLow);
 
   return (
     <section className="panel no-print judges-presence">
@@ -4846,6 +4935,12 @@ export function JudgesPresencePanel({
           Код судьи пытаются открыть на другом планшете: {pending.map((j) => j.name).join(", ").replace(/\.$/, "")}. Если судья сменил планшет,
           нажмите «Разрешить новый планшет». Если нет — код мог попасть к постороннему: выдайте судье новый QR-код на экране
           «Судьи».
+        </div>
+      )}
+      {low.length > 0 && (
+        <div className="alert wide">
+          Мало заряда: {low.map((j) => `${APPARATUS_NAMES[j.apparatus] ?? j.apparatus} — ${j.name.replace(/\.$/, "")} (${presence.get(j.id)!.battery!.percent}%)`).join("; ")}. Поставьте
+          планшет на зарядку до следующего выступления.
         </div>
       )}
       <div className="wide presence-grid">
@@ -4875,6 +4970,14 @@ export function JudgesPresencePanel({
                           {state === "never" && "не подключался"}
                           {state === "none" && "без планшета"}
                         </span>
+                        {state === "online" && p?.battery && (
+                          <span
+                            className={`presence-battery${isLow(j) ? " low" : ""}`}
+                            title={p.battery.charging ? "Заряжается" : "Заряд батареи"}
+                          >
+                            {p.battery.charging ? "⚡" : "🔋"} {p.battery.percent}%
+                          </span>
+                        )}
                         {j.tabletPending && (
                           <button type="button" className="primary presence-allow" onClick={() => void allowTablet(j)}>
                             Разрешить новый планшет
@@ -4888,7 +4991,7 @@ export function JudgesPresencePanel({
           ))}
       </div>
       <p className="muted wide">
-        Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
+        Заряд батареи виден у планшетов на Android; iPad свой заряд браузеру не сообщает. Обновляется каждые 5 секунд. Пропавший планшет отмечается примерно через 20 секунд; если судья закрыл страницу или
         планшет уснул, связь тоже пропадает, верните его на страницу судьи.
       </p>
     </section>
@@ -5162,6 +5265,131 @@ export function BoardTimerPanel({ competitionId, adminToken, onError }: Omit<Pro
           {running ? (left! > 0 ? `Идёт: осталось ${mmss(left!)}` : "Время вышло") : "Таймер не запущен"}
         </span>
       </div>
+    </section>
+  );
+}
+
+const timeAgo = (iso: string | null, now: number) => {
+  if (!iso) return "ещё не забирал";
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  return s < 60 ? `${s} с назад` : `${Math.floor(s / 60)} мин назад`;
+};
+
+/**
+ * Запасной ноутбук: каждые 15 секунд забирает турниры с основного. Если основной сломался,
+ * одна кнопка загружает их сюда, и работа продолжается с теми же QR-кодами.
+ */
+export function StandbyPanel({ adminToken, onError, onTakenOver }: { adminToken: string; onError: (m: string | null) => void; onTakenOver: (id: string) => void }) {
+  const [status, setStatus] = useState<StandbyStatus | null>(null);
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const [done, setDone] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await apiRequest<StandbyStatus>("/standby", { token: adminToken }));
+      setNow(Date.now());
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [adminToken, onError]);
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await action();
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const enable = () =>
+    run(async () => {
+      setStatus(await apiRequest<StandbyStatus>("/standby", { token: adminToken, method: "PUT", body: { primaryUrl: url, token } }));
+      setToken("");
+    });
+  const disable = () =>
+    run(async () => {
+      setStatus(await apiRequest<StandbyStatus>("/standby", { token: adminToken, method: "PUT", body: {} }));
+    });
+  const takeOver = () => {
+    if (
+      !window.confirm(
+        "Продолжить соревнование на этом ноутбуке? Делайте это, только если основной ноутбук сломан или выключен: " +
+          "иначе судьи могут ставить оценки на двух ноутбуках сразу.",
+      )
+    )
+      return;
+    void run(async () => {
+      const r = await apiRequest<{ loaded: { id: string; name: string }[]; copiedAt: string | null }>("/standby/take-over", {
+        token: adminToken,
+        method: "POST",
+      });
+      setDone(`Загружено: ${r.loaded.map((l) => `«${l.name}»`).join(", ")}. Копия от ${r.copiedAt ? new Date(r.copiedAt).toLocaleTimeString("ru-RU") : "—"}.`);
+      await load();
+      if (r.loaded[0]) onTakenOver(r.loaded[0].id);
+    });
+  };
+
+  const stale = status?.lastSyncAt ? now - new Date(status.lastSyncAt).getTime() > 60_000 : true;
+  return (
+    <section className="panel no-print">
+      <p className="muted wide">
+        Второй ноутбук в той же сети Wi-Fi, с установленной программой и лицензией. Включите здесь резерв: этот ноутбук будет
+        каждые 15 секунд забирать с основного все турниры целиком. Если основной сломается, нажмите «Продолжить на этом
+        ноутбуке»: турниры загрузятся с теми же QR-кодами, а планшеты судей сами найдут новый адрес примерно за минуту и
+        дошлют оценки, которых не было в копии.
+      </p>
+      {done && <div className="notice ok wide">{done} Откройте экран «Ход соревнования» и нажмите «Собрать оценки с планшетов».</div>}
+      {status?.enabled ? (
+        <>
+          <div className="wide">
+            <p>
+              Резерв включён. Основной ноутбук: <strong>{status.primaryUrl}</strong>. Последняя копия:{" "}
+              <strong>{timeAgo(status.lastSyncAt, now)}</strong>
+              {status.tournaments.length > 0 && <> · турниры: {status.tournaments.map((t) => `«${t.name}»`).join(", ")}</>}
+            </p>
+            {status.lastError && (
+              <div className={stale ? "alert" : "notice"}>
+                Не удалось забрать копию: {status.lastError}. {stale ? "Проверьте, что основной ноутбук включён и в той же сети." : ""}
+              </div>
+            )}
+          </div>
+          <div className="wide deduction-row">
+            <button type="button" className="primary danger" disabled={busy || status.tournaments.length === 0} onClick={takeOver}>
+              Основной сломался — продолжить на этом ноутбуке
+            </button>
+            <button type="button" disabled={busy} onClick={() => void disable()}>
+              Выключить резерв
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="wide">
+            Адрес секретариата основного ноутбука
+            <input value={url} placeholder="http://192.168.1.23:3000" onChange={(e) => setUrl(e.target.value)} />
+          </label>
+          <label className="wide">
+            Токен секретариата основного ноутбука (строка ADMIN_TOKEN в его файле .env)
+            <input value={token} type="password" autoComplete="off" onChange={(e) => setToken(e.target.value)} />
+          </label>
+          <div className="wide">
+            <button type="button" className="primary" disabled={busy || !url.trim() || token.trim().length < 16} onClick={() => void enable()}>
+              Включить резерв
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

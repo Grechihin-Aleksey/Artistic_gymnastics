@@ -2,6 +2,8 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
+import { ChiefJudgePanel } from "./ChiefJudge";
+import { UpdateNotice, VersionLine } from "./Updates";
 import { ApiError, apiRequest } from "./api";
 import { copyText } from "./clipboard";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
@@ -19,6 +21,7 @@ import {
   ReadinessPanel,
   AnnouncerLinkPanel,
   BoardTimerPanel,
+  StandbyPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -29,6 +32,7 @@ import {
   ProgressPanel,
   InquiriesPanel,
   NewCompetitionForm,
+  CopyCompetitionForm,
   DemoCompetitionForm,
   ImportCompetitionForm,
   TransferPanel,
@@ -79,6 +83,7 @@ const TABS = [
   { id: "roster", title: "Участники" },
   { id: "judges", title: "Судьи" },
   { id: "progress", title: "Ход соревнования" },
+  { id: "chief", title: "Главный судья" },
   { id: "finals", title: "Финалы и награждение" },
   { id: "protocols", title: "Протоколы" },
 ] as const;
@@ -426,6 +431,7 @@ export function AdminScreen() {
         ))}
       </nav>
 
+      {adminToken && <UpdateNotice adminToken={adminToken} />}
       {error && <div className="alert no-print">{error}</div>}
       {!adminToken && (
         <div className="alert no-print">
@@ -449,6 +455,22 @@ export function AdminScreen() {
             />
           </details>
         )}
+        {adminToken && listed.some((c) => !c.trial) && (
+          <details className="no-print new-competition">
+            <summary>Новое соревнование по образцу прошлого</summary>
+            <CopyCompetitionForm
+              adminToken={adminToken}
+              competitions={listed}
+              currentId={listedId}
+              onError={setError}
+              onCreated={(id) => {
+                setIssued([]);
+                setLostCodes([]);
+                void loadCompetitions(id);
+              }}
+            />
+          </details>
+        )}
         {adminToken && (
           <details className="no-print new-competition">
             <summary>Загрузить турнир из файла</summary>
@@ -461,6 +483,12 @@ export function AdminScreen() {
                 void loadCompetitions(id);
               }}
             />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
+            <summary>Запасной ноутбук</summary>
+            <StandbyPanel adminToken={adminToken} onError={setError} onTakenOver={(id) => void loadCompetitions(id)} />
           </details>
         )}
         {adminToken && (
@@ -527,6 +555,7 @@ export function AdminScreen() {
         {adminToken && (
           <SeriesPanel key={`series-${competitions.length}`} competitions={competitions} adminToken={adminToken} onError={setError} />
         )}
+        {adminToken && <VersionLine adminToken={adminToken} />}
       </div>
 
       {ready && competition && (
@@ -840,6 +869,17 @@ export function AdminScreen() {
               discipline={competition.discipline}
               active={tab === "progress"}
               onError={setError}
+            />
+          </div>
+
+          <div {...pane("chief")}>
+            <ChiefJudgePanel
+              key={`chief-${competition.id}`}
+              competitionId={competition.id}
+              discipline={competition.discipline}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "chief"}
             />
           </div>
 

@@ -2,6 +2,10 @@ import { Module, type DynamicModule } from "@nestjs/common";
 import { ReadinessController } from "./readiness/readiness.controller";
 import { ReadinessService } from "./readiness/readiness.service";
 import { TimerController } from "./timer/timer.controller";
+import { StandbyController } from "./standby/standby.controller";
+import { StandbyService } from "./standby/standby.service";
+import { UpdatesController } from "./updates/updates.controller";
+import { UpdatesService } from "./updates/updates.service";
 import { APP_GUARD } from "@nestjs/core";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
@@ -21,7 +25,7 @@ import { APP_CONFIG, type AppConfig } from "./config";
 import { DbModule } from "./db/db.module";
 import { FinalsController } from "./finals/finals.controller";
 import { FinalsService } from "./finals/finals.service";
-import { InquiriesController } from "./inquiries/inquiries.controller";
+import { CoachInquiriesController, InquiriesController } from "./inquiries/inquiries.controller";
 import { InquiriesService } from "./inquiries/inquiries.service";
 import { LiveGateway } from "./live/live.gateway";
 import { OnlineEntriesController } from "./online-entries/online-entries.controller";
@@ -68,6 +72,7 @@ export class AppModule {
         ResultsController,
         FinalsController,
         InquiriesController,
+        CoachInquiriesController,
         ProtocolsController,
         CeremonyController,
         AuditController,
@@ -79,6 +84,8 @@ export class AppModule {
         CloudBackupController,
         ReadinessController,
         TimerController,
+        StandbyController,
+        UpdatesController,
       ],
       providers: [
         AuthService,
@@ -101,6 +108,8 @@ export class AppModule {
         LiveGateway,
         RelayPublisher,
         ReadinessService,
+        StandbyService,
+        UpdatesService,
       ],
     };
   }

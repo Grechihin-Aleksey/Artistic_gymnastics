@@ -1,5 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import { io, type Socket } from "socket.io-client";
+import { LIVE_EVENTS } from "@ag/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ADMIN_TOKEN, api, startApp } from "./helpers";
 
@@ -28,6 +29,7 @@ const presence = async (competitionId: string) =>
     online: boolean;
     since: string | null;
     lastSeen: string | null;
+    battery: { percent: number; charging: boolean } | null;
   }[];
 
 /** Ждём, пока сервер обработает отключение. */
@@ -63,7 +65,13 @@ describe("связь судей", () => {
     expect(byId(d.id)).toMatchObject({ online: true, lastSeen: null });
     expect(byId(d.id).since).not.toBeNull();
     expect(byId(e1.id).online).toBe(true);
-    expect(byId(e2.id)).toMatchObject({ online: false, since: null, lastSeen: null });
+    expect(byId(e2.id)).toMatchObject({ online: false, since: null, lastSeen: null, battery: null });
+
+    // Планшет сообщает заряд — секретарь видит его в процентах.
+    dSocket.emit(LIVE_EVENTS.judgeBattery, { level: 0.153, charging: false });
+    list = await until(() => presence(competition.id), (l) => l.find((p) => p.judgeId === d.id)!.battery !== null);
+    expect(byId(d.id).battery).toEqual({ percent: 15, charging: false });
+    dSocket.emit(LIVE_EVENTS.judgeBattery, { level: 7, charging: false });
 
     e1First.close();
     dSocket.close();

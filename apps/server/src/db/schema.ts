@@ -265,6 +265,8 @@ export const inquiries = pgTable("inquiries", {
   newD: integer("new_d"),
   status: inquiryStatusEnum("status").notNull().default("PENDING"),
   late: boolean("late").notNull(),
+  /** Кто записал: секретариат со слов тренера или сам тренер с телефона. */
+  source: text("source").notNull().default("secretariat"),
   note: text("note"),
   createdAt: createdAt(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
