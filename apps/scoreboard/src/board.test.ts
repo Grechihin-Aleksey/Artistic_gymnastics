@@ -256,7 +256,10 @@ describe("прогноз выхода для тренера", () => {
     const people = [g("a", 1), g("b", 2), g("c", 3), g("d", 4)];
     const data = {
       competition: { id: "x", name: "x", discipline: "WAG", phase: "QUAL" },
-      live: [{ apparatus: "BB", current: { performanceId: "p", attempt: 1, gymnast: people[1] }, last: null }],
+      live: [
+        { apparatus: "BB", current: { performanceId: "p", attempt: 1, gymnast: people[1] }, last: null },
+        { apparatus: "UB", current: null, last: null },
+      ],
       categories: [{ id: null, name: "", allAround: [], teams: [], apparatus: { BB: [{ gymnast: people[0] }] } }],
       generatedAt: "",
     } as never;
@@ -264,7 +267,10 @@ describe("прогноз выхода для тренера", () => {
     const now = new Date("2026-11-16T10:00:00Z");
     const queues = upcoming(data, rotation, null, people);
     expect(queues.get("BB")!.queue.map((p) => p.id)).toEqual(["c", "d"]);
-    const [f] = forecastFor("d", queues, { BB: 120 }, now);
+    const list = forecastFor("d", queues, { BB: 120 }, now);
+    // На брусьях ещё не начинали — там прогноза нет.
+    expect(list.map((x) => x.apparatus)).toEqual(["BB"]);
+    const [f] = list;
     // Выступающему сейчас — полтемпа, перед «d» ещё один участник.
     expect(f).toMatchObject({ apparatus: "BB", ahead: 1, minutes: 3 });
     expect(f!.at.toISOString()).toBe("2026-11-16T10:03:00.000Z");

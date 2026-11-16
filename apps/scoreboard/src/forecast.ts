@@ -12,6 +12,16 @@ export interface QueuePerson {
   status?: "ACTIVE" | "DNS" | "WITHDRAWN";
 }
 
+export interface Queue {
+  queue: QueuePerson[];
+  /** В этой ротации на снаряде нет смены. */
+  idle: boolean;
+  /** Кто-то выступает прямо сейчас. */
+  busy: boolean;
+  /** На снаряде уже начали: есть оценки или вызванный участник. */
+  started: boolean;
+}
+
 /** Темп, пока оценок на снаряде мало: полторы минуты на участника. */
 export const DEFAULT_PACE_S = 90;
 
@@ -24,10 +34,10 @@ export function upcoming(
   rotation: RotationView | null,
   finals: FinalsView | null,
   people: readonly QueuePerson[],
-): Map<Apparatus, { queue: QueuePerson[]; idle: boolean; busy: boolean }> {
+): Map<Apparatus, Queue> {
   const byId = new Map(people.map((p) => [p.id, p]));
   const isFinal = data.competition.phase === "FINAL";
-  const result = new Map<Apparatus, { queue: QueuePerson[]; idle: boolean; busy: boolean }>();
+  const result = new Map<Apparatus, Queue>();
   for (const live of data.live) {
     const app = live.apparatus;
     const done = new Set<string>();
@@ -46,7 +56,12 @@ export function upcoming(
       .filter((id) => !done.has(id))
       .map((id) => byId.get(id))
       .filter((p): p is QueuePerson => Boolean(p) && (p!.status ?? "ACTIVE") === "ACTIVE");
-    result.set(app, { queue, idle: !isFinal && !noShifts && shiftsHere.length === 0, busy: Boolean(live.current) });
+    result.set(app, {
+      queue,
+      idle: !isFinal && !noShifts && shiftsHere.length === 0,
+      busy: Boolean(live.current),
+      started: Boolean(live.current) || [...done].length > 0,
+    });
   }
   return result;
 }
@@ -72,7 +87,9 @@ export function forecastFor(
   now: Date,
 ): Forecast[] {
   const out: Forecast[] = [];
-  for (const [apparatus, { queue, busy }] of queues) {
+  for (const [apparatus, { queue, busy, started }] of queues) {
+    // Снаряд, где ещё не начинали, не прогнозируем: без смен очередь там — все участники подряд.
+    if (!started) continue;
     const ahead = queue.findIndex((p) => p.id === gymnastId);
     if (ahead < 0) continue;
     const step = pace?.[apparatus] ?? DEFAULT_PACE_S;
