@@ -14,6 +14,7 @@ import {
 } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { clubList, clubResults } from "./club";
+import { CoachInquiry } from "./CoachInquiry";
 import { isRelay, routeHash, type Route } from "./route";
 import { buildSlides, pageRows, type Slide, type SlideKind } from "./slides";
 import { formatLeft, useBoardTimer } from "./timer";
@@ -214,6 +215,8 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
   }
   const people = clubResults(data, route.club);
   const final = data.competition.phase === "FINAL";
+  // Запрос на пересмотр подаётся только из сети зала: сайт для зрителей и виджет — только просмотр.
+  const hall = !route.embed && !isRelay(location.pathname);
   return (
     <section className="club">
       <h1>{route.club}</h1>
@@ -258,6 +261,14 @@ function ClubView({ data, route }: { data: BoardData; route: Route & { competiti
                     ))}
                   </tbody>
                 </table>
+              )}
+              {hall && p.apparatus.length > 0 && (
+                <CoachInquiry
+                  competitionId={route.competitionId}
+                  gymnast={p.gymnast}
+                  apparatus={p.apparatus.map((a) => a.apparatus)}
+                  dLabel={scoreLabels(data.competition.rules).d}
+                />
               )}
             </article>
           ))}

@@ -600,6 +600,7 @@ export function InquiriesPanel({ competitionId, discipline, adminToken, onError,
                   {q.attempt > 1 ? `, прыжок ${q.attempt}` : ""}
                   <div className="muted">
                     {q.coach}, {new Date(q.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                    {q.source === "phone" && <span className="from-phone"> · 📱 с телефона тренера</span>}
                     {q.late && <span className="late"> · подан после срока</span>}
                   </div>
                 </td>

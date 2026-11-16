@@ -1,6 +1,9 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, Get, HttpException, Param, ParseUUIDPipe, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 import {
+  coachInquirySchema,
   createInquirySchema,
+  type CoachInquiryInput,
   resolveInquirySchema,
   type CreateInquiryInput,
   type ResolveInquiryInput,
@@ -36,5 +39,38 @@ export class InquiriesController {
     @Body(new ZodPipe(resolveInquirySchema)) body: ResolveInquiryInput,
   ) {
     return this.inquiries.resolve(principal, id, body);
+  }
+}
+
+/** Сколько запросов можно подать с одного телефона за окно: от случайных повторов и баловства. */
+const COACH_LIMIT = 5;
+const COACH_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Запрос тренера с телефона: страница «Мой клуб» на табло в сети зала. Открыт без входа,
+ * как и результаты; сайт для зрителей запросы не пропускает (ретранслятор отдаёт только чтение).
+ */
+@Controller()
+export class CoachInquiriesController {
+  /** Подачи по адресам телефонов: живут в памяти, перезапуск сервера их сбрасывает. */
+  private readonly recent = new Map<string, number[]>();
+
+  constructor(private readonly inquiries: InquiriesService) {}
+
+  @Post("competitions/:id/coach-inquiries")
+  create(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(coachInquirySchema)) body: CoachInquiryInput,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip ?? "";
+    const now = Date.now();
+    const times = (this.recent.get(ip) ?? []).filter((t) => now - t < COACH_WINDOW_MS);
+    if (times.length >= COACH_LIMIT) {
+      throw new HttpException("С этого телефона уже подано несколько запросов. Следующий — через несколько минут или через секретариат.", 429);
+    }
+    times.push(now);
+    this.recent.set(ip, times);
+    return this.inquiries.createFromCoach(id, body);
   }
 }

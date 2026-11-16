@@ -237,3 +237,14 @@ describe("таймер на табло", () => {
     expect(formatLeft(-500)).toBe("0:00");
   });
 });
+
+describe("запрос тренера с телефона", () => {
+  it("понимает оценку с запятой и с точкой, пустое поле — без оценки", async () => {
+    const { parseClaimed } = await import("./CoachInquiry");
+    expect(parseClaimed("5,4")).toBe(5.4);
+    expect(parseClaimed(" 5.45 ")).toBe(5.45);
+    expect(parseClaimed("")).toBeUndefined();
+    expect(parseClaimed("abc")).toBeNull();
+    expect(parseClaimed("25")).toBeNull();
+  });
+});

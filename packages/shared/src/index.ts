@@ -594,6 +594,15 @@ export const createInquirySchema = z.object({
   claimedD: score.optional(),
 });
 
+/**
+ * Запрос тренера с телефона (страница «Мой клуб» в сети зала): сервер сам находит
+ * последнюю утверждённую оценку участника на снаряде.
+ */
+export const coachInquirySchema = createInquirySchema.extend({
+  gymnastId: z.string().uuid(),
+  apparatus: apparatusSchema,
+});
+
 /** Решение апелляционного жюри: оставить оценку или поставить новую D. */
 export const resolveInquirySchema = z.discriminatedUnion("decision", [
   z.object({ decision: z.literal("accept"), d: score, note: z.string().max(500).optional() }),
@@ -636,6 +645,9 @@ export type DistributeShiftsInput = z.infer<typeof distributeShiftsSchema>;
 export type SetShiftStartInput = z.infer<typeof setShiftStartSchema>;
 export type SetRotationInput = z.infer<typeof setRotationSchema>;
 export type CreateInquiryInput = z.infer<typeof createInquirySchema>;
+export type CoachInquiryInput = z.infer<typeof coachInquirySchema>;
+/** Кто записал запрос: секретариат или тренер со своего телефона. */
+export type InquirySource = "secretariat" | "phone";
 export type ResolveInquiryInput = z.infer<typeof resolveInquirySchema>;
 export type InquiryStatus = (typeof INQUIRY_STATUSES)[number];
 
@@ -1075,6 +1087,7 @@ export interface InquiryView {
    * на этом снаряде или больше чем через 4 минуты. Решение всё равно за жюри.
    */
   late: boolean;
+  source: InquirySource;
   note: string | null;
   createdAt: string;
   resolvedAt: string | null;

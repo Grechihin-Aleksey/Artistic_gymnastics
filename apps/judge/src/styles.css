@@ -1916,3 +1916,7 @@ input.secret {
   border-color: var(--bad);
   color: var(--bad);
 }
+
+.admin .from-phone {
+  color: var(--accent, #b7791f);
+}

@@ -23,7 +23,7 @@ import { APP_CONFIG, type AppConfig } from "./config";
 import { DbModule } from "./db/db.module";
 import { FinalsController } from "./finals/finals.controller";
 import { FinalsService } from "./finals/finals.service";
-import { InquiriesController } from "./inquiries/inquiries.controller";
+import { CoachInquiriesController, InquiriesController } from "./inquiries/inquiries.controller";
 import { InquiriesService } from "./inquiries/inquiries.service";
 import { LiveGateway } from "./live/live.gateway";
 import { OnlineEntriesController } from "./online-entries/online-entries.controller";
@@ -70,6 +70,7 @@ export class AppModule {
         ResultsController,
         FinalsController,
         InquiriesController,
+        CoachInquiriesController,
         ProtocolsController,
         CeremonyController,
         AuditController,

@@ -687,3 +687,57 @@ nav.categories {
 .board-timer.over .board-timer-left {
   color: var(--bad);
 }
+
+/* Запрос тренера на пересмотр D со страницы «Мой клуб» (только в сети зала). */
+.coach-inquiry-open {
+  margin-top: 0.6rem;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--accent);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.coach-inquiry {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.5rem;
+}
+.coach-inquiry label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.9em;
+}
+.coach-inquiry input,
+.coach-inquiry select,
+.coach-inquiry button {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+}
+.coach-inquiry button[type="submit"] {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.coach-inquiry p {
+  margin: 0;
+  font-size: 0.85em;
+}
+.coach-inquiry-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.coach-inquiry-ok {
+  color: var(--ok);
+}
+.coach-inquiry-error {
+  color: var(--bad);
+}
