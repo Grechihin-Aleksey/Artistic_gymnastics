@@ -8,7 +8,7 @@ coverage/
 .DS_Store
 apps/relay/data/
 backups/
-video/
+/video/
 apps/relay/dist-php/
 
 # Закрытый ключ выпуска лицензий никогда не попадает в программу
