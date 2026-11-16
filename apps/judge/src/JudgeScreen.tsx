@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fromPoints, scoreCustomPerformance, scorePerformance, toPoints, type Discipline, type ScoreBreakdown } from "@ag/scoring";
 import { eToleranceFor } from "@ag/shared";
 import type {
@@ -105,7 +105,18 @@ interface Gymnast {
   status?: "ACTIVE" | "DNS" | "WITHDRAWN";
 }
 
-export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; onLogout: () => void }) {
+export function JudgeScreen({
+  token,
+  me,
+  onLogout,
+  onSignedOut,
+}: {
+  token: string;
+  me: Me;
+  onLogout: () => void;
+  /** Код входа больше не действует: нужен новый QR-код. */
+  onSignedOut: () => void;
+}) {
   const { judge, competition } = me;
   const [performances, setPerformances] = useState<PerformanceView[]>([]);
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
@@ -187,7 +198,35 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       .then(refresh)
       .catch(() => undefined);
   }, [journal, token, refresh]);
-  const connected = useLive(token, onLive, onRecovery);
+  // Сервер не принял код входа: проверяем ещё раз обычным запросом, чтобы не выкинуть судью из-за сбоя.
+  const allowAgain = useRef<() => void>(() => undefined);
+  const onRejected = useCallback(() => {
+    void apiRequest<Me>("/me", { token })
+      .then(() => allowAgain.current())
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 401) onSignedOut();
+        else setTimeout(() => allowAgain.current(), 3000);
+      });
+  }, [token, onSignedOut]);
+  const live = useLive(token, competition.id, { onChange: onLive, onRecovery, onRejected });
+  allowAgain.current = live.allowAgain;
+  const connected = live.connected;
+  // После возвращения связи коротко показываем судье, что всё в порядке.
+  const everConnected = useRef(false);
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    if (!connected) {
+      setRestored(false);
+      return;
+    }
+    if (!everConnected.current) {
+      everConnected.current = true;
+      return;
+    }
+    setRestored(true);
+    const timer = setTimeout(() => setRestored(false), 4000);
+    return () => clearTimeout(timer);
+  }, [connected]);
   const awake = useKeepAwake();
 
   useEffect(() => {
@@ -242,7 +281,12 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
         </div>
         <div className="status">
           <span className={connected ? "dot ok" : "dot down"} />
-          {connected ? "На связи" : "Нет связи"}
+          {connected ? "На связи" : "Нет связи, подключаемся…"}
+          {!connected && live.reconnecting && (
+            <button type="button" className="link" onClick={live.reconnectNow}>
+              Подключиться сейчас
+            </button>
+          )}
           {queued.length > 0 && <span className="badge">не отправлено: {queued.length}</span>}
           <button type="button" className="link" onClick={onLogout}>
             Выйти
@@ -251,6 +295,11 @@ export function JudgeScreen({ token, me, onLogout }: { token: string; me: Me; on
       </header>
 
       {error && <div className="alert">{error}</div>}
+      {restored && (
+        <div className="notice ok" role="status">
+          Связь восстановлена{queued.length > 0 ? ", досылаем оценки…" : ", все оценки на сервере"}
+        </div>
+      )}
       {awake === "unsupported" && (
         <div className="alert">
           Планшет может гасить экран между выступлениями. Отключите автоблокировку в настройках планшета или

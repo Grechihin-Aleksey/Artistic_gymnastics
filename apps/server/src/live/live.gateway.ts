@@ -44,7 +44,14 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket): Promise<void> {
     const token: unknown = client.handshake.auth?.token;
-    const principal = await this.auth.resolve(typeof token === "string" ? token : undefined);
+    let principal: Awaited<ReturnType<AuthService["resolve"]>>;
+    try {
+      principal = await this.auth.resolve(typeof token === "string" ? token : undefined);
+    } catch {
+      // База на миг недоступна: рвём подключение, планшет сам переподключится через пару секунд.
+      if (typeof token === "string" && token) client.disconnect();
+      return;
+    }
     if (principal?.kind === "judge") {
       const { competitionId, apparatus } = principal.judge;
       await client.join([competitionRoom(competitionId), panelRoom(competitionId, apparatus)]);
@@ -53,6 +60,12 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (entry.sockets.size === 0) entry.since = new Date();
       entry.sockets.add(client.id);
       this.judgeSockets.set(principal.judge.id, entry);
+      // Планшет считает себя на связи только после этого: так он не пропустит оценки бригады,
+      // пришедшие между подключением и подпиской.
+      client.emit(LIVE_EVENTS.judgeReady, { judgeId: principal.judge.id });
+    } else if (typeof token === "string" && token && !principal) {
+      client.emit(LIVE_EVENTS.judgeRejected);
+      client.disconnect();
     }
   }
 

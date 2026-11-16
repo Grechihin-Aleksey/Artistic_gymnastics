@@ -61,6 +61,12 @@ function JudgeApp() {
         setToken(null);
         setMe(null);
       }}
+      onSignedOut={() => {
+        forgetToken(localStorage);
+        setToken(null);
+        setMe(null);
+        setProblem("Код входа больше не действует. Попросите в секретариате новый QR-код.");
+      }}
     />
   );
 }

@@ -803,6 +803,13 @@ export const LIVE_EVENTS = {
   recoveryRequested: "competition.recoveryRequested",
   /** Сервер → все: секретариат поменял, какую часть турнира показывает табло. */
   boardSwitch: "competition.boardSwitch",
+  /**
+   * Сервер → планшет судьи: подключение принято, планшет подписан на свою бригаду.
+   * До этого события планшет не считает себя на связи.
+   */
+  judgeReady: "judge.ready",
+  /** Сервер → планшет: код входа больше не действует (судью удалили или выдали новый QR-код). */
+  judgeRejected: "judge.rejected",
 } as const;
 
 export function competitionRoom(competitionId: string): string {
