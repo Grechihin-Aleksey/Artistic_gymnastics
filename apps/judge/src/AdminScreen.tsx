@@ -992,7 +992,7 @@ function ChiefCodePanel({
         </button>
       )}
       {token && (
-        <div className="buttons no-print">
+        <div className="chief-code-buttons wide no-print">
           <button type="button" onClick={() => setShown((v) => !v)}>
             {shown ? "Скрыть QR-код" : "Показать QR-код"}
           </button>
@@ -1007,9 +1007,9 @@ function ChiefCodePanel({
           </button>
         </div>
       )}
-      {note && <p className="muted no-print">{note}</p>}
+      {note && <p className="muted wide no-print">{note}</p>}
       {token && shown && src && (
-        <figure className="qr">
+        <figure className="qr wide">
           <img src={src} alt="QR-код главного судьи" />
           <figcaption>
             <strong>Главный судья</strong>

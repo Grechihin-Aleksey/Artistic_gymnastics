@@ -1950,3 +1950,11 @@ input.secret {
   word-break: break-all;
   font-size: 12px;
 }
+.chief-code-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chief-code .qr.wide {
+  justify-self: start;
+}
