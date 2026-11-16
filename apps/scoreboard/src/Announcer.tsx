@@ -9,6 +9,7 @@ import {
 import { ApparatusIcon } from "./ApparatusIcon";
 import { upcoming, type QueuePerson } from "./forecast";
 import { useBoard } from "./useBoard";
+import { useVoice } from "./voice";
 
 const fmt = (n: number) => n.toFixed(3);
 
@@ -119,6 +120,8 @@ export function Announcer({ competitionId }: { competitionId: string }) {
     [data, rotation, finals, people],
   );
 
+  const voice = useVoice(data?.live);
+
   if (!data) return <div className="center">{error ?? "Подключаемся к серверу…"}</div>;
   return (
     <div className="announcer">
@@ -127,6 +130,26 @@ export function Announcer({ competitionId }: { competitionId: string }) {
           <div className="title">{data.competition.name}</div>
           <div className="muted">Экран диктора{data.competition.phase === "FINAL" ? " · финалы" : ""}</div>
         </div>
+        {voice.supported && (
+          <div className="announcer-voice">
+            <button
+              type="button"
+              className={voice.settings.on ? "on" : undefined}
+              aria-pressed={voice.settings.on}
+              onClick={() => voice.update({ ...voice.settings, on: !voice.settings.on })}
+            >
+              {voice.settings.on ? "🔊 Голос включён" : "🔈 Включить голосовой вызов"}
+            </button>
+            <label>
+              <input
+                type="checkbox"
+                checked={voice.settings.scores}
+                onChange={(e) => voice.update({ ...voice.settings, scores: e.target.checked })}
+              />
+              объявлять оценки
+            </label>
+          </div>
+        )}
         <span className={connected ? "dot ok" : "dot down"} title={connected ? "На связи" : "Нет связи"} />
       </header>
       <main className="announcer-grid">

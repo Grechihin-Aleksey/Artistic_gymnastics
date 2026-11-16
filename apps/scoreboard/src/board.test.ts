@@ -272,3 +272,24 @@ describe("прогноз выхода для тренера", () => {
     expect(forecastFor("c", queues, undefined, now)[0]!.minutes).toBe(Math.round(DEFAULT_PACE_S / 2 / 60));
   });
 });
+
+describe("голосовой вызов диктора", () => {
+  it("объявляет только новое: сначала оценку, потом вызов следующего", async () => {
+    const { announcements } = await import("./voice");
+    const g = (bib: number, lastName: string) => ({ id: lastName, bib, firstName: "Анна", lastName, club: "Олимп", categoryId: null, teamId: null });
+    const live1 = [{ apparatus: "BB", current: { performanceId: "p1", attempt: 1, gymnast: g(101, "Иванова") }, last: null }] as never;
+    const first = announcements(null, live1, { on: true, scores: true });
+    expect(first.texts).toEqual([]);
+    const live2 = [
+      {
+        apparatus: "BB",
+        current: { performanceId: "p2", attempt: 1, gymnast: { ...g(102, "Петрова"), club: null } },
+        last: { performanceId: "p1", attempt: 1, gymnast: g(101, "Иванова"), score: { d: 5, e: 8.85, neutral: 0, total: 13.85 }, approvedAt: "", eMarks: null },
+      },
+    ] as never;
+    const second = announcements(first.said, live2, { on: true, scores: true });
+    expect(second.texts).toEqual(["Бревно. Номер 101, Иванова Анна: 13,850.", "Бревно. Выступает номер 102, Петрова Анна."]);
+    expect(announcements(second.said, live2, { on: true, scores: true }).texts).toEqual([]);
+    expect(announcements(first.said, live2, { on: true, scores: false }).texts).toEqual(["Бревно. Выступает номер 102, Петрова Анна."]);
+  });
+});
