@@ -16,6 +16,7 @@ import {
   ShiftsPanel,
   ManualScoresPanel,
   RecoveryPanel,
+  ReadinessPanel,
   OnlineEntriesPanel,
   SeriesPanel,
   SiteProtocolsPanel,
@@ -788,6 +789,13 @@ export function AdminScreen() {
           </div>
 
           <div {...pane("progress")}>
+            <ReadinessPanel
+              key={`readiness-${competition.id}`}
+              competitionId={competition.id}
+              adminToken={adminToken}
+              onError={setError}
+              active={tab === "progress"}
+            />
             {partner && (
               <HallBoardPanel
                 key={`hall-board-${competition.id}`}

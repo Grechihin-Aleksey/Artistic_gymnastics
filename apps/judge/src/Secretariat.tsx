@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -4927,6 +4927,73 @@ export function RecoveryPanel({ competitionId, adminToken, onError }: Omit<Props
             <div className="alert">Ни один планшет не на связи. Откройте страницы судей на планшетах и повторите.</div>
           )}
         </div>
+      )}
+    </section>
+  );
+}
+
+const READINESS_MARK: Record<ReadinessCheck["status"], string> = { ok: "✓", warn: "!", fail: "✕" };
+
+/**
+ * «Готовность к старту»: одним списком всё, что стоит проверить перед соревнованием.
+ * Обновляется сама каждые 10 секунд, пока экран открыт.
+ */
+export function ReadinessPanel({ competitionId, adminToken, onError, active = true }: Omit<Props, "discipline"> & { active?: boolean }) {
+  const [view, setView] = useState<ReadinessView | null>(null);
+  const [open, setOpen] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      setView(await apiRequest<ReadinessView>(`/competitions/${competitionId}/readiness`, { token: adminToken }));
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [competitionId, adminToken, onError]);
+
+  useEffect(() => {
+    if (!active) return;
+    void load();
+    const timer = setInterval(() => void load(), 10_000);
+    return () => clearInterval(timer);
+  }, [active, load]);
+
+  const fails = view?.checks.filter((c) => c.status === "fail").length ?? 0;
+  const warns = view?.checks.filter((c) => c.status === "warn").length ?? 0;
+  const summary = !view
+    ? "Проверяем…"
+    : fails > 0
+      ? `Без этого не начать: ${fails}${warns > 0 ? `, проверить: ${warns}` : ""}`
+      : warns > 0
+        ? `Можно начинать, но стоит проверить: ${warns}`
+        : "Всё готово к старту";
+
+  return (
+    <section className="panel no-print readiness">
+      <h2>Готовность к старту</h2>
+      <div className="wide readiness-summary">
+        <span className={`readiness-mark ${view?.status ?? "idle"}`}>{view ? READINESS_MARK[view.status] : "…"}</span>
+        <strong>{summary}</strong>
+        <button type="button" className="link" onClick={() => setOpen((o) => !o)}>
+          {open ? "Свернуть" : "Подробнее"}
+        </button>
+        <button type="button" className="link" onClick={() => void load()}>
+          Проверить снова
+        </button>
+      </div>
+      {open && view && (
+        <table className="wide readiness-list">
+          <tbody>
+            {view.checks.map((c, i) => (
+              <tr key={i} className={c.status}>
+                <td className="readiness-cell">
+                  <span className={`readiness-mark ${c.status}`}>{READINESS_MARK[c.status]}</span>
+                </td>
+                <td className="muted">{c.group}</td>
+                <td>{c.text}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </section>
   );

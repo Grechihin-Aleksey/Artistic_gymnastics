@@ -732,6 +732,19 @@ export interface PerformanceView {
   marks: MarkView[];
 }
 
+/** Одна строка «Готовности к старту»: ok — всё в порядке, warn — стоит проверить, fail — без этого не начать. */
+export interface ReadinessCheck {
+  group: string;
+  status: "ok" | "warn" | "fail";
+  text: string;
+}
+
+export interface ReadinessView {
+  status: ReadinessCheck["status"];
+  checks: ReadinessCheck[];
+  checkedAt: string;
+}
+
 /** Итог сбора оценок с планшетов после восстановления базы. */
 export interface RecoveryReport {
   /** Сколько планшетов судей было на связи, когда секретариат попросил оценки. */
