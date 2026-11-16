@@ -335,6 +335,9 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         <button type="button" onClick={() => void open("report", "report.pdf", false)}>
           Итоговый отчёт
         </button>
+        <button type="button" onClick={() => void open("e-judges", "e-judges.pdf", false)}>
+          Работа судей E
+        </button>
       </div>
       <h2>Финалы на снарядах</h2>
       <p className="muted">Протокол финала — по выбранному разряду, ведомость — финалисты всех разрядов в порядке выступления.</p>
