@@ -4,6 +4,8 @@ import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
 import { AuthGuard, AuthService } from "./auth/auth";
 import { AuthController } from "./auth/auth.controller";
+import { LicenseController } from "./license/license.controller";
+import { LicenseService } from "./license/license.service";
 import { CloudBackupController } from "./backup/cloud-backup.controller";
 import { CloudBackupService } from "./backup/cloud-backup.service";
 import { BoardSwitchController } from "./competitions/board-switch.controller";
@@ -54,6 +56,7 @@ export class AppModule {
       ],
       controllers: [
         AuthController,
+        LicenseController,
         CompetitionsController,
         BoardSwitchController,
         JudgesController,
@@ -74,6 +77,7 @@ export class AppModule {
       ],
       providers: [
         AuthService,
+        LicenseService,
         { provide: APP_GUARD, useClass: AuthGuard },
         CompetitionsService,
         RotationsService,

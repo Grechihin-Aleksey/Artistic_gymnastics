@@ -26,6 +26,8 @@ services:
     environment:
       DATABASE_URL: postgres://gymnastics:gymnastics@db:5432/gymnastics
       ADMIN_TOKEN: ${ADMIN_TOKEN:?Задайте ADMIN_TOKEN в .env}
+      # Ключ лицензии; удобнее ввести его в секретариате, блок «Лицензия».
+      LICENSE_KEY: ${LICENSE_KEY:-}
       PORT: 3000
       # Часовой пояс для времени в протоколах.
       TZ: ${TZ:-Europe/Moscow}

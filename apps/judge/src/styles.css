@@ -1801,3 +1801,18 @@ input.secret {
   justify-self: start;
   margin: 0.2rem 0 0.4rem;
 }
+
+/* Лицензия: жёлтая рамка, если лицензии нет, срок истёк или скоро истечёт. */
+.license-warning {
+  border-color: var(--warn);
+}
+.license-form {
+  display: grid;
+  gap: 8px;
+  max-width: 40rem;
+}
+.license-form textarea {
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}

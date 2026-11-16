@@ -26,6 +26,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | GET | `/auth/session` | секретариат | Вход ещё действует; `{ passwordSet }` |
 | PUT | `/auth/password` | секретариат | Задать пароль `{ password }` (не короче 8): все прежние входы закрываются, отдаёт новый `{ token }` |
 | POST | `/auth/logout`, `/auth/logout-all` | секретариат | Выйти на этом устройстве / на всех устройствах |
+| GET, PUT | `/license` | секретариат | Состояние лицензии `{ state: active/expired/missing/invalid, license, daysLeft, required }`; PUT `{ key }` сохраняет новый ключ (400 — неверный или истёкший). Без действующей лицензии `POST /competitions` и `POST /competitions/import` принимают только пробный турнир (иначе 403) |
 | POST | `/judges/:id/token` | секретариат | Новый токен судьи взамен потерянного; привязка к планшету снимается |
 | POST | `/judges/:id/allow-tablet` | секретариат | Перенести код судьи на планшет, который просит вход (`tabletPending` в списке судей) |
 | GET | `/me` | судья | Кто я: судья и соревнование |

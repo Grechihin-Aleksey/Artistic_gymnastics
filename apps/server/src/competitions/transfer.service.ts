@@ -12,6 +12,7 @@ import { eq, getTableColumns, sql } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { DB, MIGRATIONS_FOLDER, type Db } from "../db/db.module";
+import { LicenseService } from "../license/license.service";
 import { RelayPublisher } from "../relay/relay.publisher";
 import {
   auditLog,
@@ -80,6 +81,7 @@ export class TransferService {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly relay: RelayPublisher,
+    private readonly licenses: LicenseService,
   ) {}
 
   async export(competitionId: string): Promise<CompetitionExport> {
@@ -154,6 +156,8 @@ export class TransferService {
         `Турнир «${existing.name}» уже есть на этом компьютере. Чтобы загрузить его из файла заново, сначала удалите его`,
       );
     }
+    // Файл турнира — тоже новый турнир на этом компьютере: без лицензии только пробный.
+    await this.licenses.assertCanCreate(competition.trial === true);
     try {
       await this.db.transaction(async (tx) => {
         for (const name of Object.keys(TABLES) as TableName[]) {

@@ -40,6 +40,7 @@ import {
   type UpdateGymnastInput,
 } from "@ag/shared";
 import { RequireAccess } from "../auth/auth";
+import { LicenseService } from "../license/license.service";
 import { ZodPipe } from "../zod.pipe";
 import { CompetitionsService, publicCompetition } from "./competitions.service";
 import { entriesTemplate, parseEntries } from "./entries";
@@ -48,11 +49,15 @@ const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @Controller("competitions")
 export class CompetitionsController {
-  constructor(private readonly competitions: CompetitionsService) {}
+  constructor(
+    private readonly competitions: CompetitionsService,
+    private readonly licenses: LicenseService,
+  ) {}
 
   @Post()
   @RequireAccess("admin")
   async create(@Body(new ZodPipe(createCompetitionSchema)) body: CreateCompetitionInput) {
+    await this.licenses.assertCanCreate(body.trial);
     return publicCompetition(await this.competitions.create(body));
   }
 

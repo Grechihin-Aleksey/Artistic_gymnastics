@@ -430,6 +430,7 @@ export function AdminScreen() {
       )}
 
       <div {...pane("competition")}>
+        {adminToken && <LicensePanel adminToken={adminToken} />}
         {adminToken && (
           <details className="no-print new-competition" open={competitions.length === 0}>
             <summary>Новое соревнование</summary>
@@ -1205,5 +1206,99 @@ function AccessPanel({ adminToken, onToken }: { adminToken: string; onToken: (to
       </details>
       {message && <p className="warning-text access-message">{message}</p>}
     </div>
+  );
+}
+
+interface LicenseStatus {
+  state: "active" | "expired" | "missing" | "invalid";
+  license: { id: string; org: string; until: string } | null;
+  daysLeft: number | null;
+  required: boolean;
+}
+
+const ruDate = (iso: string) => iso.split("-").reverse().join(".");
+
+/**
+ * Лицензия программы: кому выдана и до какого дня. Без действующей лицензии создаются
+ * только пробные турниры, уже идущие турниры работают как обычно.
+ */
+function LicensePanel({ adminToken }: { adminToken: string }) {
+  const [status, setStatus] = useState<LicenseStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    apiRequest<LicenseStatus>("/license", { token: adminToken })
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [adminToken]);
+
+  if (!status || !status.required) return null;
+  const active = status.state === "active";
+  const soon = active && (status.daysLeft ?? 0) <= 30;
+
+  const save = async () => {
+    try {
+      const next = await apiRequest<LicenseStatus>("/license", { token: adminToken, method: "PUT", body: { key } });
+      setStatus(next);
+      setKey("");
+      setOpen(false);
+      setMessage("Ключ лицензии сохранён.");
+    } catch (e) {
+      setMessage((e as Error).message);
+    }
+  };
+
+  return (
+    <section className={`panel no-print license-panel${active && !soon ? "" : " license-warning"}`}>
+      <h2>Лицензия</h2>
+      <p className="wide">
+        {active && (
+          <>
+            <strong className={soon ? "warning-text" : "ok-text"}>
+              Действует до {ruDate(status.license!.until)} включительно
+            </strong>
+            {" · "}
+            {status.license!.org}
+            {soon && ` · осталось дней: ${status.daysLeft}. Продлите лицензию заранее.`}
+          </>
+        )}
+        {status.state === "expired" && (
+          <strong className="warning-text">
+            Срок лицензии закончился {ruDate(status.license!.until)}. Новые турниры — только пробные; начатые турниры работают
+            как обычно.
+          </strong>
+        )}
+        {(status.state === "missing" || status.state === "invalid") && (
+          <strong className="warning-text">
+            {status.state === "invalid" ? "Ключ лицензии неверный. " : "Лицензия не введена. "}
+            Без лицензии можно проводить только пробный турнир для репетиции.
+          </strong>
+        )}
+      </p>
+      {active && !open ? (
+        <button type="button" className="link" onClick={() => setOpen(true)}>
+          Ввести новый ключ
+        </button>
+      ) : (
+        <form
+          className="wide license-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <label>
+            Ключ лицензии
+            <textarea value={key} onChange={(e) => setKey(e.target.value)} rows={3} spellCheck={false} placeholder="AG1.…" />
+          </label>
+          <button type="submit" className="primary" disabled={!key.trim()}>
+            Сохранить ключ
+          </button>
+        </form>
+      )}
+      {message && <p className="wide muted">{message}</p>}
+    </section>
   );
 }
