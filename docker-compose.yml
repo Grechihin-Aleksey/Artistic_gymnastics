@@ -48,6 +48,10 @@ services:
       S3_REGION: ${S3_REGION:-ru-1}
       S3_PREFIX: ${S3_PREFIX:-gymnastics}
       S3_INTERVAL: ${S3_INTERVAL:-900}
+      # Раз в 6 часов сервер смотрит, вышла ли новая версия программы, и сообщает в секретариат.
+      # Для закрытого репозитория нужен тот же ключ, что у «Обновить.bat». UPDATE_CHECK=off — не проверять.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      UPDATE_CHECK: ${UPDATE_CHECK:-}
       BACKUP_DIR: /backups
     volumes:
       - ./backups:/backups

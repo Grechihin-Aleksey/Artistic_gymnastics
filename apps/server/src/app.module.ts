@@ -4,6 +4,8 @@ import { ReadinessService } from "./readiness/readiness.service";
 import { TimerController } from "./timer/timer.controller";
 import { StandbyController } from "./standby/standby.controller";
 import { StandbyService } from "./standby/standby.service";
+import { UpdatesController } from "./updates/updates.controller";
+import { UpdatesService } from "./updates/updates.service";
 import { APP_GUARD } from "@nestjs/core";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
@@ -83,6 +85,7 @@ export class AppModule {
         ReadinessController,
         TimerController,
         StandbyController,
+        UpdatesController,
       ],
       providers: [
         AuthService,
@@ -106,6 +109,7 @@ export class AppModule {
         RelayPublisher,
         ReadinessService,
         StandbyService,
+        UpdatesService,
       ],
     };
   }

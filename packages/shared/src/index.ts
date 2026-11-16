@@ -774,6 +774,18 @@ export const setStandbySchema = z.object({
 });
 export type SetStandbyInput = z.infer<typeof setStandbySchema>;
 
+/** Версия программы: в зале и последняя выпущенная (проверяется, когда у сервера есть интернет). */
+export interface UpdateStatus {
+  current: string;
+  /** Последняя выпущенная версия; null — проверить пока не удалось (нет интернета). */
+  latest: string | null;
+  /** Что нового в последней версии, коротко. */
+  notes: string[];
+  available: boolean;
+  /** Когда последний раз удалось проверить (ISO). */
+  checkedAt: string | null;
+}
+
 export interface StandbyStatus {
   enabled: boolean;
   primaryUrl: string | null;

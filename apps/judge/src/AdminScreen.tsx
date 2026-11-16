@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
 import { ChiefJudgePanel } from "./ChiefJudge";
+import { UpdateNotice, VersionLine } from "./Updates";
 import { ApiError, apiRequest } from "./api";
 import { copyText } from "./clipboard";
 import { APPARATUS_NAMES, ROLE_NAMES, judgeLabel } from "./labels";
@@ -429,6 +430,7 @@ export function AdminScreen() {
         ))}
       </nav>
 
+      {adminToken && <UpdateNotice adminToken={adminToken} />}
       {error && <div className="alert no-print">{error}</div>}
       {!adminToken && (
         <div className="alert no-print">
@@ -536,6 +538,7 @@ export function AdminScreen() {
         {adminToken && (
           <SeriesPanel key={`series-${competitions.length}`} competitions={competitions} adminToken={adminToken} onError={setError} />
         )}
+        {adminToken && <VersionLine adminToken={adminToken} />}
       </div>
 
       {ready && competition && (

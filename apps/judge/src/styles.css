@@ -1920,3 +1920,20 @@ input.secret {
 .admin .from-phone {
   color: var(--accent, #b7791f);
 }
+
+/* Новая версия программы: спокойное сообщение, не тревога. */
+.update-notice {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.update-notice ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.update-notice button {
+  margin-top: 8px;
+}
+.version-line {
+  margin: 16px;
+  font-size: 14px;
+}

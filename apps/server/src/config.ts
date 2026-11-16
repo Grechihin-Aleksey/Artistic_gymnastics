@@ -26,6 +26,12 @@ export interface AppConfig {
   licenseKey?: string;
   /** Открытый ключ проверки лицензий; по умолчанию — ключ владельца программы. */
   licensePublicKey?: string;
+  /** Где смотреть последнюю выпущенную версию (version.json в репозитории); пусто — не проверять. */
+  updateUrl?: string;
+  /** Ключ GitHub для закрытого репозитория: тот же, что у «Обновить.bat». */
+  githubToken?: string;
+  /** Файл version.json этой установки. */
+  versionFile?: string;
   /** Облачное хранилище S3 для копий базы и турниров; без него копии остаются только на ноутбуке. */
   s3?: S3Target & {
     /** Как часто отправлять, секунды. */
@@ -38,6 +44,9 @@ export interface AppConfig {
 }
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
+
+/** version.json в ветке main репозитория программы (через API GitHub: так работает и с ключом закрытого репозитория). */
+export const DEFAULT_UPDATE_URL = "https://api.github.com/repos/Grechihin-Aleksey/Artistic_gymnastics/contents/version.json?ref=main";
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -62,6 +71,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     s3: loadS3(env),
     licenseRequired: true,
     licenseKey: env.LICENSE_KEY || undefined,
+    updateUrl: env.UPDATE_CHECK === "off" ? undefined : env.UPDATE_URL || DEFAULT_UPDATE_URL,
+    githubToken: env.GITHUB_TOKEN || undefined,
+    versionFile: env.VERSION_FILE || undefined,
   };
 }
 

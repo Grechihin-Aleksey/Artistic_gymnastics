@@ -5,7 +5,7 @@ WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm --filter @ag/server... --filter @ag/judge... --filter @ag/scoreboard... build \
   && pnpm deploy --filter @ag/server --prod --legacy /out \
-  && cp -r apps/server/dist apps/server/drizzle /out/ \
+  && cp -r apps/server/dist apps/server/drizzle version.json /out/ \
   && cp -r apps/judge/dist /out/judge \
   && cp -r apps/scoreboard/dist /out/board
 
