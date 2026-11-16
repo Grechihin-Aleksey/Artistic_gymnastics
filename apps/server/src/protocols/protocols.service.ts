@@ -57,6 +57,7 @@ import ExcelJS from "exceljs";
 import { renderPdf } from "./pdf";
 import { resultsWorkbook } from "./workbook";
 import { APPARATUS_EVENT, diplomasDocument, type Diploma } from "./diplomas";
+import { safeName, zip, type ZipEntry } from "./zip";
 
 const DISCIPLINE_NAMES = { MAG: "мужчины", WAG: "женщины" } as const;
 const fmt = (n: number) => n.toFixed(3);
@@ -347,6 +348,58 @@ export class ProtocolsService {
       .sort((a, b) => order[a.role] - order[b.role] || a.seat - b.seat)
       .map((j) => `${j.role === "SUPERVISOR" ? "Старший судья" : `${j.role}${j.seat}`} — ${officialLabel(j)}`)
       .join("; ");
+  }
+
+  /**
+   * Пакет документов турнира одним архивом: протоколы, итоги в Excel, отчёт, разряды,
+   * коллегия, работа судей и журнал для жюри. У турнира из двух частей — папка на часть.
+   * Документ, который собрать не удалось, не ломает архив: он указан в «Состав пакета.txt».
+   */
+  async documentsPackage(competitionId: string): Promise<{ file: Buffer; name: string }> {
+    const competition = await this.competitions.get(competitionId);
+    const parts = competition.pairId
+      ? (await this.competitions.list()).filter((c) => c.pairId === competition.pairId)
+      : [competition];
+    const entries: ZipEntry[] = [];
+    const lines: string[] = [`${competition.name}`, `Собрано ${new Date().toLocaleString("ru-RU")}`, ""];
+    for (const part of parts) {
+      const folder = parts.length > 1 ? `${part.discipline === "WAG" ? "Девочки" : "Мальчики"}/` : "";
+      const finals = await this.finals.view(part.id).catch(() => null);
+      const docs: [string, () => Promise<Buffer>][] = [
+        ["01 Стартовый протокол.pdf", () => this.startList(part.id)],
+        ...apparatusFor(part.discipline).map(
+          (a, i): [string, () => Promise<Buffer>] => [
+            `${String(i + 2).padStart(2, "0")} Протокол — ${APPARATUS_NAMES[a]}.pdf`,
+            () => this.apparatus(part.id, a, undefined, "QUAL"),
+          ],
+        ),
+        ["10 Многоборье.pdf", () => this.allAround(part.id, undefined)],
+        ["11 Командное первенство.pdf", () => this.teams(part.id, undefined)],
+        ["12 Общекомандный зачёт клубов.pdf", () => this.clubs(part.id)],
+        ...apparatusFor(part.discipline)
+          .filter((a) => finals?.lists.some((l) => l.apparatus === a && l.finalists.length > 0))
+          .map((a): [string, () => Promise<Buffer>] => [`13 Финал — ${APPARATUS_NAMES[a]}.pdf`, () => this.apparatus(part.id, a, undefined, "FINAL")]),
+        ["20 Итоги.xlsx", () => this.workbook(part.id)],
+        ["21 Выполнили разряды.pdf", () => this.earned(part.id)],
+        ["22 Судейская коллегия.pdf", () => this.officials(part.id)],
+        ["23 Работа судей.pdf", () => this.eJudges(part.id)],
+        ["24 Итоговый отчёт.pdf", () => this.report(part.id)],
+        ["30 Журнал изменений.pdf", () => this.auditLog(part.id)],
+        ["31 Журнал изменений.xlsx", () => this.auditWorkbook(part.id)],
+      ];
+      if (folder) lines.push(folder.slice(0, -1));
+      for (const [name, make] of docs) {
+        try {
+          entries.push({ name: `${folder}${name}`, data: await make() });
+          lines.push(`  ${name}`);
+        } catch (e) {
+          lines.push(`  ${name} — не собран: ${(e as Error).message}`);
+        }
+      }
+    }
+    entries.unshift({ name: "Состав пакета.txt", data: Buffer.from(`\ufeff${lines.join("\r\n")}\r\n`, "utf8") });
+    const date = new Date().toISOString().slice(0, 10);
+    return { file: zip(entries), name: `${safeName(competition.name)} — документы ${date}.zip` };
   }
 
   /** Общекомандный зачёт клубов: очки по видам и места. */

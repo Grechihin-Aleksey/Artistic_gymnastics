@@ -240,9 +240,11 @@ async function fetchProtocol(competitionId: string, adminToken: string, path: st
   const url = URL.createObjectURL(await response.blob());
   if (tab) tab.location.href = url;
   else {
+    // Русское имя файла сервер отдаёт в filename* (например, пакет документов).
+    const named = /filename\*=UTF-8''([^;]+)/.exec(response.headers.get("Content-Disposition") ?? "")?.[1];
     const link = document.createElement("a");
     link.href = url;
-    link.download = filename;
+    link.download = named ? decodeURIComponent(named) : filename;
     link.click();
   }
 }
@@ -262,7 +264,7 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
 
   /** PDF открывается в новой вкладке, Excel скачивается файлом. */
   const open = async (path: string, filename: string, byCategory = true) => {
-    const download = filename.endsWith(".xlsx");
+    const download = filename.endsWith(".xlsx") || filename.endsWith(".zip");
     // Окно открываем сразу по нажатию, иначе браузер сочтёт его всплывающей рекламой.
     const tab = download ? null : window.open("", "_blank");
     const query =
@@ -337,6 +339,9 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         </button>
         <button type="button" onClick={() => void open("e-judges", "e-judges.pdf", false)}>
           Работа судей
+        </button>
+        <button type="button" onClick={() => void open("package.zip", "documents.zip", false)}>
+          Все документы одним архивом (ZIP)
         </button>
       </div>
       <h2>Финалы на снарядах</h2>
