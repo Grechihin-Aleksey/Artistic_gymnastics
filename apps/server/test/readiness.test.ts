@@ -79,4 +79,29 @@ describe("готовность к старту", () => {
     expect(copy.status).toBe("warn");
     expect(copy.text).toContain("40 мин");
   });
+
+  it("пробное восстановление из копии и место на диске", async () => {
+    const id = (await admin.post("/competitions", { name: "Восстановление", discipline: "WAG" }).expect(201)).body.id;
+    // Пока проверки не было, строки о ней нет.
+    expect(texts(await readiness(id), "Копии").some((c) => c.text.includes("восстановлени"))).toBe(false);
+    expect(texts(await readiness(id), "Диск")[0]!.text).toMatch(/Свободно на диске \d+\.\d ГБ/);
+
+    const at = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    const check = join(backupDir, "restore-check.json");
+    await writeFile(check, JSON.stringify({ ok: true, at, file: "gymnastics-1.dump", competitions: 4 }));
+    let line = texts(await readiness(id), "Копии").find((c) => c.text.includes("восстановлени"))!;
+    expect(line.status).toBe("ok");
+    expect(line.text).toContain("3 ч назад");
+    expect(line.text).toContain("турниров в копии 4");
+
+    await writeFile(check, JSON.stringify({ ok: false, at, file: "gymnastics-1.dump", error: "input file is too short" }));
+    line = texts(await readiness(id), "Копии").find((c) => c.text.includes("восстановлени"))!;
+    expect(line.status).toBe("fail");
+    expect(line.text).toContain("input file is too short");
+
+    const old = new Date(Date.now() - 30 * 3_600_000).toISOString();
+    await writeFile(check, JSON.stringify({ ok: true, at: old, file: "gymnastics-1.dump", competitions: 4 }));
+    line = texts(await readiness(id), "Копии").find((c) => c.text.includes("восстановлени"))!;
+    expect(line.status).toBe("warn");
+  });
 });

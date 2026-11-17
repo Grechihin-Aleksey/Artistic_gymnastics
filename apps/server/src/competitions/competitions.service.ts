@@ -30,7 +30,14 @@ export type CompetitionRow = typeof competitions.$inferSelect;
 const gymnastNote = (g: typeof gymnasts.$inferSelect) => ({ gymnastId: g.id, bib: g.bib, name: `${g.lastName} ${g.firstName}` });
 
 /** Соревнование для клиентов: сам логотип отдаётся отдельно, он тяжёлый. */
-export function publicCompetition({ logo, deductions, entryKey: _key, ...rest }: CompetitionRow) {
+export function publicCompetition({
+  logo,
+  deductions,
+  entryKey: _key,
+  chiefTokenHash: _chiefHash,
+  chiefTokenSealed: _chiefSealed,
+  ...rest
+}: CompetitionRow) {
   return {
     ...rest,
     deductions: deductions.map((d) => ({ name: d.name, value: fromPoints(d.value) })),
@@ -834,6 +841,34 @@ export class CompetitionsService {
       .where(eq(judges.competitionId, competitionId))
       .orderBy(asc(judges.apparatus), asc(judges.role), asc(judges.seat));
     return rows.map((row) => ({ ...withoutSecrets(row), token: openToken(row.tokenSealed, this.config.adminToken) }));
+  }
+
+  /**
+   * Код главного судьи для отдельного ПК или планшета. У турнира из двух частей код один —
+   * хранится у первой части и открывает обе. token null — кода ещё нет или выдан при другом токене секретариата.
+   */
+  async chiefCode(competitionId: string): Promise<{ competitionId: string; token: string | null }> {
+    const owner = await this.chiefOwner(competitionId);
+    return { competitionId: owner.id, token: owner.chiefTokenHash ? openToken(owner.chiefTokenSealed, this.config.adminToken) : null };
+  }
+
+  /** Новый код главного судьи: прежний перестаёт работать. */
+  async newChiefCode(competitionId: string): Promise<{ competitionId: string; token: string }> {
+    const owner = await this.chiefOwner(competitionId);
+    const token = newToken();
+    await this.db
+      .update(competitions)
+      .set({ chiefTokenHash: hashToken(token), chiefTokenSealed: sealToken(token, this.config.adminToken) })
+      .where(eq(competitions.id, owner.id));
+    await this.db.insert(auditLog).values({ competitionId: owner.id, actor: "admin", action: "chief.code", details: {} });
+    return { competitionId: owner.id, token };
+  }
+
+  private async chiefOwner(competitionId: string): Promise<CompetitionRow> {
+    const competition = await this.get(competitionId);
+    if (!competition.pairId) return competition;
+    const parts = await this.db.select().from(competitions).where(eq(competitions.pairId, competition.pairId)).orderBy(asc(competitions.createdAt));
+    return parts.find((p) => p.chiefTokenHash) ?? parts[0] ?? competition;
   }
 
   /** Секретариат разрешает вход по коду судьи на новом планшете; прежний планшет код больше не открывает. */

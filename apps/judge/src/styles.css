@@ -2032,3 +2032,35 @@ input.secret {
   padding: 0;
   list-style: none;
 }
+
+/* Экран главного судьи на отдельном ПК или планшете. */
+.chief-screen .bar {
+  gap: 16px;
+}
+.chief-screen .chief-title {
+  flex: 1;
+  font-weight: 600;
+}
+.chief-code .chief-link {
+  word-break: break-all;
+  font-size: 12px;
+}
+.chief-code-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chief-code .qr.wide {
+  justify-self: start;
+}
+
+.cleanup-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.cleanup-form input {
+  width: 6rem;
+}

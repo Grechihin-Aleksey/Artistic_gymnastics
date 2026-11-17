@@ -824,6 +824,31 @@ export interface ReadinessView {
   checkedAt: string;
 }
 
+/** Очистка после турниров: через сколько дней без изменений убирать лишние копии базы. */
+export const CLEANUP_DEFAULT_DAYS = 30;
+/** Сколько самых свежих копий базы остаётся всегда: последний час турнира. */
+export const CLEANUP_KEEP_DUMPS = 12;
+
+export const setCleanupSchema = z.object({
+  /** 0 — не удалять автоматически. */
+  days: z.number().int().min(0).max(3650),
+});
+export type SetCleanupInput = z.infer<typeof setCleanupSchema>;
+
+export interface CleanupStatus {
+  /** Папка копий подключена (сервер запущен через «Запуск»). */
+  enabled: boolean;
+  days: number;
+  /** Когда в базе последний раз что-то менялось (по самой свежей копии); null — копий нет. */
+  lastChangeAt: string | null;
+  /** Когда сработает автоудаление; null — выключено или удалять нечего. */
+  dueAt: string | null;
+  dumps: { count: number; bytes: number };
+  /** Что уйдёт при очистке: все копии, кроме CLEANUP_KEEP_DUMPS самых свежих. */
+  removable: { count: number; bytes: number };
+  lastRun: { at: string; deleted: number; freedBytes: number; auto: boolean } | null;
+}
+
 /** Итог сбора оценок с планшетов после восстановления базы. */
 export interface RecoveryReport {
   /** Сколько планшетов судей было на связи, когда секретариат попросил оценки. */
