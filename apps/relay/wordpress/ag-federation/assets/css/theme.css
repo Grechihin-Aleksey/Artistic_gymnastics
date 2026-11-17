@@ -650,3 +650,57 @@ button { font: inherit; }
 .aa-table summary { cursor: pointer; padding: 14px 0; list-style-position: inside; }
 .aa-table summary b { color: var(--ag-primary); }
 .aa-table .place { width: 24px; height: 24px; font-size: 12px; }
+
+/* Сдача нормативов на странице группы */
+.norm-test + .norm-test { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--ag-line-soft); }
+.norm-test__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 10px; }
+.norm-test__head .chip { margin-left: auto; }
+.norm-table th, .norm-table th.num { white-space: normal; min-width: 80px; max-width: 130px; vertical-align: bottom; }
+.norm-table td:nth-child(2) { white-space: nowrap; }
+.norm-table th small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.norm-table td.is-pass { color: #1d6b3c; font-weight: 600; }
+.norm-table td.is-fail { color: #b3261e; }
+.norm-pass { color: #1d6b3c; }
+.norm-fail { color: #b3261e; }
+.norm-lines { display: grid; }
+.norm-line { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 6px 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--ag-line-soft); color: var(--ag-text); text-decoration: none; }
+.norm-line:last-child { border-bottom: 0; }
+.norm-line:hover .norm-line__main b { color: var(--ag-accent-dark); }
+.norm-line__date { color: var(--ag-muted); font-size: 14px; }
+.norm-line__main small { display: block; color: var(--ag-muted); font-size: 13px; }
+.norm-line__more { color: var(--ag-primary); font-weight: 600; font-size: 14px; white-space: nowrap; }
+.norm-lines__all { margin: 14px 0 0; }
+.norm-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; margin-bottom: 18px; }
+.norm-sum__big { font-size: 20px; color: var(--ag-muted); }
+.norm-sum__big b { font-size: 44px; line-height: 1; color: #1d6b3c; }
+.norm-sum__big span { display: block; font-size: 14px; }
+.norm-sum__text { flex: 1 1 280px; }
+.norm-sum__text p { margin: 0 0 6px; }
+.norm-print-only { display: none; }
+.norm-back { margin: 20px 0 0; }
+@media (max-width: 640px) {
+    .norm-line { grid-template-columns: 1fr auto; }
+    .norm-line__date { grid-column: 1 / -1; }
+    .norm-line__more { display: none; }
+}
+
+/* Печать ведомости (и «Сохранить как PDF» в браузере) */
+@media print {
+    @page { size: A4 landscape; margin: 12mm; }
+    body { background: #fff !important; color: #000; }
+    .site-header, .site-footer, .crumbs, .norm-no-print, .skip-link, #wpadminbar { display: none !important; }
+    .norm-print-only { display: block; }
+    .page-head { background: none !important; color: #000 !important; padding: 0 0 8px !important; }
+    .page-head__title { color: #000 !important; font-size: 22px !important; }
+    .comp-head__meta li { color: #000 !important; }
+    .norm-print-title { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 4px; }
+    .section { padding: 0 !important; }
+    .container { max-width: none !important; padding: 0 !important; }
+    .card { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
+    .norm-sum__big b { font-size: 28px; }
+    .table-wrap { overflow: visible; }
+    .rtable { font-size: 11pt; }
+    .rtable th, .rtable td { border: 1px solid #999 !important; padding: 4px 6px !important; color: #000 !important; }
+    .norm-table td.is-pass { background: #e3f3e8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .norm-sign { margin-top: 28px; display: flex; gap: 60px; }
+}

@@ -15,3 +15,24 @@
 .ag-photos__list li { position: relative; width: 96px; height: 96px; margin: 0; cursor: move; }
 .ag-photos__list img { width: 96px; height: 96px; object-fit: cover; border-radius: 4px; display: block; }
 .ag-photos__remove { position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; cursor: pointer; line-height: 1; }
+
+/* Нормативы: упражнения и ведомость */
+.ag-rows input[type="text"] { width: 100%; box-sizing: border-box; }
+.ag-rows td { vertical-align: middle; }
+.ag-sheet-wrap { overflow-x: auto; margin: 8px 0; }
+.ag-sheet { min-width: 640px; }
+.ag-sheet th { font-weight: 600; vertical-align: bottom; }
+.ag-sheet th small { display: block; font-weight: 400; color: #646970; }
+.ag-sheet td:first-child { min-width: 200px; }
+.ag-sheet td input { min-width: 70px; text-align: center; }
+.ag-sheet td:first-child input { text-align: left; }
+.ag-sheet td.is-pass { background: #e7f6ec; }
+.ag-sheet td.is-pass input { border-color: #68c08a; }
+.ag-sheet td.is-fail { background: #fcecec; }
+.ag-sheet td.is-fail input { border-color: #e08b8b; }
+.ag-pass { color: #1a7f37; }
+.ag-fail { color: #b32d2e; }
+.ag-club-links { margin: 0 0 12px; }
+.ag-club-links li { margin: 0 0 8px; }
+.post-type-ag_norm_test #titlediv { display: none; }
+.ag-norm-status { background: #f6f7f7; border-left: 4px solid #2271b1; padding: 8px 12px; }

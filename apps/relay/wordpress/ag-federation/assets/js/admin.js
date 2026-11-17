@@ -113,3 +113,34 @@
     sync(box);
   });
 })(jQuery);
+
+/* Строки таблиц (упражнения нормативов, ведомость): добавить по шаблону и убрать. */
+(function ($) {
+  "use strict";
+  $(document).on("click", ".ag-rows__add", function (e) {
+    e.preventDefault();
+    var box = $(this).closest(".postbox, .inside");
+    var table = box.find("[data-ag-rows]").first();
+    var tpl = box.find("template[data-ag-rows-template]").first();
+    if (!table.length || !tpl.length) return;
+    var row = $(tpl.html());
+    table.find("tbody").append(row);
+    row.find("input").first().trigger("focus");
+  });
+  $(document).on("click", "[data-ag-rows] .ag-rows__remove", function (e) {
+    e.preventDefault();
+    var tbody = $(this).closest("tbody");
+    $(this).closest("tr").remove();
+    if (!tbody.children("tr").length) {
+      tbody.closest(".inside").find(".ag-rows__add").first().trigger("click");
+    }
+  });
+  /* Ведомость: Enter переходит к той же клетке у следующего спортсмена. */
+  $(document).on("keydown", ".ag-sheet input", function (e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    var td = $(this).closest("td");
+    var next = td.closest("tr").next("tr").children().eq(td.index()).find("input");
+    if (next.length) next.trigger("focus");
+  });
+})(jQuery);

@@ -40,6 +40,9 @@ $email = ag_mod('ag_email');
                 if (ag_has_groups()) {
                     echo '<li><a href="' . esc_url(ag_groups_url(true)) . '">Расписание занятий</a></li>';
                 }
+                if (wp_count_posts('ag_norm_test')->publish) {
+                    echo '<li><a href="' . esc_url(get_post_type_archive_link('ag_norm_test')) . '">Сдача нормативов</a></li>';
+                }
                 if (ag_has_notices()) {
                     echo '<li><a href="' . esc_url(get_post_type_archive_link('ag_notice')) . '">Объявления</a></li>';
                 }

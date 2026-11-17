@@ -14,14 +14,16 @@
  *   inc/signup.php      — онлайн-запись в группу;
  *   inc/rating.php      — рейтинг сезона (/rating/);
  *   inc/ical.php        — подписка на календарь соревнований;
- *   inc/gallery.php     — фотографии турнира.
+ *   inc/gallery.php     — фотографии турнира;
+ *   inc/normatives.php  — нормативы и приём их сдачи по группам;
+ *   inc/roles.php       — администраторы клубов.
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-define('AG_THEME_VERSION', '1.2.0');
+define('AG_THEME_VERSION', '1.3.0');
 
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/post-types.php';
@@ -35,6 +37,8 @@ require_once __DIR__ . '/inc/signup.php';
 require_once __DIR__ . '/inc/rating.php';
 require_once __DIR__ . '/inc/ical.php';
 require_once __DIR__ . '/inc/gallery.php';
+require_once __DIR__ . '/inc/normatives.php';
+require_once __DIR__ . '/inc/roles.php';
 
 function ag_theme_setup()
 {
@@ -79,7 +83,7 @@ function ag_admin_assets($hook)
         return;
     }
     $screen = get_current_screen();
-    if (!$screen || !in_array($screen->post_type, array('ag_competition', 'ag_document', 'ag_club', 'ag_group', 'ag_notice'), true)) {
+    if (!$screen || !in_array($screen->post_type, array('ag_competition', 'ag_document', 'ag_club', 'ag_group', 'ag_notice', 'ag_signup', 'ag_norm_set', 'ag_norm_test'), true)) {
         return;
     }
     wp_enqueue_media();

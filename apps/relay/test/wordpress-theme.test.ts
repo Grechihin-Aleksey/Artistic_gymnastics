@@ -17,6 +17,7 @@ function run(body: string, today = "2026-11-17") {
     require ${JSON.stringify(join(THEME, "inc", "archive.php"))};
     require ${JSON.stringify(join(THEME, "inc", "sections.php"))};
     require ${JSON.stringify(join(THEME, "inc", "ical.php"))};
+    require ${JSON.stringify(join(THEME, "inc", "normatives.php"))};
     ${body}
   `;
   const out = spawnSync("php", ["-r", code], { encoding: "utf8" });
@@ -89,6 +90,26 @@ describe.skipIf(!hasPhp)("тема WordPress", () => {
   it("названия клубов сравниваются без кавычек, регистра и ё", () => {
     expect(run(`echo json_encode([ag_norm('СШОР «Спартак»') === ag_norm('сшор спартак'), ag_norm('Фёдорова  Ева'), ag_club_initial('СШОР «Спартак»'), ag_club_initial('ДЮСШ Дзержинск'), ag_score(13.45), ag_plural(21, 'день', 'дня', 'дней')]);`)).toEqual([
       true, "федорова ева", "С", "Д", "13,450", "день",
+    ]);
+  });
+
+  it("нормативы: время и числа, «больше — лучше» и «меньше — лучше», зачёт по числу упражнений", () => {
+    const items = [
+      { name: "Бег 30 м", unit: "с", better: "less", pass: "6,6" },
+      { name: "Прыжок", unit: "см", better: "more", pass: "140" },
+      { name: "Бег 500 м", unit: "мин:сек", better: "less", pass: "1:50" },
+    ];
+    const J = JSON.stringify(JSON.stringify(items));
+    expect(
+      run(`$i = json_decode(${J}, true); echo json_encode([
+        ag_norm_number('8,5'), ag_norm_number('1:05,3'), ag_norm_number(''), ag_norm_number('abc'),
+        ag_norm_passed($i[0], '6,6'), ag_norm_passed($i[0], '6,7'), ag_norm_passed($i[1], '139'), ag_norm_passed($i[2], '1:49,9'), ag_norm_passed($i[0], ''),
+        ag_norm_row_result($i, ['6,4', '120', '1:45'], 2), ag_norm_row_result($i, ['6,9', '120', '1:45'], 2), ag_norm_row_result($i, ['6,4', '', ''], 2), ag_norm_row_result($i, ['6,9', '130', ''], 2),
+      ]);`),
+    ).toEqual([
+      8.5, 65.3, null, null,
+      true, false, false, true, null,
+      { done: 2, total: 3, passed: true }, { done: 1, total: 3, passed: false }, { done: 1, total: 3, passed: null }, { done: 0, total: 3, passed: false },
     ]);
   });
 });

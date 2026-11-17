@@ -28,6 +28,7 @@ while (have_posts()) :
                     <div class="card"><div class="entry-content"><?php the_content(); ?></div></div>
                 <?php endif; ?>
                 <?php ag_club_groups_section($id); ?>
+                <?php ag_group_normatives_section(0, $id); ?>
                 <?php if (function_exists('ag_archive_club_section')) {
                     ag_archive_club_section($id);
                 } ?>

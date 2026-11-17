@@ -56,6 +56,7 @@ while (have_posts()) :
                         </ol>
                     </div>
                 <?php endif; ?>
+                <?php ag_group_normatives_section(get_the_ID()); ?>
             </div>
             <aside class="comp-layout__side">
                 <div class="card contacts">

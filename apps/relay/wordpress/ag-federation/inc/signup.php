@@ -254,7 +254,11 @@ function ag_signup_menu_count()
     if (empty($submenu[$parent])) {
         return;
     }
-    $new = get_posts(array('post_type' => 'ag_signup', 'posts_per_page' => 100, 'fields' => 'ids', 'meta_query' => array(array('key' => '_ag_done', 'compare' => 'NOT EXISTS'))));
+    $meta = array(array('key' => '_ag_done', 'compare' => 'NOT EXISTS'));
+    if (function_exists('ag_user_club') && ag_user_club()) {
+        $meta[] = array('key' => '_ag_club', 'value' => (string) ag_user_club());
+    }
+    $new = get_posts(array('post_type' => 'ag_signup', 'posts_per_page' => 100, 'fields' => 'ids', 'meta_query' => $meta));
     if (!$new) {
         return;
     }

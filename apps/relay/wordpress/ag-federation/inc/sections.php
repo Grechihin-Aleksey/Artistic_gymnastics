@@ -238,6 +238,11 @@ add_action('add_meta_boxes', 'ag_section_boxes');
 
 function ag_club_options($current)
 {
+    $mine = function_exists('ag_user_club') ? ag_user_club() : 0;
+    if ($mine) {
+        // Администратор клуба выбирает только свой клуб.
+        return $mine > 0 ? '<option value="' . (int) $mine . '" selected>' . esc_html(get_the_title($mine)) . '</option>' : '';
+    }
     $clubs = get_posts(array('post_type' => 'ag_club', 'posts_per_page' => 200, 'orderby' => 'title', 'order' => 'ASC'));
     $html = '<option value="">— не указан —</option>';
     foreach ($clubs as $c) {
