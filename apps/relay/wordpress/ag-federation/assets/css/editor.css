@@ -1,0 +1,4 @@
+/* Как текст будет выглядеть на сайте — в редакторе блоков. */
+body { font-family: "Golos Text", system-ui, sans-serif; color: #14233a; font-size: 17px; line-height: 1.65; }
+h1, h2, h3, h4 { color: #0d2c54; line-height: 1.2; }
+a { color: #c74e2d; }

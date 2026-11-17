@@ -1,0 +1,8 @@
+.ag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 20px; }
+.ag-field { margin: 0 0 12px; }
+.ag-field label { display: block; font-weight: 600; margin-bottom: 4px; }
+.ag-field input[type=text], .ag-field input[type=url], .ag-field input[type=date], .ag-field select, .ag-field textarea { width: 100%; max-width: 100%; }
+.ag-field .description { margin-top: 4px; }
+.ag-section { margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid #dcdcde; font-size: 14px; }
+.ag-docs__list { margin: 0 0 10px; }
+.ag-docs__list li { display: flex; gap: 10px; align-items: center; }
