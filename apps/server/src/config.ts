@@ -32,6 +32,16 @@ export interface AppConfig {
   githubToken?: string;
   /** Файл version.json этой установки. */
   versionFile?: string;
+  /** Папка для видеоповторов: непрерывная запись камер и ролики выступлений; без неё повторов нет. */
+  videoDir?: string;
+  /** Программа ffmpeg для записи камер. */
+  ffmpegPath?: string;
+  /** Сколько часов хранить непрерывную запись камер. */
+  videoKeepHours?: number;
+  /** Сколько дней хранить ролики выступлений. */
+  videoClipDays?: number;
+  /** Ниже стольких гигабайт свободного места запись останавливается. */
+  videoMinFreeGb?: number;
   /** Облачное хранилище S3 для копий базы и турниров; без него копии остаются только на ноутбуке. */
   s3?: S3Target & {
     /** Как часто отправлять, секунды. */
@@ -74,6 +84,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     updateUrl: env.UPDATE_CHECK === "off" ? undefined : env.UPDATE_URL || DEFAULT_UPDATE_URL,
     githubToken: env.GITHUB_TOKEN || undefined,
     versionFile: env.VERSION_FILE || undefined,
+    videoDir: env.VIDEO_DIR || undefined,
+    ffmpegPath: env.FFMPEG_PATH || undefined,
+    videoKeepHours: Number(env.VIDEO_KEEP_HOURS || 3),
+    videoClipDays: Number(env.VIDEO_CLIP_DAYS || 14),
+    videoMinFreeGb: Number(env.VIDEO_MIN_FREE_GB || 5),
   };
 }
 

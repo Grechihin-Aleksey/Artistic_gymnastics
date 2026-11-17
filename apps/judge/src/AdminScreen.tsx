@@ -4,6 +4,7 @@ import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
 import { ChiefJudgePanel } from "./ChiefJudge";
 import { CleanupPanel } from "./CleanupPanel";
+import { VideoCamerasPanel } from "./Replays";
 import { UpdateNotice, VersionLine } from "./Updates";
 import { ApiError, apiRequest } from "./api";
 import { copyText } from "./clipboard";
@@ -496,6 +497,12 @@ export function AdminScreen() {
           <details className="no-print new-competition">
             <summary>Очистка после турниров</summary>
             <CleanupPanel adminToken={adminToken} onError={setError} />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
+            <summary>Камеры видеоповторов</summary>
+            <VideoCamerasPanel adminToken={adminToken} competitionId={competition?.id ?? null} onError={setError} />
           </details>
         )}
         {adminToken && (

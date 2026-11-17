@@ -4,6 +4,7 @@ import { eToleranceFor, type InquiryView, type PerformanceView, type RulesView }
 import { ApparatusIcon } from "./ApparatusIcon";
 import { apiRequest } from "./api";
 import { APPARATUS_NAMES } from "./labels";
+import { hasCamera, ReplayButton, useVideoStatus } from "./Replays";
 import { useCompetitionLive } from "./useLive";
 
 /** Оценку ставят дольше этого — повод подойти к бригаде. */
@@ -28,6 +29,8 @@ export interface ChiefFlag {
   kind: "spread" | "slow" | "neutral" | "inquiry";
   apparatus: string;
   gymnastId: string;
+  /** Выступление, к которому относится отметка: для видеоповтора. */
+  performanceId: string;
   text: string;
   /** Для сортировки: новые сверху. */
   at: number;
@@ -56,7 +59,7 @@ export function chiefFlags(
     const at = new Date(p.approvedAt ?? p.calledAt ?? 0).getTime();
     if (p.status === "SCORING" && p.calledAt && now - new Date(p.calledAt).getTime() > SLOW_SCORING_MS) {
       const minutes = Math.floor((now - new Date(p.calledAt).getTime()) / 60_000);
-      flags.push({ kind: "slow", apparatus: p.apparatus, gymnastId: p.gymnastId, at: now, text: `оценку ставят уже ${minutes} мин` });
+      flags.push({ kind: "slow", apparatus: p.apparatus, gymnastId: p.gymnastId, performanceId: p.id, at: now, text: `оценку ставят уже ${minutes} мин` });
     }
     if (p.status !== "APPROVED") continue;
     const e = p.marks.filter((m) => m.kind === "E").map((m) => m.value);
@@ -68,13 +71,14 @@ export function chiefFlags(
           kind: "spread",
           apparatus: p.apparatus,
           gymnastId: p.gymnastId,
+          performanceId: p.id,
           at,
           text: `сбавки E расходятся на ${spread.toFixed(2)} (допуск ${tolerance.toFixed(2)}): ${e.map((v) => v.toFixed(1)).join(" · ")}`,
         });
       }
     }
     if ((p.score?.neutral ?? 0) > 0) {
-      flags.push({ kind: "neutral", apparatus: p.apparatus, gymnastId: p.gymnastId, at, text: `нейтральная сбавка ${p.score!.neutral.toFixed(2)}` });
+      flags.push({ kind: "neutral", apparatus: p.apparatus, gymnastId: p.gymnastId, performanceId: p.id, at, text: `нейтральная сбавка ${p.score!.neutral.toFixed(2)}` });
     }
   }
   for (const i of inquiries) {
@@ -83,6 +87,7 @@ export function chiefFlags(
       kind: "inquiry",
       apparatus: i.apparatus,
       gymnastId: i.gymnast.id,
+      performanceId: i.performanceId,
       at: now + 1,
       text: `запрос тренера ${i.coach} на пересмотр D ждёт решения${i.late ? " (подан с опозданием)" : ""}`,
     });
@@ -132,6 +137,7 @@ export function ChiefJudgePanel({
   const [gymnasts, setGymnasts] = useState<Map<string, Gymnast>>(new Map());
   const [panel, setPanel] = useState<PanelJudge[]>([]);
   const [now, setNow] = useState(() => Date.now());
+  const [video] = useVideoStatus(active ? adminToken : null);
 
   const load = useCallback(async () => {
     try {
@@ -172,6 +178,16 @@ export function ChiefJudgePanel({
     const g = gymnasts.get(id);
     return g ? `№${g.bib} ${g.lastName} ${g.firstName}` : "участник";
   };
+  const replayTitle = (p: { gymnastId: string; apparatus: string }) => `${APPARATUS_NAMES[p.apparatus]}, ${who(p.gymnastId)}`;
+  // Последние утверждённые выступления на снарядах с камерами: свежие сверху.
+  const recent = useMemo(
+    () =>
+      performances
+        .filter((p) => p.status === "APPROVED" && hasCamera(video, p.apparatus))
+        .sort((a, b) => (b.approvedAt ?? "").localeCompare(a.approvedAt ?? ""))
+        .slice(0, 12),
+    [performances, video],
+  );
 
   return (
     <div className="chief">
@@ -202,7 +218,8 @@ export function ChiefJudgePanel({
                   <p className="muted">
                     Последняя: {who(c.last.gymnastId)} — <strong>{fmt(c.last.score.total)}</strong> (D {fmt(c.last.score.d)} · E{" "}
                     {fmt(c.last.score.e)}
-                    {c.last.score.neutral > 0 ? ` · −${c.last.score.neutral.toFixed(2)}` : ""})
+                    {c.last.score.neutral > 0 ? ` · −${c.last.score.neutral.toFixed(2)}` : ""}){" "}
+                    <ReplayButton performanceId={c.last.id} apparatus={c.apparatus} title={replayTitle(c.last)} adminToken={adminToken} video={video} />
                   </p>
                 )}
               </div>
@@ -225,6 +242,11 @@ export function ChiefJudgePanel({
                   <td>{APPARATUS_NAMES[f.apparatus]}</td>
                   <td>{who(f.gymnastId)}</td>
                   <td>{f.text}</td>
+                  <td>
+                    {f.kind !== "slow" && (
+                      <ReplayButton performanceId={f.performanceId} apparatus={f.apparatus} title={replayTitle(f)} adminToken={adminToken} video={video} />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -235,6 +257,37 @@ export function ChiefJudgePanel({
           оценку исправляют на вкладке «Ход соревнования», в блоке «Ввод оценок с судейских листов».
         </p>
       </section>
+      {video && video.cameras.length > 0 && (
+        <section className="panel no-print">
+          <h2>Видеоповторы</h2>
+          {recent.length === 0 ? (
+            <p className="muted wide">Утверждённых оценок на снарядах с камерами пока нет. Ролик появляется через 10–20 секунд после оценки.</p>
+          ) : (
+            <ul className="wide chief-replays">
+              {recent.map((p) => (
+                <li key={p.id}>
+                  <ReplayButton performanceId={p.id} apparatus={p.apparatus} title={replayTitle(p)} adminToken={adminToken} video={video} />
+                  <span>
+                    {APPARATUS_NAMES[p.apparatus]} · {who(p.gymnastId)}
+                    {p.attempt > 1 ? `, прыжок ${p.attempt}` : ""}
+                    {p.score && <span className="muted"> — {fmt(p.score.total)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {video.cameras.some((c) => c.state !== "recording") && (
+            <p className="warning-text wide">
+              Не пишет:{" "}
+              {video.cameras
+                .filter((c) => c.state !== "recording")
+                .map((c) => `${APPARATUS_NAMES[c.apparatus]} (${c.message ?? "подключается"})`)
+                .join("; ")}
+              . Судить можно и без камеры.
+            </p>
+          )}
+        </section>
+      )}
     </div>
   );
 }

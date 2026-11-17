@@ -10,6 +10,8 @@ RUN pnpm install --frozen-lockfile && pnpm --filter @ag/server... --filter @ag/j
   && cp -r apps/scoreboard/dist /out/board
 
 FROM node:22-alpine
+# ffmpeg пишет IP-камеры видеоповторов и нарезает ролики выступлений; без камер он просто не используется.
+RUN apk add --no-cache ffmpeg
 WORKDIR /app
 ENV NODE_ENV=production
 ENV JUDGE_DIST=/app/judge

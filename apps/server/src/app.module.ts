@@ -49,6 +49,8 @@ import { SiteController } from "./relay/site.controller";
 import { CeremonyController } from "./results/ceremony.controller";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
+import { VideoController } from "./video/video.controller";
+import { VideoService } from "./video/video.service";
 
 @Module({})
 export class AppModule {
@@ -90,6 +92,7 @@ export class AppModule {
         StandbyController,
         CleanupController,
         UpdatesController,
+        VideoController,
       ],
       providers: [
         AuthService,
@@ -117,6 +120,7 @@ export class AppModule {
         StandbyService,
         CleanupService,
         UpdatesService,
+        VideoService,
       ],
     };
   }

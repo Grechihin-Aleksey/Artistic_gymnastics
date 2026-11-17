@@ -62,8 +62,15 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       UPDATE_CHECK: ${UPDATE_CHECK:-}
       BACKUP_DIR: /backups
+      # Видеоповторы с IP-камер (необязательно): камеры подключают в секретариате, блок «Камеры видеоповторов».
+      # Запись и ролики лежат в папке video рядом с этим файлом.
+      VIDEO_DIR: /video
+      VIDEO_KEEP_HOURS: ${VIDEO_KEEP_HOURS:-3}
+      VIDEO_CLIP_DAYS: ${VIDEO_CLIP_DAYS:-14}
+      VIDEO_MIN_FREE_GB: ${VIDEO_MIN_FREE_GB:-5}
     volumes:
       - ./backups:/backups
+      - ./video:/video
     ports:
       - "3000:3000"
 

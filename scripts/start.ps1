@@ -27,6 +27,7 @@ if ((Get-Content ".env") -contains "ADMIN_TOKEN=change-me-to-a-long-random-strin
   Write-Host "В .env остался токен секретариата из образца. Замените его своим в строке ADMIN_TOKEN." -ForegroundColor Yellow
 }
 New-Item -ItemType Directory -Force -Path "backups" | Out-Null
+New-Item -ItemType Directory -Force -Path "video" | Out-Null
 
 # Docker Desktop закрыт: запускаем его сами и ждём, пока он поднимется.
 docker info *> $null
