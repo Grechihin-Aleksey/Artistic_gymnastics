@@ -30,6 +30,7 @@ import {
   JudgesPresencePanel,
   SiteBadge,
   SitePanel,
+  SiteCardPanel,
   OfficialsPanel,
   ProgressPanel,
   InquiriesPanel,
@@ -520,6 +521,7 @@ export function AdminScreen() {
         )}
         {ready && competition && (
           <>
+            <SiteCardPanel key={`site-card-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
             <SitePanel
               key={`site-now-${competition.id}`}
               partnerId={partner?.id}

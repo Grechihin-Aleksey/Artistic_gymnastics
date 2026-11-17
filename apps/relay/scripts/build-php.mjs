@@ -1,5 +1,5 @@
 // Собирает PHP-ретранслятор в папку results и архив для загрузки на хостинг,
-// а также архив плагина WordPress с шорткодом табло:
+// а также архивы плагина WordPress с шорткодом табло и темы сайта федерации:
 //   pnpm --filter @ag/scoreboard build && pnpm --filter @ag/relay build:php
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
@@ -27,4 +27,6 @@ cpSync(widget, join(target, "widget"), { recursive: true });
 execFileSync("zip", ["-qr", "ag-relay-php.zip", "results"], { cwd: out });
 cpSync(join(relay, "wordpress", "ag-results"), join(out, "ag-results"), { recursive: true });
 execFileSync("zip", ["-qr", "ag-results-wordpress.zip", "ag-results"], { cwd: out });
-console.log(`Готово: ${join(out, "ag-relay-php.zip")} и ${join(out, "ag-results-wordpress.zip")}`);
+cpSync(join(relay, "wordpress", "ag-federation"), join(out, "ag-federation"), { recursive: true });
+execFileSync("zip", ["-qr", "ag-federation-theme.zip", "ag-federation"], { cwd: out });
+console.log(`Готово: ${join(out, "ag-relay-php.zip")}, ${join(out, "ag-results-wordpress.zip")} и ${join(out, "ag-federation-theme.zip")}`);

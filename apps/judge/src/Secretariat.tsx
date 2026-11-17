@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Keybo
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
 import { LOW_BATTERY_PERCENT, AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
-import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer, StandbyStatus } from "@ag/shared";
+import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, SiteCardView, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer, StandbyStatus } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
 import { copyText } from "./clipboard";
 import { ApiError, apiRequest } from "./api";
@@ -2834,6 +2834,117 @@ export function SitePanel({
           </button>
         </details>
       )}
+    </section>
+  );
+}
+
+/**
+ * «Подключить к сайту»: создаёт на сайте федерации карточку соревнования (название, даты, место,
+ * ID частей турнира и ключ онлайн-заявок) или обновляет её. Дальше страница турнира на сайте
+ * сама показывает приём заявок, табло, протоколы и итоги.
+ */
+export function SiteCardPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+  const [view, setView] = useState<SiteCardView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ start: "", end: "", venue: "", city: "" });
+
+  const load = useCallback(async () => {
+    try {
+      const v = await apiRequest<SiteCardView>(`/competitions/${competitionId}/site-card`, { token: adminToken });
+      setView(v);
+      if (v.card) setForm({ start: v.card.start, end: v.card.end, venue: v.card.venue, city: v.card.city });
+    } catch {
+      setView(null);
+    }
+  }, [competitionId, adminToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const publish = async () => {
+    setBusy(true);
+    try {
+      const v = await apiRequest<SiteCardView>(`/competitions/${competitionId}/site-card`, { token: adminToken, method: "POST", body: form });
+      setView(v);
+      if (v.card) setForm({ start: v.card.start, end: v.card.end, venue: v.card.venue, city: v.card.city });
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!view || view.trial) return null;
+  if (!view.enabled) {
+    return (
+      <section className="panel no-print site-panel">
+        <h2>Карточка на сайте федерации</h2>
+        <p className="muted wide">
+          Кнопка «Подключить к сайту» сама заведёт турнир в календаре сайта федерации. Для неё создайте в WordPress пароль
+          приложения («Пользователи → Профиль → Пароли приложений»), впишите в файл .env строки WP_USER и WP_APP_PASSWORD и
+          перезапустите программу.
+        </p>
+      </section>
+    );
+  }
+  const card = view.card;
+  const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  return (
+    <section className="panel no-print site-panel site-card">
+      <h2>Карточка на сайте федерации</h2>
+      <p className="wide site-state">
+        <span className={view.error ? "dot down" : card ? "dot ok" : "dot idle"} />
+        {view.error ? (
+          <strong>{view.error}.</strong>
+        ) : card ? (
+          <span>
+            <strong>Турнир на сайте:</strong> «{card.title}»{card.status !== "publish" ? " (не опубликован)" : ""}.{" "}
+            {card.entries ? "Приём заявок подключён." : ""}
+          </span>
+        ) : (
+          <span>
+            <strong>Турнира на сайте {view.site?.replace(/^https?:\/\//, "")} пока нет.</strong> Впишите даты и место и нажмите
+            «Подключить к сайту».
+          </span>
+        )}
+      </p>
+      <label>
+        Начало
+        <input type="date" value={form.start} onChange={set("start")} />
+      </label>
+      <label>
+        Окончание
+        <input type="date" value={form.end} min={form.start || undefined} onChange={set("end")} />
+      </label>
+      <label>
+        Место
+        <input value={form.venue} placeholder="СК «Олимпийский»" onChange={set("venue")} />
+      </label>
+      <label>
+        Город
+        <input value={form.city} placeholder="Нижний Новгород" onChange={set("city")} />
+      </label>
+      <p className="muted wide">
+        На сайт уходят название, даты, место, разряды, ID турнира и ключ онлайн-заявок. Название и текст положения потом
+        правят на сайте, программа их не перезаписывает. После изменения сроков заявок нажмите кнопку ещё раз.
+      </p>
+      <div className="buttons">
+        <button type="button" className="primary" disabled={busy || (!card && !form.start)} onClick={() => void publish()}>
+          {busy ? "Отправляю…" : card ? "Обновить на сайте" : "Подключить к сайту"}
+        </button>
+        {card && (
+          <a className="button-link" href={card.link} target="_blank" rel="noopener">
+            Открыть страницу
+          </a>
+        )}
+        {card && (
+          <a className="button-link" href={card.edit} target="_blank" rel="noopener">
+            Править на сайте
+          </a>
+        )}
+      </div>
     </section>
   );
 }
