@@ -46,3 +46,30 @@
     frame.open();
   });
 })(jQuery);
+
+/* Расписание группы: строки занятий добавляются и убираются кнопками. */
+(function ($) {
+  "use strict";
+  $(document).on("click", ".ag-sched__add", function (e) {
+    e.preventDefault();
+    var table = $("[data-ag-sched]");
+    var tpl = $("[data-ag-sched-template]");
+    if (!table.length || !tpl.length) return;
+    var row = $(tpl.html());
+    var last = table.find("tbody tr").last();
+    if (last.length) {
+      // Новое занятие — через день (Пн → Ср → Пт → Сб) в то же время.
+      var day = parseInt(last.find("select").val(), 10) || 0;
+      row.find("select").val(String(Math.min(7, day >= 5 ? day + 1 : day + 2)));
+      row.find('input[name="ag_sched[from][]"]').val(last.find('input[name="ag_sched[from][]"]').val());
+      row.find('input[name="ag_sched[to][]"]').val(last.find('input[name="ag_sched[to][]"]').val());
+      row.find('input[name="ag_sched[place][]"]').val(last.find('input[name="ag_sched[place][]"]').val());
+    }
+    table.find("tbody").append(row);
+    row.find("select").trigger("focus");
+  });
+  $(document).on("click", ".ag-sched__remove", function (e) {
+    e.preventDefault();
+    $(this).closest("tr").remove();
+  });
+})(jQuery);

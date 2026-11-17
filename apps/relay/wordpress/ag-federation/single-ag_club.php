@@ -27,6 +27,7 @@ while (have_posts()) :
                 <?php if (trim(get_the_content()) !== '') : ?>
                     <div class="card"><div class="entry-content"><?php the_content(); ?></div></div>
                 <?php endif; ?>
+                <?php ag_club_groups_section($id); ?>
                 <?php if (function_exists('ag_archive_club_section')) {
                     ag_archive_club_section($id);
                 } ?>
@@ -46,6 +47,15 @@ while (have_posts()) :
                         <ul class="coach-list">
                             <?php foreach ($coaches as $coach) : ?><li><?php echo ag_icon('user', 18); ?> <?php echo esc_html($coach); ?></li><?php endforeach; ?>
                         </ul>
+                    </div>
+                <?php endif; ?>
+                <?php $club_notices = ag_notices(3, $id);
+                if ($club_notices) : ?>
+                    <div class="card">
+                        <h2 class="card__title card__title--small">Объявления</h2>
+                        <div class="notice-list notice-list--side"><?php foreach ($club_notices as $n) {
+                            ag_notice_card($n, true);
+                        } ?></div>
                     </div>
                 <?php endif; ?>
             </aside>

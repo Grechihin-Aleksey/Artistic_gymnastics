@@ -35,6 +35,12 @@ $email = ag_mod('ag_email');
                 echo '<ul>';
                 echo '<li><a href="' . esc_url(ag_news_url()) . '">Новости</a></li>';
                 echo '<li><a href="' . esc_url(get_post_type_archive_link('ag_club')) . '">Клубы</a></li>';
+                if (ag_has_groups()) {
+                    echo '<li><a href="' . esc_url(ag_groups_url(true)) . '">Расписание занятий</a></li>';
+                }
+                if (ag_has_notices()) {
+                    echo '<li><a href="' . esc_url(get_post_type_archive_link('ag_notice')) . '">Объявления</a></li>';
+                }
                 echo '<li><a href="' . esc_url(get_post_type_archive_link('ag_document')) . '">Документы</a></li>';
                 $about = (int) ag_mod('ag_about_page');
                 if ($about) {

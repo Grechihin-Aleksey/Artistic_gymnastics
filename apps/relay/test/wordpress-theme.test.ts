@@ -15,6 +15,7 @@ function run(body: string, today = "2026-11-17") {
     require ${JSON.stringify(join(THEME, "inc", "helpers.php"))};
     require ${JSON.stringify(join(THEME, "inc", "components.php"))};
     require ${JSON.stringify(join(THEME, "inc", "archive.php"))};
+    require ${JSON.stringify(join(THEME, "inc", "sections.php"))};
     ${body}
   `;
   const out = spawnSync("php", ["-r", code], { encoding: "utf8" });
@@ -33,6 +34,19 @@ describe.skipIf(!hasPhp)("тема WordPress", () => {
     ).toEqual([
       "5–7 декабря", "30 ноября – 2 декабря", "20–24 января 2027", "31 декабря 2026 – 2 января 2027", "20 декабря",
       ["30–2", "ноя – дек"], "через 18 дней", "завтра", "через 2 дня",
+    ]);
+  });
+
+  it("расписание группы: дни с одинаковым временем склеиваются", () => {
+    const rows = [
+      { day: 1, from: "08:30", to: "11:30", place: "" }, { day: 1, from: "16:00", to: "18:00", place: "" },
+      { day: 2, from: "08:30", to: "11:30", place: "" }, { day: 3, from: "08:30", to: "11:30", place: "" },
+      { day: 3, from: "16:00", to: "18:00", place: "" }, { day: 4, from: "08:30", to: "11:30", place: "" },
+      { day: 5, from: "08:30", to: "11:30", place: "" }, { day: 5, from: "16:00", to: "18:00", place: "" },
+      { day: 6, from: "10:00", to: "", place: "" },
+    ];
+    expect(run(`echo json_encode([ag_schedule_summary(json_decode(${JSON.stringify(JSON.stringify(rows))}, true)), ag_days_label([2, 4]), ag_days_label([6, 7]), ag_weekday_today()]);`)).toEqual([
+      "Пн–Пт 08:30–11:30 · Пн, Ср, Пт 16:00–18:00 · Сб 10:00", "Вт, Чт", "Сб, Вс", 2,
     ]);
   });
 

@@ -8,14 +8,15 @@
  *   inc/customizer.php  — настройки в «Внешний вид → Настроить»;
  *   inc/components.php  — повторяющиеся блоки страниц: строка календаря, призёры, протоколы, табло;
  *   inc/archive.php     — результаты турниров копятся на сайте, страницы спортсменов;
- *   inc/rest.php        — карточка соревнования от программы (кнопка «Подключить к сайту»).
+ *   inc/rest.php        — карточка соревнования от программы (кнопка «Подключить к сайту»);
+ *   inc/sections.php    — учебные группы, расписание занятий и объявления.
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-define('AG_THEME_VERSION', '1.0.0');
+define('AG_THEME_VERSION', '1.1.0');
 
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/post-types.php';
@@ -23,6 +24,7 @@ require_once __DIR__ . '/inc/customizer.php';
 require_once __DIR__ . '/inc/components.php';
 require_once __DIR__ . '/inc/archive.php';
 require_once __DIR__ . '/inc/rest.php';
+require_once __DIR__ . '/inc/sections.php';
 
 function ag_theme_setup()
 {
@@ -67,7 +69,7 @@ function ag_admin_assets($hook)
         return;
     }
     $screen = get_current_screen();
-    if (!$screen || !in_array($screen->post_type, array('ag_competition', 'ag_document', 'ag_club'), true)) {
+    if (!$screen || !in_array($screen->post_type, array('ag_competition', 'ag_document', 'ag_club', 'ag_group', 'ag_notice'), true)) {
         return;
     }
     wp_enqueue_media();
@@ -124,8 +126,11 @@ function ag_default_menu()
         array(get_post_type_archive_link('ag_athlete'), 'Спортсмены'),
         array(ag_news_url(), 'Новости'),
         array(get_post_type_archive_link('ag_club'), 'Клубы'),
-        array(get_post_type_archive_link('ag_document'), 'Документы'),
     );
+    if (ag_has_groups()) {
+        $items[] = array(ag_groups_url(), 'Занятия');
+    }
+    $items[] = array(get_post_type_archive_link('ag_document'), 'Документы');
     $about = (int) get_theme_mod('ag_about_page', 0);
     if ($about) {
         $items[] = array(get_permalink($about), 'Федерация');
@@ -155,6 +160,8 @@ function ag_flush_rewrites()
 {
     ag_register_types();
     ag_register_athletes();
+    ag_register_sections();
     flush_rewrite_rules();
+    update_option('ag_rewrite_version', AG_THEME_VERSION);
 }
 add_action('after_switch_theme', 'ag_flush_rewrites');

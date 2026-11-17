@@ -76,6 +76,20 @@ foreach ($upcoming->posts as $p) {
 <?php endif; ?>
 
 <?php
+// Объявления: важные первыми, просроченные сами уходят в архив.
+$notices = ag_notices(3);
+if ($notices) : ?>
+    <section class="section section--tight notices-band">
+        <div class="container">
+            <?php ag_section_head('Объявления', get_post_type_archive_link('ag_notice'), 'Все объявления'); ?>
+            <div class="notice-list notice-list--row"><?php foreach ($notices as $n) {
+                ag_notice_card($n, true);
+            } ?></div>
+        </div>
+    </section>
+<?php endif; ?>
+
+<?php
 $recent = ag_competitions_query('past', array('per_page' => 1));
 if ($upcoming->have_posts() || $recent->have_posts()) : ?>
     <section class="section">
@@ -149,6 +163,20 @@ if ($news->have_posts()) : ?>
                 }
                 wp_reset_postdata(); ?>
             </div>
+        </div>
+    </section>
+<?php endif; ?>
+
+<?php
+// Набор в группы: родители чаще всего ищут, куда отдать ребёнка.
+$recruit = get_posts(array('post_type' => 'ag_group', 'posts_per_page' => 3, 'orderby' => array('menu_order' => 'ASC', 'title' => 'ASC'), 'meta_key' => '_ag_recruit', 'meta_value' => '1'));
+if ($recruit) : ?>
+    <section class="section section--tight">
+        <div class="container">
+            <?php ag_section_head('Набор в группы', ag_groups_url(true), 'Расписание занятий'); ?>
+            <div class="group-list"><?php foreach ($recruit as $p) {
+                ag_group_card(ag_group($p));
+            } ?></div>
         </div>
     </section>
 <?php endif; ?>
