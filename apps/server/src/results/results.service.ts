@@ -23,6 +23,7 @@ import {
   type VaultRule,
 } from "@ag/shared";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { SnapshotCache } from "./snapshot-cache";
 import { CompetitionsService } from "../competitions/competitions.service";
 import { DB, type Db } from "../db/db.module";
 import { auditLog, categories, competitions, gymnasts, judges, marks, performances, teams } from "../db/schema";
@@ -61,6 +62,7 @@ export class ResultsService {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly competitions: CompetitionsService,
+    private readonly snapshots: SnapshotCache,
   ) {}
 
   /**
@@ -427,7 +429,11 @@ export class ResultsService {
   }
 
   /** Снимок для табло и сайта: все таблицы одним ответом. Во время финалов таблицы снарядов — финальные. */
-  async snapshot(competitionId: string): Promise<BoardSnapshot> {
+  snapshot(competitionId: string): Promise<BoardSnapshot> {
+    return this.snapshots.get(competitionId, () => this.buildSnapshot(competitionId));
+  }
+
+  private async buildSnapshot(competitionId: string): Promise<BoardSnapshot> {
     const competition = await this.competitions.get(competitionId);
     const [live, categoryList] = await Promise.all([this.live(competitionId), this.categoryList(competitionId)]);
     const apparatusList = live.map((a) => a.apparatus);

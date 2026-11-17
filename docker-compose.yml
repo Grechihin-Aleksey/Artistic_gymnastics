@@ -59,6 +59,8 @@ services:
       - "3000:3000"
 
   # Резервные копии базы в папку backups рядом с этим файлом: каждые 5 минут, хранятся последние 288 (сутки).
+  # Раз в сутки свежая копия пробно разворачивается во временную базу (итог в «Готовности к старту»).
+  # Если на диске меньше MIN_FREE_MB мегабайт, старые копии удаляются раньше срока.
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -72,6 +74,8 @@ services:
       PGDATABASE: gymnastics
       BACKUP_INTERVAL: ${BACKUP_INTERVAL:-300}
       BACKUP_KEEP: ${BACKUP_KEEP:-288}
+      MIN_FREE_MB: ${MIN_FREE_MB:-2048}
+      RESTORE_CHECK_INTERVAL: ${RESTORE_CHECK_INTERVAL:-86400}
       TZ: ${TZ:-Europe/Moscow}
     volumes:
       - ./backups:/backups

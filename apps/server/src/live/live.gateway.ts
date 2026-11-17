@@ -12,6 +12,7 @@ import type { Server, Socket } from "socket.io";
 import { z } from "zod";
 import { AuthService, TABLET_BUSY, deviceOf } from "../auth/auth";
 import { RelayPublisher } from "../relay/relay.publisher";
+import { SnapshotCache } from "../results/snapshot-cache";
 
 const joinSchema = z.object({ competitionId: z.uuid() });
 
@@ -45,6 +46,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly auth: AuthService,
     private readonly relay: RelayPublisher,
+    private readonly snapshots: SnapshotCache,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -126,6 +128,7 @@ export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /** Всё, что видит зал, уходит и на сайт через ретранслятор. */
   toCompetition(competitionId: string, event: string, payload: unknown): void {
+    this.snapshots.invalidate();
     this.server?.to(competitionRoom(competitionId)).emit(event, payload);
     this.relay.notify(competitionId, event === LIVE_EVENTS.approved ? (payload as PerformanceView) : undefined);
   }
