@@ -495,14 +495,14 @@ export function AdminScreen() {
         )}
         {adminToken && (
           <details className="no-print new-competition">
-            <summary>Камеры видеоповторов</summary>
-            <VideoCamerasPanel adminToken={adminToken} competitionId={competition?.id ?? null} onError={setError} />
+            <summary>Очистка после турниров</summary>
+            <CleanupPanel adminToken={adminToken} onError={setError} />
           </details>
         )}
         {adminToken && (
           <details className="no-print new-competition">
-            <summary>Очистка после турниров</summary>
-            <CleanupPanel adminToken={adminToken} onError={setError} />
+            <summary>Камеры видеоповторов</summary>
+            <VideoCamerasPanel adminToken={adminToken} competitionId={competition?.id ?? null} onError={setError} />
           </details>
         )}
         {adminToken && (

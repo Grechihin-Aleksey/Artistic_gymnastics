@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, NotFoundException, Param, ParseUUIDPipe, Post, Put, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { apparatusSchema, setVideoCamerasSchema, type SetVideoCamerasInput } from "@ag/shared";
-import { RequireAccess } from "../auth/auth";
+import { AllowChief, CurrentPrincipal, RequireAccess, assertChiefScope, type Principal } from "../auth/auth";
 import { ZodPipe } from "../zod.pipe";
 import { VideoService } from "./video.service";
 import { writeZip, zipSize } from "./zip-stream";
@@ -13,6 +13,7 @@ export class VideoController {
 
   @Get("video")
   @RequireAccess("admin")
+  @AllowChief()
   status() {
     return this.video.status();
   }
@@ -25,6 +26,7 @@ export class VideoController {
 
   @Get("video/cameras/:apparatus/snapshot")
   @RequireAccess("admin")
+  @AllowChief()
   async snapshot(@Param("apparatus", new ZodPipe(apparatusSchema)) apparatus: string, @Res() res: Response) {
     const jpeg = await this.video.snapshot(apparatus);
     res.setHeader("Content-Type", "image/jpeg");
@@ -34,13 +36,17 @@ export class VideoController {
 
   @Get("performances/:id/replay")
   @RequireAccess("admin")
-  replay(@Param("id", ParseUUIDPipe) id: string) {
+  @AllowChief()
+  async replay(@Param("id", ParseUUIDPipe) id: string, @CurrentPrincipal() principal: Principal) {
+    if (principal.kind === "chief") assertChiefScope(principal, await this.video.competitionOf(id));
     return this.video.replay(id);
   }
 
   @Post("performances/:id/replay/wide")
   @RequireAccess("admin")
-  replayWide(@Param("id", ParseUUIDPipe) id: string) {
+  @AllowChief()
+  async replayWide(@Param("id", ParseUUIDPipe) id: string, @CurrentPrincipal() principal: Principal) {
+    if (principal.kind === "chief") assertChiefScope(principal, await this.video.competitionOf(id));
     return this.video.replayWide(id);
   }
 

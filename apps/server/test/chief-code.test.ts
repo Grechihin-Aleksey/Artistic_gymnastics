@@ -56,6 +56,19 @@ describe("главный судья на отдельном планшете", (
     await api(app, panel.e).post("/marks", { id: randomUUID(), performanceId: perf.id, kind: "E", value: 1 }).expect(201);
     await chief.post(`/performances/${perf.id}/approve`).expect(403);
     await api(app, panel.sv).post(`/performances/${perf.id}/approve`).expect(201);
+    // Видеоповторы своего турнира смотреть можно, настраивать камеры и чужие ролики — нет.
+    await chief.get("/video").expect(200);
+    expect((await chief.get(`/performances/${perf.id}/replay`).expect(200)).body.performanceId).toBe(perf.id);
+    await chief.put("/video/cameras", { cameras: [] }).expect(403);
+    await chief.get(`/competitions/${competitionId}/replays/archive-link`).expect(403);
+    const otherGymnast = (
+      await admin.post(`/competitions/${otherId}/gymnasts/import`, { rows: [{ bib: 2, lastName: "Борисова", firstName: "Вера" }] }).expect(201)
+    ).body[0].id;
+    const otherSv = (await admin.post(`/competitions/${otherId}/judges`, { name: "Орлова", apparatus: "BB", role: "SUPERVISOR", seat: 1 }).expect(201)).body
+      .token as string;
+    const otherPerf = (await api(app, otherSv).post(`/competitions/${otherId}/performances`, { gymnastId: otherGymnast, apparatus: "BB" }).expect(201)).body;
+    await chief.get(`/performances/${otherPerf.id}/replay`).expect(403);
+    await chief.post(`/performances/${otherPerf.id}/replay/wide`).expect(403);
 
     const inquiry = (await chief.post(`/performances/${perf.id}/inquiries`, { coach: "Иванова", claimedD: 4.5 }).expect(201)).body as InquiryView;
     const resolved = (await chief.post(`/inquiries/${inquiry.id}/resolve`, { decision: "accept", d: 4.5 }).expect(201)).body as InquiryView;
