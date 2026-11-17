@@ -47,6 +47,9 @@ if ($LASTEXITCODE -ne 0) {
 
 docker compose up -d --build
 if ($LASTEXITCODE -ne 0) { Write-Host "Docker не запустился. Откройте Docker Desktop и повторите."; pause; exit 1 }
+# После обновления старые сборки программы остаются на диске и занимают сотни мегабайт: убираем их.
+docker image prune -f *> $null
+docker builder prune -f --filter until=168h *> $null
 
 Write-Host -NoNewline "Жду, пока сервер запустится"
 $ready = $false

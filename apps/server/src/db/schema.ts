@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -77,6 +78,9 @@ export const competitions = pgTable("competitions", {
   boardSwitch: jsonb("board_switch").$type<BoardSwitch>(),
   /** Пробный турнир для репетиции: на сайт не уходит, удаляется одной кнопкой. */
   trial: boolean("trial").notNull().default(false),
+  /** Код главного судьи для отдельного планшета или ПК: SHA-256 и зашифрованный для перепечатки QR. */
+  chiefTokenHash: text("chief_token_hash").unique(),
+  chiefTokenSealed: text("chief_token_sealed"),
   createdAt: createdAt(),
 });
 
@@ -115,16 +119,20 @@ export const shifts = pgTable(
   (t) => [uniqueIndex("shifts_number_unique").on(t.competitionId, t.number)],
 );
 
-export const teams = pgTable("teams", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  competitionId: uuid("competition_id")
-    .notNull()
-    .references(() => competitions.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  /** Команда выступает в зачёте своего разряда. */
-  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
-  createdAt: createdAt(),
-});
+export const teams = pgTable(
+  "teams",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** Команда выступает в зачёте своего разряда. */
+    categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("teams_competition_idx").on(t.competitionId)],
+);
 
 export const gymnasts = pgTable(
   "gymnasts",
@@ -207,7 +215,11 @@ export const performances = pgTable(
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("performances_unique").on(t.gymnastId, t.apparatus, t.stage, t.attempt)],
+  (t) => [
+    uniqueIndex("performances_unique").on(t.gymnastId, t.apparatus, t.stage, t.attempt),
+    // Табло и протоколы выбирают выступления турнира по снаряду и статусу.
+    index("performances_competition_idx").on(t.competitionId, t.apparatus, t.status),
+  ],
 );
 
 export const marks = pgTable(
@@ -225,7 +237,10 @@ export const marks = pgTable(
     value: integer("value").notNull(),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("marks_judge_unique").on(t.performanceId, t.judgeId, t.kind)],
+  (t) => [
+    uniqueIndex("marks_judge_unique").on(t.performanceId, t.judgeId, t.kind),
+    index("marks_judge_idx").on(t.judgeId),
+  ],
 );
 
 /** Финалисты на снаряде в разряде: порядок выступления по жеребьёвке и запасные. */
@@ -251,50 +266,65 @@ export const finalists = pgTable(
 );
 
 /** Запросы тренеров на пересмотр оценки D. Баллы в тысячных. */
-export const inquiries = pgTable("inquiries", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  competitionId: uuid("competition_id")
-    .notNull()
-    .references(() => competitions.id, { onDelete: "cascade" }),
-  performanceId: uuid("performance_id")
-    .notNull()
-    .references(() => performances.id, { onDelete: "cascade" }),
-  coach: text("coach").notNull(),
-  claimedD: integer("claimed_d"),
-  previousD: integer("previous_d").notNull(),
-  newD: integer("new_d"),
-  status: inquiryStatusEnum("status").notNull().default("PENDING"),
-  late: boolean("late").notNull(),
-  /** Кто записал: секретариат со слов тренера или сам тренер с телефона. */
-  source: text("source").notNull().default("secretariat"),
-  note: text("note"),
-  createdAt: createdAt(),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-});
+export const inquiries = pgTable(
+  "inquiries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    performanceId: uuid("performance_id")
+      .notNull()
+      .references(() => performances.id, { onDelete: "cascade" }),
+    coach: text("coach").notNull(),
+    claimedD: integer("claimed_d"),
+    previousD: integer("previous_d").notNull(),
+    newD: integer("new_d"),
+    status: inquiryStatusEnum("status").notNull().default("PENDING"),
+    late: boolean("late").notNull(),
+    /** Кто записал: секретариат со слов тренера или сам тренер с телефона. */
+    source: text("source").notNull().default("secretariat"),
+    note: text("note"),
+    createdAt: createdAt(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("inquiries_competition_idx").on(t.competitionId, t.createdAt),
+    index("inquiries_performance_idx").on(t.performanceId),
+  ],
+);
 
-export const auditLog = pgTable("audit_log", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  competitionId: uuid("competition_id")
-    .notNull()
-    .references(() => competitions.id, { onDelete: "cascade" }),
-  actor: text("actor").notNull(),
-  action: text("action").notNull(),
-  details: jsonb("details").notNull(),
-  createdAt: createdAt(),
-});
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    details: jsonb("details").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("audit_log_competition_idx").on(t.competitionId, t.createdAt)],
+);
 
 /** Онлайн-заявка клуба, забранная с ретранслятора; id — тот, что дал ретранслятор. */
-export const onlineEntries = pgTable("online_entries", {
-  id: uuid("id").primaryKey(),
-  competitionId: uuid("competition_id")
-    .notNull()
-    .references(() => competitions.id, { onDelete: "cascade" }),
-  entry: jsonb("entry").$type<OnlineEntry>().notNull(),
-  receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
-  status: onlineEntryStatusEnum("status").notNull().default("NEW"),
-  note: text("note"),
-  decidedAt: timestamp("decided_at", { withTimezone: true }),
-});
+export const onlineEntries = pgTable(
+  "online_entries",
+  {
+    id: uuid("id").primaryKey(),
+    competitionId: uuid("competition_id")
+      .notNull()
+      .references(() => competitions.id, { onDelete: "cascade" }),
+    entry: jsonb("entry").$type<OnlineEntry>().notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    status: onlineEntryStatusEnum("status").notNull().default("NEW"),
+    note: text("note"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [index("online_entries_competition_idx").on(t.competitionId)],
+);
 
 /** Кубок из нескольких этапов: рейтинг по очкам за места в многоборье. */
 export const series = pgTable("series", {

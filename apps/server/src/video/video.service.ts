@@ -275,6 +275,16 @@ export class VideoService implements OnModuleInit, OnModuleDestroy {
     return this.replay(performanceId);
   }
 
+  /** Турнир выступления: главному судье можно смотреть повторы только своего. */
+  async competitionOf(performanceId: string): Promise<string> {
+    const [row] = await this.db
+      .select({ competitionId: performances.competitionId })
+      .from(performances)
+      .where(eq(performances.id, performanceId));
+    if (!row) throw new NotFoundException("Выступление не найдено");
+    return row.competitionId;
+  }
+
   private async window(performanceId: string): Promise<PerformanceWindow> {
     const [row] = await this.db
       .select({

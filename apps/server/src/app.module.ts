@@ -3,10 +3,13 @@ import { ReadinessController } from "./readiness/readiness.controller";
 import { ReadinessService } from "./readiness/readiness.service";
 import { TimerController } from "./timer/timer.controller";
 import { StandbyController } from "./standby/standby.controller";
+import { CleanupController } from "./cleanup/cleanup.controller";
+import { CleanupService } from "./cleanup/cleanup.service";
 import { StandbyService } from "./standby/standby.service";
 import { UpdatesController } from "./updates/updates.controller";
 import { UpdatesService } from "./updates/updates.service";
-import { APP_GUARD } from "@nestjs/core";
+import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
+import { SnapshotCache, SnapshotInvalidator } from "./results/snapshot-cache";
 import { AuditController } from "./audit/audit.controller";
 import { AuditService } from "./audit/audit.service";
 import { AuthGuard, AuthService } from "./auth/auth";
@@ -90,6 +93,7 @@ export class AppModule {
         ReadinessController,
         TimerController,
         StandbyController,
+        CleanupController,
         UpdatesController,
         VideoController,
       ],
@@ -97,6 +101,8 @@ export class AppModule {
         AuthService,
         LicenseService,
         { provide: APP_GUARD, useClass: AuthGuard },
+        SnapshotCache,
+        { provide: APP_INTERCEPTOR, useClass: SnapshotInvalidator },
         CompetitionsService,
         RotationsService,
         PerformancesService,
@@ -116,6 +122,7 @@ export class AppModule {
         RelayPublisher,
         ReadinessService,
         StandbyService,
+        CleanupService,
         UpdatesService,
         VideoService,
       ],

@@ -41,7 +41,7 @@ import {
   copyCompetitionSchema,
   type CopyCompetitionInput,
 } from "@ag/shared";
-import { RequireAccess } from "../auth/auth";
+import { AllowChief, RequireAccess } from "../auth/auth";
 import { LicenseService } from "../license/license.service";
 import { ZodPipe } from "../zod.pipe";
 import { CompetitionsService, publicCompetition } from "./competitions.service";
@@ -236,6 +236,7 @@ export class CompetitionsController {
 
   @Get(":id/judges")
   @RequireAccess("admin")
+  @AllowChief()
   listJudges(@Param("id", ParseUUIDPipe) id: string) {
     return this.competitions.listJudges(id);
   }

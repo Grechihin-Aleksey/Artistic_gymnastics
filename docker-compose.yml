@@ -1,7 +1,15 @@
 # Сервер в зале. Проще всего запускать скриптом: scripts/start.sh (Linux, macOS) или scripts\start.ps1 (Windows).
 # Вручную: задайте ADMIN_TOKEN (не короче 16 символов) в файле .env рядом с этим файлом и выполните docker compose up -d.
+# Журналы контейнеров не больше 3 файлов по 10 МБ: иначе за сезон они разрастаются на гигабайты.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
+    logging: *logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -16,6 +24,7 @@ services:
       retries: 10
 
   server:
+    logging: *logging
     build:
       context: .
       dockerfile: apps/server/Dockerfile
@@ -69,7 +78,10 @@ services:
       - "3000:3000"
 
   # Резервные копии базы в папку backups рядом с этим файлом: каждые 5 минут, хранятся последние 288 (сутки).
+  # Раз в сутки свежая копия пробно разворачивается во временную базу (итог в «Готовности к старту»).
+  # Если на диске меньше MIN_FREE_MB мегабайт, старые копии удаляются раньше срока.
   backup:
+    logging: *logging
     image: postgres:16-alpine
     restart: unless-stopped
     depends_on:
@@ -82,6 +94,8 @@ services:
       PGDATABASE: gymnastics
       BACKUP_INTERVAL: ${BACKUP_INTERVAL:-300}
       BACKUP_KEEP: ${BACKUP_KEEP:-288}
+      MIN_FREE_MB: ${MIN_FREE_MB:-2048}
+      RESTORE_CHECK_INTERVAL: ${RESTORE_CHECK_INTERVAL:-86400}
       TZ: ${TZ:-Europe/Moscow}
     volumes:
       - ./backups:/backups

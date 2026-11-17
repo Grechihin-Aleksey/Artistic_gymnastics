@@ -117,6 +117,7 @@ export const COACH_PHONE_ACTOR = "coach-phone";
 function actorLabel(actor: string, judgeById: Map<string, Judge>): string {
   if (actor === "admin") return "Секретариат";
   if (actor === COACH_PHONE_ACTOR) return "Тренер с телефона";
+  if (actor === "chief") return "Главный судья";
   const judge = actor.startsWith("judge:") ? judgeById.get(actor.slice(6)) : undefined;
   // Снаряд судьи — в своей колонке записи.
   return judge ? `${judgeRole(judge)} · ${judge.name}` : "Судья";
@@ -293,6 +294,8 @@ export function describe(
     }
     case "competition.imported":
       return { group: "setup", text: `Турнир загружен из файла, выгруженного ${new Date(String(d.exportedAt)).toLocaleString("ru-RU")}` };
+    case "chief.code":
+      return { group: "setup", text: "Выдан новый код главного судьи (прежний больше не действует)" };
     case "competition.copied":
       return {
         group: "setup",

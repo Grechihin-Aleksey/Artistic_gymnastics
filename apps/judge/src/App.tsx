@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, apiRequest } from "./api";
 import { AdminScreen } from "./AdminScreen";
+import { ChiefScreen } from "./ChiefScreen";
 import { JudgeScreen } from "./JudgeScreen";
 import { forgetToken, takeTokenFromLocation } from "./token";
 
@@ -8,6 +9,7 @@ type Me = Parameters<typeof JudgeScreen>[0]["me"];
 
 export function App() {
   if (location.hash.startsWith("#/admin")) return <AdminScreen />;
+  if (location.hash.startsWith("#chief=") || location.hash.startsWith("#/chief")) return <ChiefScreen />;
   return <JudgeApp />;
 }
 
