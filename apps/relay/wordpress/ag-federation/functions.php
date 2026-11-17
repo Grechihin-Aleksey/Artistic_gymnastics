@@ -9,14 +9,19 @@
  *   inc/components.php  — повторяющиеся блоки страниц: строка календаря, призёры, протоколы, табло;
  *   inc/archive.php     — результаты турниров копятся на сайте, страницы спортсменов;
  *   inc/rest.php        — карточка соревнования от программы (кнопка «Подключить к сайту»);
- *   inc/sections.php    — учебные группы, расписание занятий и объявления.
+ *   inc/sections.php    — учебные группы, расписание занятий и объявления;
+ *   inc/summary.php     — черновик новости «Итоги» и анонсы в Telegram и ВКонтакте;
+ *   inc/signup.php      — онлайн-запись в группу;
+ *   inc/rating.php      — рейтинг сезона (/rating/);
+ *   inc/ical.php        — подписка на календарь соревнований;
+ *   inc/gallery.php     — фотографии турнира.
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-define('AG_THEME_VERSION', '1.1.0');
+define('AG_THEME_VERSION', '1.2.0');
 
 require_once __DIR__ . '/inc/helpers.php';
 require_once __DIR__ . '/inc/post-types.php';
@@ -25,6 +30,11 @@ require_once __DIR__ . '/inc/components.php';
 require_once __DIR__ . '/inc/archive.php';
 require_once __DIR__ . '/inc/rest.php';
 require_once __DIR__ . '/inc/sections.php';
+require_once __DIR__ . '/inc/summary.php';
+require_once __DIR__ . '/inc/signup.php';
+require_once __DIR__ . '/inc/rating.php';
+require_once __DIR__ . '/inc/ical.php';
+require_once __DIR__ . '/inc/gallery.php';
 
 function ag_theme_setup()
 {
@@ -74,7 +84,7 @@ function ag_admin_assets($hook)
     }
     wp_enqueue_media();
     wp_enqueue_style('ag-admin', get_template_directory_uri() . '/assets/css/admin.css', array(), AG_THEME_VERSION);
-    wp_enqueue_script('ag-admin', get_template_directory_uri() . '/assets/js/admin.js', array('jquery'), AG_THEME_VERSION, true);
+    wp_enqueue_script('ag-admin', get_template_directory_uri() . '/assets/js/admin.js', array('jquery', 'jquery-ui-sortable'), AG_THEME_VERSION, true);
 }
 add_action('admin_enqueue_scripts', 'ag_admin_assets');
 
@@ -161,6 +171,8 @@ function ag_flush_rewrites()
     ag_register_types();
     ag_register_athletes();
     ag_register_sections();
+    ag_rating_rewrite();
+    ag_ical_rewrite();
     flush_rewrite_rules();
     update_option('ag_rewrite_version', AG_THEME_VERSION);
 }

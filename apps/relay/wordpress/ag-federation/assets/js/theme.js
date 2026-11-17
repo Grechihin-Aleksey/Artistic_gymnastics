@@ -1,5 +1,5 @@
 /*
- * Скрипт темы: меню на телефоне, вкладки страницы соревнования
+ * Скрипт темы: меню на телефоне, вкладки страницы соревнования, фото турнира на весь экран
  * и живая карточка «На помосте» на главной (опрашивает ретранслятор результатов).
  */
 (function () {
@@ -56,6 +56,73 @@
     });
     window.addEventListener("hashchange", function () {
       show(location.hash.slice(1));
+    });
+  }
+
+  /* ---------- Фото турнира: просмотр на весь экран ---------- */
+  var gallery = document.querySelector("[data-ag-gallery]");
+  if (gallery) {
+    var items = gallery.querySelectorAll(".gallery__item");
+    var box = document.createElement("div");
+    box.className = "lightbox";
+    box.hidden = true;
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "Фото");
+    box.innerHTML = '<span class="lightbox__count"></span><figure><img alt=""><figcaption></figcaption></figure>' +
+      '<button type="button" class="lightbox__close" aria-label="Закрыть">×</button>' +
+      '<button type="button" class="lightbox__prev" aria-label="Предыдущее фото">‹</button>' +
+      '<button type="button" class="lightbox__next" aria-label="Следующее фото">›</button>';
+    document.body.appendChild(box);
+    var img = box.querySelector("img");
+    var cap = box.querySelector("figcaption");
+    var count = box.querySelector(".lightbox__count");
+    var current = 0;
+    var opener = null;
+    var open = function (i) {
+      current = (i + items.length) % items.length;
+      var a = items[current];
+      img.src = a.getAttribute("href");
+      img.alt = (a.querySelector("img") || {}).alt || "";
+      cap.textContent = a.getAttribute("data-caption") || "";
+      count.textContent = current + 1 + " / " + items.length;
+      if (box.hidden) {
+        opener = document.activeElement;
+        box.hidden = false;
+        document.body.style.overflow = "hidden";
+        box.querySelector(".lightbox__close").focus();
+      }
+    };
+    var close = function () {
+      box.hidden = true;
+      img.removeAttribute("src");
+      document.body.style.overflow = "";
+      if (opener) opener.focus();
+    };
+    gallery.addEventListener("click", function (e) {
+      var a = e.target.closest(".gallery__item");
+      if (!a) return;
+      e.preventDefault();
+      open(parseInt(a.getAttribute("data-index"), 10) || 0);
+    });
+    box.addEventListener("click", function (e) {
+      if (e.target.closest(".lightbox__prev")) open(current - 1);
+      else if (e.target.closest(".lightbox__next")) open(current + 1);
+      else if (e.target.closest(".lightbox__close") || e.target === box) close();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (box.hidden) return;
+      if (e.key === "Escape") close();
+      if (e.key === "ArrowLeft") open(current - 1);
+      if (e.key === "ArrowRight") open(current + 1);
+    });
+    var startX = null;
+    box.addEventListener("touchstart", function (e) { startX = e.touches[0].clientX; }, { passive: true });
+    box.addEventListener("touchend", function (e) {
+      if (startX === null) return;
+      var dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) > 50) open(current + (dx < 0 ? 1 : -1));
+      startX = null;
     });
   }
 

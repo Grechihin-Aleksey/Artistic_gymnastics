@@ -73,3 +73,43 @@
     $(this).closest("tr").remove();
   });
 })(jQuery);
+
+/* Фотографии турнира: выбор из медиатеки, порядок перетаскиванием. */
+(function ($) {
+  "use strict";
+  function sync(box) {
+    var ids = box.find("li[data-id]").map(function () {
+      return $(this).attr("data-id");
+    }).get();
+    box.find("input[type=hidden]").val(ids.join(","));
+  }
+  $(function () {
+    $("[data-ag-photos] .ag-photos__list").each(function () {
+      var list = $(this);
+      if (list.sortable) list.sortable({ update: function () { sync(list.closest("[data-ag-photos]")); } });
+    });
+  });
+  $(document).on("click", "[data-ag-photos] .ag-photos__add", function (e) {
+    e.preventDefault();
+    var box = $(this).closest("[data-ag-photos]");
+    var frame = wp.media({ title: "Фотографии турнира", library: { type: "image" }, button: { text: "Добавить" }, multiple: "add" });
+    frame.on("select", function () {
+      frame.state().get("selection").each(function (att) {
+        var a = att.toJSON();
+        if (box.find('li[data-id="' + a.id + '"]').length) return;
+        var src = (a.sizes && a.sizes.thumbnail ? a.sizes.thumbnail.url : a.url);
+        var li = $('<li><img alt=""><button type="button" class="ag-photos__remove" aria-label="Убрать фото">×</button></li>');
+        li.attr("data-id", a.id).find("img").attr("src", src);
+        box.find(".ag-photos__list").append(li);
+      });
+      sync(box);
+    });
+    frame.open();
+  });
+  $(document).on("click", "[data-ag-photos] .ag-photos__remove", function (e) {
+    e.preventDefault();
+    var box = $(this).closest("[data-ag-photos]");
+    $(this).closest("li").remove();
+    sync(box);
+  });
+})(jQuery);

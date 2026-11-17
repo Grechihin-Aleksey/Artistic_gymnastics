@@ -59,13 +59,16 @@ while (have_posts()) :
             </div>
             <aside class="comp-layout__side">
                 <div class="card contacts">
-                    <h2 class="card__title card__title--small"><?php echo $g['recruit'] ? 'Записаться в группу' : 'Контакты'; ?></h2>
+                    <h2 class="card__title card__title--small">Контакты</h2>
                     <?php if ($g['coach'] !== '') : ?><p><?php echo ag_icon('user', 18); ?> <span>Тренер: <?php echo esc_html($g['coach']); ?></span></p><?php endif; ?>
                     <?php if ($g['place'] !== '') : ?><p><?php echo ag_icon('pin', 18); ?> <a href="<?php echo esc_url('https://yandex.ru/maps/?text=' . rawurlencode($g['place'])); ?>" target="_blank" rel="noopener"><?php echo esc_html($g['place']); ?></a></p>
                     <?php elseif ($address !== '') : ?><p><?php echo ag_icon('pin', 18); ?> <a href="<?php echo esc_url('https://yandex.ru/maps/?text=' . rawurlencode($address)); ?>" target="_blank" rel="noopener"><?php echo esc_html($address); ?></a></p><?php endif; ?>
                     <?php if ($phone !== '') : ?><p><?php echo ag_icon('phone', 18); ?> <a href="tel:<?php echo esc_attr(preg_replace('/[^0-9+]/', '', $phone)); ?>"><?php echo esc_html($phone); ?></a></p><?php endif; ?>
                     <?php if ($club) : ?><a class="btn btn--outline btn--block" href="<?php echo esc_url(get_permalink($club)); ?>">Страница клуба</a><?php endif; ?>
                 </div>
+                <?php if ($g['recruit']) {
+                    ag_signup_form($g);
+                } ?>
                 <?php if ($notices) : ?>
                     <div class="card">
                         <h2 class="card__title card__title--small">Объявления</h2>

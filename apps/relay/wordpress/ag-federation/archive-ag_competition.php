@@ -31,6 +31,7 @@ $pill = function ($url, $label, $active) {
     <div class="container">
         <h1 class="page-head__title"><?php echo $period === 'past' ? 'Результаты соревнований' : 'Календарь соревнований'; ?></h1>
         <p class="page-head__lead"><?php echo $period === 'past' ? 'Призёры и протоколы всех завершённых турниров федерации.' : 'Ближайшие старты, приём заявок и турниры, которые идут прямо сейчас.'; ?></p>
+        <p class="cal-subscribe"><?php echo ag_icon('calendar', 18); ?> Соревнования в календаре телефона: <a href="<?php echo esc_url(ag_ical_url(true)); ?>">подписаться</a> · <a href="<?php echo esc_url(ag_ical_google_url()); ?>" target="_blank" rel="noopener">Google Календарь</a></p>
         <div class="tabs-line">
             <a class="tabs-line__tab<?php echo $period === 'upcoming' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(array_filter(array('gender' => $gender ?: null)), $base)); ?>">Предстоящие</a>
             <a class="tabs-line__tab<?php echo $period === 'past' ? ' is-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(array_filter(array('period' => 'past', 'gender' => $gender ?: null)), $base)); ?>">Прошедшие</a>

@@ -24,6 +24,8 @@ $email = ag_mod('ag_email');
                 <li><a href="<?php echo esc_url(ag_results_url()); ?>">Результаты и протоколы</a></li>
                 <li><a href="<?php echo esc_url(add_query_arg('entries', '1', get_post_type_archive_link('ag_competition'))); ?>">Подать заявку</a></li>
                 <?php if (post_type_exists('ag_athlete')) : ?><li><a href="<?php echo esc_url(get_post_type_archive_link('ag_athlete')); ?>">Спортсмены</a></li><?php endif; ?>
+                <li><a href="<?php echo esc_url(ag_rating_url()); ?>">Рейтинг сезона</a></li>
+                <li><a href="<?php echo esc_url(ag_ical_url(true)); ?>">Календарь в телефон</a></li>
             </ul>
         </div>
         <div>

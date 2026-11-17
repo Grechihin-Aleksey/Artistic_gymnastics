@@ -36,6 +36,7 @@ while (have_posts()) :
                 <?php if ($place !== '') : ?><li><?php echo esc_html($place); ?></li><?php endif; ?>
                 <?php if (ag_gender_label($c['gender']) !== '') : ?><li><?php echo esc_html(ag_gender_label($c['gender'])); ?></li><?php endif; ?>
                 <?php if ($c['levels'] !== '') : ?><li><?php echo esc_html($c['levels']); ?></li><?php endif; ?>
+                <?php if ($stage === 'before' && $c['start'] !== '') : ?><li><a class="comp-head__ics" href="<?php echo esc_url(add_query_arg('ics', '1', get_permalink())); ?>"><?php echo ag_icon('calendar', 16); ?> В календарь</a></li><?php endif; ?>
             </ul>
             <div class="comp-tabs" role="tablist" data-ag-tabs data-active="<?php echo esc_attr($active); ?>">
                 <?php foreach ($tabs as $id => $label) : ?>
@@ -141,6 +142,7 @@ while (have_posts()) :
                     echo '<p class="muted">' . ($stage === 'done' ? 'Протоколы ещё не выложены.' : 'Появятся после окончания соревнований.') . '</p>';
                 } ?>
             </div>
+            <?php ag_gallery(get_the_ID()); ?>
             <?php if (function_exists('ag_archive_competition_table')) {
                 ag_archive_competition_table(get_the_ID());
             } ?>

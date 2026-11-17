@@ -179,6 +179,7 @@ function ag_club_box($post)
     ag_field('Адрес', '<input type="text" name="ag[_ag_address]" value="' . $v('_ag_address') . '">');
     ag_field('Телефон', '<input type="text" name="ag[_ag_phone]" value="' . $v('_ag_phone') . '">');
     ag_field('Сайт или страница ВКонтакте', '<input type="url" name="ag[_ag_site]" value="' . $v('_ag_site') . '">');
+    ag_field('Почта для записей в группы', '<input type="email" name="ag[_ag_email]" value="' . $v('_ag_email') . '">', 'Сюда приходят заявки родителей с сайта. На сайте не показывается.');
     echo '</div>';
     ag_field('Тренеры', '<textarea name="ag[_ag_coaches]" rows="4" placeholder="Иванова Мария Петровна — ЗТР&#10;Петров Сергей Иванович">' . esc_textarea((string) get_post_meta($post->ID, '_ag_coaches', true)) . '</textarea>', 'Каждый тренер с новой строки.');
     ag_field('Как называется клуб в протоколах', '<input type="text" name="ag[_ag_aliases]" value="' . $v('_ag_aliases') . '" placeholder="СШОР Спартак, СШОР «Спартак» Н.Новгород">', 'Названия через запятую, как их пишут в заявках. По ним на странице клуба собираются его спортсмены и результаты.');
@@ -252,7 +253,7 @@ function ag_save_meta($post_id, $post)
         ),
         'ag_club' => array(
             '_ag_city' => 'sanitize_text_field', '_ag_address' => 'sanitize_text_field', '_ag_phone' => 'sanitize_text_field',
-            '_ag_site' => 'esc_url_raw', '_ag_coaches' => 'sanitize_textarea_field', '_ag_aliases' => 'sanitize_text_field',
+            '_ag_site' => 'esc_url_raw', '_ag_email' => 'sanitize_email', '_ag_coaches' => 'sanitize_textarea_field', '_ag_aliases' => 'sanitize_text_field',
         ),
         'ag_document' => array('_ag_file' => 'absint', '_ag_link' => 'esc_url_raw'),
         'post' => array('_ag_competition' => 'absint'),

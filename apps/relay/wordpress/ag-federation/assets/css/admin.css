@@ -1,7 +1,7 @@
 .ag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 20px; }
 .ag-field { margin: 0 0 12px; }
 .ag-field label { display: block; font-weight: 600; margin-bottom: 4px; }
-.ag-field input[type=text], .ag-field input[type=url], .ag-field input[type=date], .ag-field select, .ag-field textarea { width: 100%; max-width: 100%; }
+.ag-field input[type=text], .ag-field input[type=email], .ag-field input[type=url], .ag-field input[type=date], .ag-field select, .ag-field textarea { width: 100%; max-width: 100%; }
 .ag-field .description { margin-top: 4px; }
 .ag-section { margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid #dcdcde; font-size: 14px; }
 .ag-docs__list { margin: 0 0 10px; }
@@ -11,3 +11,7 @@
 .ag-sched select, .ag-sched input[type=time] { width: 100%; }
 .ag-sched input[type=text] { width: 100%; }
 .ag-sched th:last-child, .ag-sched td:last-child { width: 60px; }
+.ag-photos__list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.ag-photos__list li { position: relative; width: 96px; height: 96px; margin: 0; cursor: move; }
+.ag-photos__list img { width: 96px; height: 96px; object-fit: cover; border-radius: 4px; display: block; }
+.ag-photos__remove { position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; cursor: pointer; line-height: 1; }

@@ -439,6 +439,7 @@ button { font: inherit; }
 .group-card__meta { color: var(--ag-muted); font-size: 14px; margin-top: -6px; }
 .group-card__foot { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: #45556b; border-top: 1px solid var(--ag-line-soft); padding-top: 12px; margin-top: auto; }
 .card .group-card .group-card__foot { border-color: var(--ag-line); }
+.group-card__signup { align-self: flex-start; }
 .group-card__foot span { display: inline-flex; gap: 6px; align-items: center; }
 .group-card__foot .ag-icon { color: var(--ag-muted); }
 .slots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -485,6 +486,52 @@ button { font: inherit; }
 .notice-past-title { padding: 28px 0 10px; }
 .article__head .notice__meta { margin-bottom: 10px; }
 
+/* ---------- Запись в группу ---------- */
+.signup { border: 2px solid var(--ag-accent); }
+.signup__form { display: flex; flex-direction: column; gap: 12px; }
+.signup__form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; color: #45556b; }
+.signup__form input[type=text], .signup__form input[type=tel], .signup__form input[type=number], .signup__form textarea {
+  min-height: 44px; padding: 10px 12px; border: 1px solid #d5dde8; border-radius: var(--ag-radius-s); font: inherit; font-weight: 400; color: var(--ag-text); background: var(--ag-bg);
+}
+.signup__form textarea { min-height: 64px; resize: vertical; }
+.signup__form .signup__consent { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 400; font-size: 13px; }
+.signup__consent input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+.signup__trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.signup__done { background: #e9f6ee; color: #1d6b3c; border-radius: 10px; padding: 12px 14px; font-weight: 600; }
+.signup__error { background: var(--ag-accent-soft); color: var(--ag-accent-ink); border-radius: 10px; padding: 12px 14px; font-size: 14px; }
+
+/* ---------- Подписка на календарь ---------- */
+.cal-subscribe { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 14px; font-size: 14px; color: var(--ag-on-dark); }
+.cal-subscribe a, .comp-head__ics { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.cal-subscribe a:hover, .comp-head__ics:hover { color: #ffb39c; }
+.comp-head__ics { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- Рейтинг сезона ---------- */
+.rating-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+.rating-table .place { width: 26px; height: 26px; font-size: 12px; }
+.rating-table th .place { width: 20px; height: 20px; font-size: 11px; }
+.rating-table td.num, .rating-table th.num { text-align: center; }
+.rating-table__pos { color: var(--ag-muted); font-weight: 700; width: 32px; }
+
+/* ---------- Фото турнира ---------- */
+.page-head__link { color: #fff; font-weight: 700; white-space: nowrap; }
+.page-head__link:hover { color: #ffb39c; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.gallery__item { display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--ag-soft); }
+.gallery__item img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s ease; }
+.gallery__item:hover img { transform: scale(1.04); }
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(6, 18, 36, .94); display: flex; align-items: center; justify-content: center; padding: 56px 64px; }
+.lightbox[hidden] { display: none; }
+.lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 100%; max-height: 100%; }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 140px); border-radius: 8px; }
+.lightbox figcaption { color: var(--ag-on-dark); font-size: 14px; text-align: center; }
+.lightbox button { position: absolute; border: 0; background: rgba(255,255,255,.12); color: #fff; width: 48px; height: 48px; border-radius: 50%; font-size: 26px; line-height: 1; cursor: pointer; }
+.lightbox button:hover { background: rgba(255,255,255,.24); }
+.lightbox__close { top: 12px; right: 12px; }
+.lightbox__prev { left: 10px; top: 50%; transform: translateY(-50%); }
+.lightbox__next { right: 10px; top: 50%; transform: translateY(-50%); }
+.lightbox__count { position: absolute; top: 24px; left: 20px; color: var(--ag-on-dark-muted); font-size: 14px; }
+
 /* ---------- Подвал и нижнее меню телефона ---------- */
 .site-footer { background: var(--ag-primary); color: var(--ag-on-dark); margin-top: 0; }
 .site-main { min-height: 50vh; }
@@ -504,6 +551,7 @@ button { font: inherit; }
 
 /* ---------- Планшеты и телефоны ---------- */
 @media (max-width: 1100px) {
+  .rating-grid { grid-template-columns: minmax(0, 1fr); }
   .week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .week--5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .site-footer__grid { grid-template-columns: 1fr 1fr; }
@@ -587,6 +635,9 @@ button { font: inherit; }
   .week, .week--5 { grid-template-columns: minmax(0, 1fr); }
   .week__day.is-empty { display: none; }
   .roster { columns: 1; }
+  .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lightbox { padding: 56px 8px 72px; }
+  .lightbox__prev, .lightbox__next { top: auto; bottom: 12px; transform: none; }
 }
 @media (max-width: 782px) { .admin-bar .site-header { top: 46px; } }
 @media (max-width: 600px) { .admin-bar .site-header { top: 0; } }

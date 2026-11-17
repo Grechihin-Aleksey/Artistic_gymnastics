@@ -507,6 +507,7 @@ function ag_group_card($g, $with_club = true)
             <?php if ($g['place'] !== '') : ?><span><?php echo ag_icon('pin', 16); ?> <?php echo esc_html($g['place']); ?></span><?php endif; ?>
             <?php if ($g['recruit'] && $phone !== '') : ?><span><?php echo ag_icon('phone', 16); ?> <a href="tel:<?php echo esc_attr(preg_replace('/[^0-9+]/', '', $phone)); ?>"><?php echo esc_html($phone); ?></a></span><?php endif; ?>
         </div>
+        <?php if ($g['recruit']) : ?><a class="btn btn--outline btn--small group-card__signup" href="<?php echo esc_url($url . '#signup'); ?>">Записаться онлайн</a><?php endif; ?>
     </article>
     <?php
 }

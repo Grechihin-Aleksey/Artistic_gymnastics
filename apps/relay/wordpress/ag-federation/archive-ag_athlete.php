@@ -15,7 +15,7 @@ $letters = preg_split('//u', 'АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩ
 <section class="page-head">
     <div class="container">
         <h1 class="page-head__title">Спортсмены</h1>
-        <p class="page-head__lead">История выступлений, лучшие оценки и медали гимнастов области. Страницы появляются сами из протоколов соревнований.</p>
+        <p class="page-head__lead">История выступлений, лучшие оценки и медали гимнастов области. Страницы появляются сами из протоколов соревнований. <a class="page-head__link" href="<?php echo esc_url(ag_rating_url()); ?>">Рейтинг сезона →</a></p>
         <form class="athlete-search" method="get" action="<?php echo esc_url($base); ?>" role="search">
             <label class="screen-reader-text" for="athlete-q">Фамилия или имя</label>
             <input id="athlete-q" type="search" name="q" value="<?php echo esc_attr($find); ?>" placeholder="Фамилия или имя">

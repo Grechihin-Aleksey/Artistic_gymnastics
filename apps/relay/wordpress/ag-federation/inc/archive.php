@@ -218,6 +218,8 @@ function ag_archive_import($post_id, $force = false)
     }
     update_post_meta($post_id, '_ag_archived', current_time('mysql'));
     wp_cache_delete('ag_archive_' . $post_id, 'ag');
+    // Черновик новости «Итоги» и анонс в соцсетях (inc/summary.php).
+    do_action('ag_archive_imported', $post_id);
     return $saved;
 }
 
@@ -347,6 +349,9 @@ function ag_archive_box($post)
         echo '<p><a class="button" href="' . esc_url($url) . '">' . ($count ? 'Обновить результаты' : 'Сохранить результаты сейчас') . '</a></p>';
         echo '<p class="description">Берёт итоговые оценки с ретранслятора, заводит страницы спортсменов.</p>';
     }
+    if (function_exists('ag_summary_box_line')) {
+        ag_summary_box_line($post);
+    }
 }
 
 function ag_archive_import_action()
@@ -373,7 +378,9 @@ function ag_archive_notice()
     }
     delete_transient($key);
     list($kind, $text) = explode(':', $msg, 2);
-    if ($kind === 'ok') {
+    if ($kind === 'msg') {
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($text) . '</p></div>';
+    } elseif ($kind === 'ok') {
         echo '<div class="notice notice-success is-dismissible"><p>Результаты сохранены на сайте: ' . (int) $text . ' ' . esc_html(ag_plural((int) $text, 'строка', 'строки', 'строк')) . '. Страницы спортсменов обновлены.</p></div>';
     } else {
         echo '<div class="notice notice-error"><p>' . esc_html($text) . '</p></div>';

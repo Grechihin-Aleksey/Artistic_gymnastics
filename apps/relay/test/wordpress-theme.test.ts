@@ -16,6 +16,7 @@ function run(body: string, today = "2026-11-17") {
     require ${JSON.stringify(join(THEME, "inc", "components.php"))};
     require ${JSON.stringify(join(THEME, "inc", "archive.php"))};
     require ${JSON.stringify(join(THEME, "inc", "sections.php"))};
+    require ${JSON.stringify(join(THEME, "inc", "ical.php"))};
     ${body}
   `;
   const out = spawnSync("php", ["-r", code], { encoding: "utf8" });
@@ -48,6 +49,15 @@ describe.skipIf(!hasPhp)("тема WordPress", () => {
     expect(run(`echo json_encode([ag_schedule_summary(json_decode(${JSON.stringify(JSON.stringify(rows))}, true)), ag_days_label([2, 4]), ag_days_label([6, 7]), ag_weekday_today()]);`)).toEqual([
       "Пн–Пт 08:30–11:30 · Пн, Ср, Пт 16:00–18:00 · Сб 10:00", "Вт, Чт", "Сб, Вс", 2,
     ]);
+  });
+
+  it("календарь iCal: экранирование и перенос длинных строк по 75 байт без разрыва букв", () => {
+    const [text, folded] = run(`echo json_encode([ag_ical_text("Кубок; этап 1, финал\nвторая строка"), ag_ical_fold('SUMMARY:' . str_repeat('Гимнастика ', 12))]);`);
+    expect(text).toBe("Кубок\\; этап 1\\, финал\\nвторая строка");
+    const lines = (folded as string).split("\r\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const l of lines) expect(Buffer.byteLength(l)).toBeLessThanOrEqual(76);
+    expect(lines.map((l, i) => (i ? l.slice(1) : l)).join("")).toBe("SUMMARY:" + "Гимнастика ".repeat(12));
   });
 
   it("стадия по датам и ручная", () => {
