@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
 import { ChiefJudgePanel } from "./ChiefJudge";
+import { CleanupPanel } from "./CleanupPanel";
 import { UpdateNotice, VersionLine } from "./Updates";
 import { ApiError, apiRequest } from "./api";
 import { copyText } from "./clipboard";
@@ -489,6 +490,12 @@ export function AdminScreen() {
           <details className="no-print new-competition">
             <summary>Запасной ноутбук</summary>
             <StandbyPanel adminToken={adminToken} onError={setError} onTakenOver={(id) => void loadCompetitions(id)} />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
+            <summary>Очистка после турниров</summary>
+            <CleanupPanel adminToken={adminToken} onError={setError} />
           </details>
         )}
         {adminToken && (

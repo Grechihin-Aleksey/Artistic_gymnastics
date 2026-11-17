@@ -1958,3 +1958,14 @@ input.secret {
 .chief-code .qr.wide {
   justify-self: start;
 }
+
+.cleanup-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.cleanup-form input {
+  width: 6rem;
+}

@@ -3,6 +3,8 @@ import { ReadinessController } from "./readiness/readiness.controller";
 import { ReadinessService } from "./readiness/readiness.service";
 import { TimerController } from "./timer/timer.controller";
 import { StandbyController } from "./standby/standby.controller";
+import { CleanupController } from "./cleanup/cleanup.controller";
+import { CleanupService } from "./cleanup/cleanup.service";
 import { StandbyService } from "./standby/standby.service";
 import { UpdatesController } from "./updates/updates.controller";
 import { UpdatesService } from "./updates/updates.service";
@@ -86,6 +88,7 @@ export class AppModule {
         ReadinessController,
         TimerController,
         StandbyController,
+        CleanupController,
         UpdatesController,
       ],
       providers: [
@@ -112,6 +115,7 @@ export class AppModule {
         RelayPublisher,
         ReadinessService,
         StandbyService,
+        CleanupService,
         UpdatesService,
       ],
     };

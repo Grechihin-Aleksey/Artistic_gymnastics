@@ -12,6 +12,9 @@ fi
 mkdir -p backups
 
 docker compose up -d --build
+# После обновления старые сборки программы остаются на диске и занимают сотни мегабайт: убираем их.
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
 
 printf "Жду, пока сервер запустится"
 i=0

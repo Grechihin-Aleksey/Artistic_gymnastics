@@ -8,6 +8,11 @@
 # что из копий действительно можно восстановиться. Итог пишется в restore-check.json,
 # его показывает «Готовность к старту».
 #
+# Пока в базе ничего не меняется (между турнирами), новая копия не снимается: у самой
+# свежей только обновляется время, поэтому имя файла показывает время последнего
+# изменения. По нему программа понимает, что турнир давно закончился, и через
+# заданный в секретариате срок убирает лишние копии (блок «Очистка после турниров»).
+#
 # Если на диске остаётся меньше MIN_FREE_MB мегабайт, самые старые копии удаляются
 # раньше срока (свежие BACKUP_MIN_KEEP остаются всегда).
 set -u
@@ -38,10 +43,23 @@ free_space() {
   done
 }
 
+# Счётчик всех записей в базе: не изменился — значит, и копия не нужна.
+fingerprint() {
+  psql -tAc "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) || '/' || coalesce(sum(n_live_tup), 0) from pg_stat_user_tables" 2>/dev/null
+}
+last_print=""
+
 snapshot() {
+  print="$(fingerprint)"
+  newest="$(ls -1t "$DIR"/gymnastics-*.dump 2>/dev/null | head -n 1)"
+  if [ -n "$print" ] && [ "$print" = "$last_print" ] && [ -n "$newest" ]; then
+    touch "$newest"
+    return 0
+  fi
   name="$DIR/gymnastics-$(date +%Y%m%d-%H%M%S).dump"
   if pg_dump --format=custom --file="$name.part"; then
     mv "$name.part" "$name"
+    last_print="$print"
     echo "резервная копия: $name"
   else
     rm -f "$name.part"
