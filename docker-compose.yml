@@ -34,6 +34,9 @@ services:
       # Если заданы, результаты уходят на сайт через облачный ретранслятор.
       RELAY_URL: ${RELAY_URL:-}
       RELAY_TOKEN: ${RELAY_TOKEN:-}
+      WP_URL: ${WP_URL:-}
+      WP_USER: ${WP_USER:-}
+      WP_APP_PASSWORD: ${WP_APP_PASSWORD:-}
       # Как часто самому забирать онлайн-заявки с сайта, секунды; 0 — только по кнопке.
       ENTRIES_SYNC_INTERVAL: ${ENTRIES_SYNC_INTERVAL:-300}
       # Каждые полчаса турниры сохраняются файлами в backups/tournaments,

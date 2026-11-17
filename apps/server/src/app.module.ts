@@ -43,6 +43,8 @@ import { SeriesController } from "./series/series.controller";
 import { SeriesService } from "./series/series.service";
 import { RelayPublisher } from "./relay/relay.publisher";
 import { SiteController } from "./relay/site.controller";
+import { SiteCardController } from "./relay/site-card.controller";
+import { SiteCardService } from "./relay/site-card.service";
 import { CeremonyController } from "./results/ceremony.controller";
 import { ResultsController } from "./results/results.controller";
 import { ResultsService } from "./results/results.service";
@@ -81,6 +83,7 @@ export class AppModule {
         OnlineEntriesController,
         SiteProtocolsController,
         SiteController,
+        SiteCardController,
         SeriesController,
         TransferController,
         CloudBackupController,
@@ -104,6 +107,7 @@ export class AppModule {
         AuditService,
         OnlineEntriesService,
         SiteProtocolsService,
+        SiteCardService,
         SeriesService,
         TransferService,
         AutoExportService,

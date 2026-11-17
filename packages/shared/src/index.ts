@@ -360,6 +360,17 @@ export const setOnlineEntriesSchema = z.object({
 
 export const rejectOnlineEntrySchema = z.object({ note: z.string().trim().max(500).optional() });
 
+/** Кнопка «Подключить к сайту»: что секретарь дописывает к карточке соревнования на сайте федерации. */
+const siteDate = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в виде ГГГГ-ММ-ДД")]);
+export const siteCardSchema = z
+  .object({
+    start: siteDate.default(""),
+    end: siteDate.default(""),
+    venue: z.string().trim().max(200).default(""),
+    city: z.string().trim().max(100).default(""),
+  })
+  .refine((v) => !v.start || !v.end || v.end >= v.start, { message: "Окончание раньше начала", path: ["end"] });
+
 /**
  * Правка участника. Разряд, команда и смена — по названию (номеру), как при импорте;
  * пустая строка или null убирает. Не переданные поля не меняются.
@@ -638,6 +649,35 @@ export type SetRulesInput = z.infer<typeof setRulesSchema>;
 export type SetNormativesInput = z.infer<typeof setNormativesSchema>;
 export type SetOnlineEntriesInput = z.infer<typeof setOnlineEntriesSchema>;
 export type RejectOnlineEntryInput = z.infer<typeof rejectOnlineEntrySchema>;
+export type SiteCardInput = z.infer<typeof siteCardSchema>;
+
+/** Карточка соревнования на сайте федерации (тема ag-federation), как её вернул WordPress. */
+export interface SiteCard {
+  id: number;
+  created: boolean;
+  title: string;
+  status: string;
+  link: string;
+  edit: string;
+  start: string;
+  end: string;
+  venue: string;
+  city: string;
+  ids: string[];
+  entries: boolean;
+}
+
+export interface SiteCardView {
+  /** Заданы WP_USER и WP_APP_PASSWORD (и есть адрес сайта). */
+  enabled: boolean;
+  /** Адрес сайта федерации. */
+  site: string | null;
+  card: SiteCard | null;
+  /** Почему не удалось узнать карточку: нет связи, неверный пароль, на сайте не та тема. */
+  error: string | null;
+  /** Пробный турнир на сайт не отправляется. */
+  trial: boolean;
+}
 export type ClubStandingSettings = z.infer<typeof setClubStandingSchema>;
 export type Ceremony = z.infer<typeof ceremonySchema>;
 export type SetCeremonyInput = z.infer<typeof setCeremonySchema>;

@@ -235,6 +235,8 @@ export function describe(
       };
     case "protocols.published":
       return { group: "setup", text: `Протоколы выложены на сайт: файлов — ${String(d.count)}` };
+    case "site.card":
+      return { group: "setup", text: d.created ? "Соревнование добавлено в календарь сайта федерации" : "Карточка соревнования на сайте федерации обновлена" };
     case "protocols.unpublished":
       return { group: "setup", text: "Протоколы сняты с сайта" };
     case "ceremony.shown":

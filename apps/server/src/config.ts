@@ -12,6 +12,14 @@ export interface AppConfig {
   /** Адрес облачного ретранслятора для сайта; без него результаты остаются в зале. */
   relayUrl?: string;
   relayToken?: string;
+  /**
+   * Сайт федерации на WordPress с темой ag-federation: кнопка «Подключить к сайту» создаёт там
+   * карточку соревнования. Адрес по умолчанию — сайт, на котором лежит ретранслятор (RELAY_URL без /results).
+   */
+  wpUrl?: string;
+  /** Пользователь WordPress и его пароль приложения («Пользователи → Профиль → Пароли приложений»). */
+  wpUser?: string;
+  wpAppPassword?: string;
   /** Папка для автовыгрузки турниров файлами, как кнопка «Выгрузить в файл»; без неё выгрузки нет. */
   exportDir?: string;
   /** Как часто выгружать, секунды. */
@@ -74,6 +82,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     boardDist: env.BOARD_DIST ?? join(__dirname, "..", "..", "scoreboard", "dist"),
     relayUrl: env.RELAY_URL || undefined,
     relayToken: env.RELAY_TOKEN || undefined,
+    wpUrl: env.WP_URL || undefined,
+    wpUser: env.WP_USER || undefined,
+    wpAppPassword: env.WP_APP_PASSWORD || undefined,
     exportDir: env.EXPORT_DIR || undefined,
     exportInterval: Number(env.EXPORT_INTERVAL ?? 1800),
     entriesSyncInterval: Number(env.ENTRIES_SYNC_INTERVAL ?? 300),

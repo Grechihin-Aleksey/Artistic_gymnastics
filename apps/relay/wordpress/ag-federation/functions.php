@@ -7,7 +7,8 @@
  *   inc/post-types.php  — типы записей «Соревнования», «Клубы», «Документы» и их поля;
  *   inc/customizer.php  — настройки в «Внешний вид → Настроить»;
  *   inc/components.php  — повторяющиеся блоки страниц: строка календаря, призёры, протоколы, табло;
- *   inc/archive.php     — результаты турниров копятся на сайте, страницы спортсменов.
+ *   inc/archive.php     — результаты турниров копятся на сайте, страницы спортсменов;
+ *   inc/rest.php        — карточка соревнования от программы (кнопка «Подключить к сайту»).
  */
 
 if (!defined('ABSPATH')) {
@@ -21,6 +22,7 @@ require_once __DIR__ . '/inc/post-types.php';
 require_once __DIR__ . '/inc/customizer.php';
 require_once __DIR__ . '/inc/components.php';
 require_once __DIR__ . '/inc/archive.php';
+require_once __DIR__ . '/inc/rest.php';
 
 function ag_theme_setup()
 {
