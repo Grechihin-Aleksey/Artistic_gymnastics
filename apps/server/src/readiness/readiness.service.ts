@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import { Inject, Injectable } from "@nestjs/common";
 import { apparatusFor } from "@ag/scoring";
@@ -15,6 +15,11 @@ import { VideoService } from "../video/video.service";
 
 /** Копия базы старше этого — повод проверить, работает ли контейнер backup. */
 const BACKUP_STALE_MINUTES = 15;
+/** Пробное восстановление идёт раз в сутки; старше этого — проверка перестала работать. */
+const RESTORE_CHECK_STALE_HOURS = 26;
+/** Свободное место на диске с копиями: меньше — предупреждение, совсем мало — ошибка. */
+const DISK_WARN_GB = 5;
+const DISK_FAIL_GB = 1;
 
 type JudgeRow = typeof judges.$inferSelect;
 
@@ -164,6 +169,28 @@ export class ReadinessService {
         else add("Копии", "ok", `Последняя копия базы ${minutes < 1 ? "меньше минуты" : `${minutes} мин`} назад.`);
       }
     }
+    if (dir) {
+      const restore = await readRestoreCheck(dir);
+      if (restore) {
+        const hours = Math.floor((now.getTime() - Date.parse(restore.at)) / 3_600_000);
+        const ago = hours < 1 ? "меньше часа назад" : `${hours} ч назад`;
+        if (!restore.ok) {
+          add("Копии", "fail", `Пробное восстановление из копии ${restore.file} не удалось (${ago}): ${restore.error ?? "ошибка"}. Сообщите тому, кто ставил программу.`);
+        } else if (hours >= RESTORE_CHECK_STALE_HOURS) {
+          add("Копии", "warn", `Пробное восстановление из копии давно не проводилось (${ago}): перезапустите программу через «Запуск».`);
+        } else {
+          add("Копии", "ok", `Пробное восстановление из копии прошло ${ago}: турниров в копии ${restore.competitions ?? 0}.`);
+        }
+      }
+      const free = await freeBytes(dir);
+      if (free !== null) {
+        const gb = free / 1024 ** 3;
+        const text = `Свободно на диске ${gb.toFixed(1)} ГБ.`;
+        if (gb < DISK_FAIL_GB) add("Диск", "fail", `${text} Копии и протоколы скоро перестанут сохраняться: освободите место (старые видео, загрузки, корзина).`);
+        else if (gb < DISK_WARN_GB) add("Диск", "warn", `${text} Места мало: старые копии базы удаляются раньше срока, освободите место на компьютере.`);
+        else add("Диск", "ok", text);
+      }
+    }
     const cloud = this.cloud.status();
     if (cloud.enabled && cloud.lastError) add("Копии", "warn", `Копия в облако не отправилась: ${cloud.lastError}.`);
 
@@ -194,6 +221,33 @@ async function newestDump(dir: string): Promise<number | null> {
     const names = (await readdir(dir)).filter((n) => /^gymnastics-.*\.dump$/.test(n));
     const times = await Promise.all(names.map(async (n) => (await stat(join(dir, n))).mtimeMs));
     return times.length > 0 ? Math.max(...times) : null;
+  } catch {
+    return null;
+  }
+}
+
+interface RestoreCheck {
+  ok: boolean;
+  at: string;
+  file: string;
+  competitions?: number;
+  error?: string;
+}
+
+/** Итог пробного восстановления, который пишет контейнер backup (scripts/backup-loop.sh). */
+async function readRestoreCheck(dir: string): Promise<RestoreCheck | null> {
+  try {
+    const data = JSON.parse(await readFile(join(dir, "restore-check.json"), "utf8")) as RestoreCheck;
+    return typeof data.ok === "boolean" && typeof data.at === "string" && !Number.isNaN(Date.parse(data.at)) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function freeBytes(dir: string): Promise<number | null> {
+  try {
+    const fs = await statfs(dir);
+    return fs.bavail * fs.bsize;
   } catch {
     return null;
   }

@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
 import { updateJudgeSchema, type UpdateJudgeInput } from "@ag/shared";
-import { CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
+import { AllowChief, CurrentPrincipal, RequireAccess, type Principal } from "../auth/auth";
 import { LiveGateway } from "../live/live.gateway";
 import { ZodPipe } from "../zod.pipe";
 import { CompetitionsService, publicCompetition, withoutSecrets } from "./competitions.service";
@@ -25,6 +25,30 @@ export class JudgesController {
   @RequireAccess("admin")
   codes(@Param("id", ParseUUIDPipe) id: string) {
     return this.competitions.judgeCodes(id);
+  }
+
+  /** Код главного судьи для отдельного ПК или планшета: показать или перепечатать QR. */
+  @Get("competitions/:id/chief-code")
+  @RequireAccess("admin")
+  chiefCode(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.chiefCode(id);
+  }
+
+  /** Новый код главного судьи; прежний перестаёт работать. */
+  @Post("competitions/:id/chief-code")
+  @RequireAccess("admin")
+  newChiefCode(@Param("id", ParseUUIDPipe) id: string) {
+    return this.competitions.newChiefCode(id);
+  }
+
+  /** Экран главного судьи узнаёт по коду свой турнир (у турнира из двух частей — обе части). */
+  @Get("chief/me")
+  @RequireAccess("admin")
+  @AllowChief()
+  async chiefMe(@CurrentPrincipal() principal: Principal) {
+    if (principal.kind !== "chief") throw new ForbiddenException("Это код не главного судьи");
+    const parts = await Promise.all(principal.competitionIds.map((id) => this.competitions.get(id)));
+    return { competitionId: principal.competitionId, competitions: parts.map(publicCompetition) };
   }
 
   /** Страница судьи узнаёт по токену, кто она и на каком снаряде. */

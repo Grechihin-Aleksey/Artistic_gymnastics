@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { apparatusFor, type Discipline } from "@ag/scoring";
 import { JUDGE_CATEGORIES, type JudgeRole, type Official, type Rules } from "@ag/shared";
 import { ChiefJudgePanel } from "./ChiefJudge";
+import { CleanupPanel } from "./CleanupPanel";
 import { VideoCamerasPanel } from "./Replays";
 import { UpdateNotice, VersionLine } from "./Updates";
 import { ApiError, apiRequest } from "./api";
@@ -494,6 +495,12 @@ export function AdminScreen() {
         )}
         {adminToken && (
           <details className="no-print new-competition">
+            <summary>Очистка после турниров</summary>
+            <CleanupPanel adminToken={adminToken} onError={setError} />
+          </details>
+        )}
+        {adminToken && (
+          <details className="no-print new-competition">
             <summary>Камеры видеоповторов</summary>
             <VideoCamerasPanel adminToken={adminToken} competitionId={competition?.id ?? null} onError={setError} />
           </details>
@@ -692,6 +699,10 @@ export function AdminScreen() {
                   Добавить судью
                 </button>
               </form>
+            )}
+
+            {competition && adminToken && (
+              <ChiefCodePanel competitionId={competition.id} chiefName={competition.officials?.chiefJudge?.name ?? null} adminToken={adminToken} onError={setError} />
             )}
 
             <JudgesPresencePanel
@@ -932,6 +943,102 @@ export function AdminScreen() {
         <p className="panel no-print muted">Сначала создайте соревнование или загрузите его из файла на экране «Соревнование».</p>
       )}
     </div>
+  );
+}
+
+/**
+ * Главный судья на отдельном ПК или планшете: свой QR-код и ссылка. Экран главного судьи
+ * показывает все снаряды, «Что проверить» и запросы тренеров; турнир с него не правят.
+ */
+function ChiefCodePanel({
+  competitionId,
+  chiefName,
+  adminToken,
+  onError,
+}: {
+  competitionId: string;
+  chiefName: string | null;
+  adminToken: string;
+  onError: (m: string | null) => void;
+}) {
+  const [token, setToken] = useState<string | null | undefined>(undefined);
+  const [src, setSrc] = useState("");
+  const [shown, setShown] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const url = token ? `${location.origin}/judge/#chief=${encodeURIComponent(token)}` : "";
+
+  useEffect(() => {
+    setShown(false);
+    setNote(null);
+    apiRequest<{ token: string | null }>(`/competitions/${competitionId}/chief-code`, { token: adminToken })
+      .then((r) => setToken(r.token))
+      .catch((e) => onError((e as Error).message));
+  }, [competitionId, adminToken, onError]);
+  useEffect(() => {
+    if (url) void QRCode.toDataURL(url, { width: 240, margin: 1 }).then(setSrc);
+    else setSrc("");
+  }, [url]);
+
+  const issue = async () => {
+    if (token && !confirm("Выдать новый код главного судьи? Прежний QR-код перестанет работать.")) return;
+    try {
+      const r = await apiRequest<{ token: string }>(`/competitions/${competitionId}/chief-code`, { token: adminToken, method: "POST" });
+      setToken(r.token);
+      setShown(true);
+      setNote(null);
+      onError(null);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="panel chief-code">
+      <h2 className="no-print">Главный судья — отдельный планшет или ПК</h2>
+      <p className="muted wide no-print">
+        Главный судья открывает свой экран по этому QR-коду на отдельном планшете или ноутбуке в сети зала: все снаряды сразу,
+        список «Что проверить» и запросы тренеров с решениями жюри. Пароль секретариата ему не нужен, менять турнир с этого
+        экрана нельзя. У турнира девочек и мальчиков код один на обе части.
+      </p>
+      {token === null && (
+        <button type="button" className="primary no-print" onClick={() => void issue()}>
+          Выдать код главного судьи
+        </button>
+      )}
+      {token && (
+        <div className="chief-code-buttons wide no-print">
+          <button type="button" onClick={() => setShown((v) => !v)}>
+            {shown ? "Скрыть QR-код" : "Показать QR-код"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyText(url).then((ok) => setNote(ok ? "Ссылка скопирована." : "Не удалось скопировать: выделите ссылку вручную."))}
+          >
+            Скопировать ссылку
+          </button>
+          <button type="button" onClick={() => void issue()}>
+            Новый код
+          </button>
+        </div>
+      )}
+      {note && <p className="muted wide no-print">{note}</p>}
+      {token && shown && src && (
+        <figure className="qr wide">
+          <img src={src} alt="QR-код главного судьи" />
+          <figcaption>
+            <strong>Главный судья</strong>
+            {chiefName && (
+              <>
+                <br />
+                {chiefName}
+              </>
+            )}
+            <br />
+            <span className="muted chief-link">{url}</span>
+          </figcaption>
+        </figure>
+      )}
+    </section>
   );
 }
 
