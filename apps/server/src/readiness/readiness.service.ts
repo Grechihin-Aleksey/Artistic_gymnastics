@@ -11,6 +11,7 @@ import { DB, type Db } from "../db/db.module";
 import { categories, gymnasts, judges, teams } from "../db/schema";
 import { LiveGateway } from "../live/live.gateway";
 import { RelayPublisher } from "../relay/relay.publisher";
+import { VideoService } from "../video/video.service";
 
 /** Копия базы старше этого — повод проверить, работает ли контейнер backup. */
 const BACKUP_STALE_MINUTES = 15;
@@ -35,6 +36,7 @@ export class ReadinessService {
     private readonly live: LiveGateway,
     private readonly relay: RelayPublisher,
     private readonly cloud: CloudBackupService,
+    private readonly video: VideoService,
   ) {}
 
   async check(competitionId: string, now: Date = new Date()): Promise<ReadinessView> {
@@ -164,6 +166,23 @@ export class ReadinessService {
     }
     const cloud = this.cloud.status();
     if (cloud.enabled && cloud.lastError) add("Копии", "warn", `Копия в облако не отправилась: ${cloud.lastError}.`);
+
+    // Видеоповторы: только если камеры подключены; без камер программа работает как обычно.
+    const video = this.video.status();
+    const mine = video.cameras.filter((c) => program.includes(c.apparatus as never));
+    if (mine.length > 0) {
+      const bad = mine.filter((c) => c.state !== "recording");
+      const names = (list: typeof mine) => list.map((c) => APPARATUS_NAMES[c.apparatus] ?? c.apparatus).join(", ");
+      if (bad.length === 0) add("Видеоповторы", "ok", `Камеры пишут: ${names(mine)}.`);
+      else
+        add(
+          "Видеоповторы",
+          "warn",
+          `Камера не пишет: ${bad.map((c) => `${APPARATUS_NAMES[c.apparatus] ?? c.apparatus} (${c.message ?? "подключается"})`).join("; ")}. Судить можно и без неё, повторов на этом снаряде не будет.`,
+        );
+      if (video.disk && video.disk.freeBytes < (video.minFreeGb + 5) * 1024 ** 3)
+        add("Видеоповторы", "warn", `Свободно на диске ${(video.disk.freeBytes / 1024 ** 3).toFixed(1)} ГБ: удалите повторы прошлых турниров.`);
+    }
 
     const worst = checks.some((c) => c.status === "fail") ? "fail" : checks.some((c) => c.status === "warn") ? "warn" : "ok";
     return { status: worst, checks, checkedAt: now.toISOString() };

@@ -1937,3 +1937,98 @@ input.secret {
   margin: 16px;
   font-size: 14px;
 }
+
+/* Видеоповторы */
+.replay-button {
+  white-space: nowrap;
+}
+
+.replay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.6);
+}
+
+.replay-dialog {
+  width: min(960px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 12px 16px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.replay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.replay-dialog video {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+  border-radius: 8px;
+}
+
+.replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.video-cameras td {
+  padding: 4px 8px 4px 0;
+  vertical-align: middle;
+}
+
+.video-cameras input {
+  width: 100%;
+  min-width: 220px;
+}
+
+.video-state {
+  font-size: 14px;
+}
+
+.video-recording {
+  color: var(--ok);
+}
+
+.video-connecting,
+.video-stopped {
+  color: var(--warn);
+}
+
+.video-error {
+  color: var(--bad);
+}
+
+.video-snapshot img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.chief-replays li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.chief-replays {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
