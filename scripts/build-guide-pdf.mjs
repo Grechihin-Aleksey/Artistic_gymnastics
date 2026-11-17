@@ -1,6 +1,7 @@
 // Собирает инструкции PDF в корне программы:
 //   docs/install-guide.md   → «Инструкция по установке.pdf»
 //   docs/secretary-guide.md → «Инструкция для секретаря.pdf»
+//   docs/site-guide.md      → «Инструкция по сайту.pdf» в теме WordPress (apps/relay/wordpress/ag-federation)
 // Запускать после правки инструкции, из корня репозитория:
 //   npm i --no-save marked@15 playwright && npx playwright install chromium
 //   node scripts/build-guide-pdf.mjs                     (обе)
@@ -15,6 +16,8 @@ const docsDir = join(root, "docs");
 const guides = [
   ["install-guide.md", "Инструкция по установке.pdf"],
   ["secretary-guide.md", "Инструкция для секретаря.pdf"],
+  // Инструкция по сайту едет внутри архива темы WordPress.
+  ["site-guide.md", "apps/relay/wordpress/ag-federation/Инструкция по сайту.pdf"],
 ];
 const slug = (t) => t.toLowerCase().replace(/<[^>]+>/g, "").replace(/[^\p{L}\p{N}\s_-]/gu, "").trim().replace(/\s/g, "-");
 const renderer = { heading({ tokens, depth }) { const text = this.parser.parseInline(tokens); const raw = tokens.map(t=>t.raw).join(""); return `<h${depth} id="${slug(raw)}">${text}</h${depth}>`; } };
@@ -24,7 +27,7 @@ for (const [mdName, outName] of guides.filter(([m]) => !process.argv[2] || m ===
   const md = join(docsDir, mdName);
   const out = join(root, outName);
   let body = marked.parse(readFileSync(md, "utf8"));
-  body = body.replace(/<p>Эта же инструкция лежит в папке программы[^<]*<code>[^<]*<\/code>\.<\/p>/, "");
+  body = body.replace(/<p>Эта же инструкция лежит в (?:папке программы|архиве темы)[^<]*<code>[^<]*<\/code>\.<\/p>/, "");
   body = body.replace(/src="([^"]+\.png)"/g, (_, f) => `src="data:image/png;base64,${readFileSync(docsDir + "/" + f).toString("base64")}"`);
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
   body{font-family:"Segoe UI","DejaVu Sans",Arial,sans-serif;font-size:11pt;line-height:1.5;color:#1b1f24;margin:0}
