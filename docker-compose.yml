@@ -25,6 +25,9 @@ services:
 
   server:
     logging: *logging
+    # Постоянное имя образа: собранную программу можно сохранить в файл и перенести на компьютер без интернета
+    # («Подготовить офлайн.bat»), а запуск без изменений в программе не пересобирает её и интернет не нужен.
+    image: gymnastics-server:latest
     build:
       context: .
       dockerfile: apps/server/Dockerfile
