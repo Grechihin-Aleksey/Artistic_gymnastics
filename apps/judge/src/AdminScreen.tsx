@@ -52,6 +52,8 @@ interface Competition {
   teamRoster: number;
   teamPerApparatus: number;
   teamCounting: number;
+  /** Командный зачёт ведётся; false — только личное первенство. */
+  teamEvent?: boolean;
   rules: Rules;
   officials?: { chiefJudge: Official | null; chiefSecretary: Official | null };
   /** Девочки и мальчики одного турнира: у обеих частей один pairId. */
@@ -594,6 +596,7 @@ export function AdminScreen() {
               competitionId={competition.id}
               discipline={competition.discipline}
               partner={partner}
+              teamEvent={competition.teamEvent !== false}
               teamFormat={{
                 roster: competition.teamRoster,
                 perApparatus: competition.teamPerApparatus,
@@ -917,16 +920,24 @@ export function AdminScreen() {
               key={`ceremony-${competition.id}`}
               competitionId={competition.id}
               discipline={competition.discipline}
+              teamEvent={competition.teamEvent !== false}
               adminToken={adminToken}
               onError={setError}
             />
-            <ClubStandingPanel key={`clubs-${competition.id}`} competitionId={competition.id} adminToken={adminToken} onError={setError} />
+            <ClubStandingPanel
+              key={`clubs-${competition.id}`}
+              competitionId={competition.id}
+              teamEvent={competition.teamEvent !== false}
+              adminToken={adminToken}
+              onError={setError}
+            />
           </div>
 
           <div {...pane("protocols")}>
             <ProtocolsPanel
               competitionId={competition.id}
               discipline={competition.discipline}
+              teamEvent={competition.teamEvent !== false}
               adminToken={adminToken}
               onError={setError}
             />

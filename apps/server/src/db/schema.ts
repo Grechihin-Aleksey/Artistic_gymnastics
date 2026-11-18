@@ -10,7 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { BoardSwitch, Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex } from "@ag/shared";
+import type { BoardSwitch, Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex, VaultMode } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES, VAULT_RULES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -41,8 +41,10 @@ export const competitions = pgTable("competitions", {
   logo: text("logo"),
   /** FIG или свои правила: база по разряду минус сбавки. */
   rules: rulesEnum("rules").notNull().default("FIG"),
-  /** Два опорных прыжка: по FIG (первый в многоборье, среднее на снаряде) или лучший из двух. */
+  /** Два опорных прыжка: по FIG (первый в многоборье, среднее на снаряде), лучший из двух или по разряду. */
   vaultRule: vaultRuleEnum("vault_rule").notNull().default("FIG"),
+  /** Командный зачёт: false — только личное первенство, команды не считаются и не показываются. */
+  teamEvent: boolean("team_event").notNull().default(true),
   /** Своих правил: список сбавок за требования, баллы в тысячных. */
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
   /** Своих правил: допуск расхождения сбавок судей E, тысячные балла. */
@@ -98,6 +100,8 @@ export const categories = pgTable(
     base: integer("base"),
     apparatusBase: jsonb("apparatus_base").$type<Partial<Record<(typeof APPARATUS)[number], number>>>().notNull().default({}),
     /** Нормативы разрядов: минимальная сумма многоборья в тысячных, от высшего уровня к низшему. */
+    /** Опорный прыжок разряда: first — одна попытка, average — среднее двух, best — лучшая; null — по названию. */
+    vaultMode: text("vault_mode").$type<VaultMode>(),
     normatives: jsonb("normatives").$type<{ name: string; min: number }[]>().notNull().default([]),
     createdAt: createdAt(),
   },

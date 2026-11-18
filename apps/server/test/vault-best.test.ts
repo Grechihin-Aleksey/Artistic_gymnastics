@@ -12,7 +12,7 @@ let vera: string;
 beforeAll(async () => {
   ({ app } = await startApp());
   admin = api(app, ADMIN_TOKEN);
-  competitionId = (await admin.post("/competitions", { name: "Первенство школ", discipline: "WAG" }).expect(201)).body.id;
+  competitionId = (await admin.post("/competitions", { name: "Первенство школ", discipline: "WAG", vaultRule: "FIG" }).expect(201)).body.id;
   const rows = [
     { bib: 1, lastName: "Орлова", firstName: "Анна" },
     { bib: 2, lastName: "Белова", firstName: "Вера" },

@@ -2064,3 +2064,8 @@ input.secret {
   padding: 0;
   list-style: none;
 }
+
+/* Опорный прыжок по разрядам: название разряда по центру строки с выбором. */
+.vault-modes td {
+  vertical-align: middle;
+}

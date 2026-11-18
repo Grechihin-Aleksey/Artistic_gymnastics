@@ -17,7 +17,7 @@ import type {
   SetRulesInput,
   UpdateGymnastInput,
 } from "@ag/shared";
-import { FIG_E_TOLERANCE } from "@ag/shared";
+import { FIG_E_TOLERANCE, categoryVaultMode } from "@ag/shared";
 import { and, asc, eq, inArray, isNull, max, ne } from "drizzle-orm";
 import { hashToken, newToken, openToken, sealToken } from "../auth/tokens";
 import { APP_CONFIG, type AppConfig } from "../config";
@@ -113,6 +113,9 @@ export class CompetitionsService {
           teamCounting: format.counting,
           publishJudgeMarks: input.publishJudgeMarks,
           rules: input.rules,
+          teamEvent: input.teamEvent,
+          // Девочкам опорный прыжок по разряду; мальчикам по FIG, пока не выбрано иное.
+          vaultRule: input.vaultRule ?? (input.discipline === "WAG" ? "CATEGORY" : "FIG"),
           pairId,
           trial: input.trial,
         })
@@ -146,6 +149,7 @@ export class CompetitionsService {
             logo: part.logo,
             rules: part.rules,
             vaultRule: part.vaultRule,
+            teamEvent: part.teamEvent,
             deductions: part.deductions,
             eTolerance: part.eTolerance,
             eToleranceTable: part.eToleranceTable,
@@ -174,6 +178,7 @@ export class CompetitionsService {
               position: c.position,
               base: c.base,
               apparatusBase: c.apparatusBase,
+              vaultMode: c.vaultMode,
               normatives: c.normatives,
             })),
           );
@@ -250,6 +255,7 @@ export class CompetitionsService {
     return {
       rules: competition.rules,
       vaultRule: competition.vaultRule,
+      teamEvent: competition.teamEvent,
       eTolerance: fromPoints(competition.eTolerance),
       eToleranceTable: table
         ? table.map((r) => ({ from: fromPoints(r.from), tolerance: fromPoints(r.tolerance) })).sort((a, b) => b.from - a.from)
@@ -261,6 +267,8 @@ export class CompetitionsService {
         name: c.name,
         base: c.base === null ? null : fromPoints(c.base),
         apparatus: sortKeys(toBalls(c.apparatusBase)),
+        vaultMode: c.vaultMode ?? null,
+        vaultModeAuto: categoryVaultMode(c.name),
         scored: scored.has(c.id),
       })),
       scored: scored.size > 0,
@@ -298,6 +306,7 @@ export class CompetitionsService {
         .set({
           rules: input.rules,
           vaultRule: input.vaultRule,
+          ...(input.teamEvent !== undefined && { teamEvent: input.teamEvent }),
           ...(input.eTolerance !== undefined && { eTolerance: toPoints(input.eTolerance) }),
           ...(input.eToleranceTable !== undefined && {
             eToleranceTable:
@@ -306,6 +315,10 @@ export class CompetitionsService {
           deductions: input.deductions.map((d) => ({ name: d.name, value: toPoints(d.value) })),
         })
         .where(eq(competitions.id, competitionId));
+      for (const v of input.vaultModes) {
+        if (!known.has(v.categoryId)) throw new BadRequestException("Разряд не найден в этом соревновании");
+        await tx.update(categories).set({ vaultMode: v.mode }).where(eq(categories.id, v.categoryId));
+      }
       for (const b of input.bases) {
         await tx
           .update(categories)

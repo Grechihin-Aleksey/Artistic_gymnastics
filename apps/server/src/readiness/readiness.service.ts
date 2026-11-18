@@ -104,8 +104,10 @@ export class ReadinessService {
       }
     }
 
-    // Формат команд
-    const teamRows = await this.db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.competitionId, competitionId));
+    // Формат команд; при одном личном первенстве команды не проверяются.
+    const teamRows = competition.teamEvent
+      ? await this.db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.competitionId, competitionId))
+      : [];
     const format = `${competition.teamRoster}-${competition.teamPerApparatus}-${competition.teamCounting}`;
     const teamProblems: string[] = [];
     for (const team of teamRows) {
