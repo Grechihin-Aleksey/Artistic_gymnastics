@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { apparatusFor, fromPoints, scorePerformance, toPoints, type Apparatus, type Discipline } from "@ag/scoring";
-import { LOW_BATTERY_PERCENT, AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, scoreLabels, type GymnastStatus, type Official } from "@ag/shared";
+import { LOW_BATTERY_PERCENT, AUDIT_GROUP_NAMES, AUDIT_GROUPS, FIG_E_TOLERANCE, GYMNAST_STATUSES, GYMNAST_STATUS_NAMES, JUDGE_CATEGORIES, VAULT_MODES, VAULT_MODE_NAMES, scoreLabels, type VaultMode, type GymnastStatus, type Official } from "@ag/shared";
 import type { ImportGymnastsInput } from "@ag/shared";
 import type { AuditEntry, AuditGroup, BoardSnapshot, BoardSwitch, SetBoardSwitchInput, OnlineEntriesView, ProtocolsIndex, SiteCardView, Ceremony, CeremonyView, ClubStandingView, DrawView, FinalsView, InquiryView, NormativesView, PerformanceView, RotationView, Rules, RulesView, SeriesStandings, VaultRule, SeriesView, RecoveryReport, ReadinessCheck, ReadinessView, BoardTimer, StandbyStatus } from "@ag/shared";
 import { ApparatusIcon } from "./ApparatusIcon";
@@ -1406,6 +1406,8 @@ export function RulesPanel({
   const [rules, setRules] = useState<Rules>("FIG");
   const [vaultRule, setVaultRule] = useState<VaultRule>("FIG");
   const [teamEvent, setTeamEvent] = useState(true);
+  /** Опорный прыжок по разрядам: что выбрано у каждого разряда (подсказка по названию, если не выбирали). */
+  const [vaultModes, setVaultModes] = useState<Record<string, VaultMode>>({});
   const [deductions, setDeductions] = useState<{ name: string; value: string }[]>([]);
   const [eTolerance, setETolerance] = useState("");
   const [eTable, setETable] = useState<{ from: string; tolerance: string }[]>([]);
@@ -1420,6 +1422,7 @@ export function RulesPanel({
     setRules(v.rules);
     setVaultRule(v.vaultRule);
     setTeamEvent(v.teamEvent);
+    setVaultModes(Object.fromEntries(v.categories.map((c) => [c.id, c.vaultMode ?? c.vaultModeAuto ?? "first"])));
     setDeductions(v.deductions.map((d) => ({ name: d.name, value: String(d.value) })));
     setETolerance(v.eTolerance.toFixed(2));
     setETable(v.eToleranceTable.map((r) => ({ from: r.from.toFixed(2), tolerance: r.tolerance.toFixed(2) })));
@@ -1517,6 +1520,8 @@ export function RulesPanel({
           rules,
           vaultRule,
           teamEvent,
+          vaultModes:
+            vaultRule === "CATEGORY" ? Object.entries(vaultModes).map(([categoryId, mode]) => ({ categoryId, mode })) : [],
           deductions: deductionRows,
           bases: rules === "CUSTOM" ? baseRows : [],
           ...(rules === "CUSTOM" && eToleranceValue !== null && { eTolerance: eToleranceValue }),
@@ -1560,12 +1565,50 @@ export function RulesPanel({
           <select value={vaultRule} onChange={(e) => setVaultRule(e.target.value as VaultRule)}>
             <option value="FIG">FIG: в многоборье первый прыжок, на снаряде и в финале среднее двух</option>
             <option value="BEST">Лучший из двух: и в многоборье, и на снаряде</option>
-            <option value="CATEGORY">
-              По разряду: 3 юн–2 сп лучший, 1 сп среднее, КМС и МС один прыжок
-            </option>
+            <option value="CATEGORY">По разряду: у каждого разряда свой выбор</option>
           </select>
           <span className="muted">Можно поменять в любой момент: места и протоколы пересчитаются.</span>
         </label>
+      )}
+      {program.includes("VT") && vaultRule === "CATEGORY" && (
+        <div className="wide">
+          <h3>Опорный прыжок по разрядам</h3>
+          {view.categories.length === 0 ? (
+            <p className="muted">
+              Разряды появятся, когда вы загрузите участников со столбцом «Разряд». Тогда здесь выберите для каждого разряда,
+              сколько попыток и что идёт в зачёт.
+            </p>
+          ) : (
+            <>
+              <p className="muted">
+                Что идёт в многоборье, команды и таблицу прыжка. Программа заранее подставляет выбор по названию разряда: с 3
+                юношеского по 2 спортивный — лучшая из двух, 1 спортивный — средняя, КМС и МС — одна попытка.
+              </p>
+              <table className="rules-table vault-modes">
+                <tbody>
+                  {view.categories.map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>
+                        <select
+                          aria-label={`Опорный прыжок: ${c.name}`}
+                          value={vaultModes[c.id] ?? "first"}
+                          onChange={(e) => setVaultModes((all) => ({ ...all, [c.id]: e.target.value as VaultMode }))}
+                        >
+                          {VAULT_MODES.map((m) => (
+                            <option key={m} value={m}>
+                              {VAULT_MODE_NAMES[m]}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
       )}
 
       {rules === "CUSTOM" && (

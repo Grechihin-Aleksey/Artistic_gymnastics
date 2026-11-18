@@ -77,7 +77,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | POST | `/competitions/:id/draw` | секретариат | Жеребьёвка до первых оценок: `{ mode: "random", firstBib, keepTeams }` или `{ mode: "manual", bibs: [{ gymnastId, bib }] }` |
 | GET | `/competitions/:id/draw` | секретариат | Идут ли уже оценки и когда была последняя жеребьёвка |
 | GET | `/competitions/:id/rules` | все | Правила судейства: FIG или свои, базы разрядов, список сбавок за требования |
-| PUT | `/competitions/:id/rules` | секретариат | Задать правила: `{ rules, vaultRule, teamEvent, deductions: [{ name, value }], bases: [{ categoryId, base, apparatus }] }`; `vaultRule`: `FIG`, `BEST` или `CATEGORY` (по разряду), `teamEvent: false` — только личное первенство |
+| PUT | `/competitions/:id/rules` | секретариат | Задать правила: `{ rules, vaultRule, teamEvent, vaultModes: [{ categoryId, mode }], deductions: [{ name, value }], bases: [{ categoryId, base, apparatus }] }`; `vaultRule`: `FIG`, `BEST` или `CATEGORY` (по разряду), `vaultModes.mode`: `average`, `best`, `first` (одна попытка) или `null` (по названию разряда), `teamEvent: false` — только личное первенство |
 | POST | `/competitions/:id/gymnasts/parse-xlsx` | секретариат | Заявка Excel (`{ file }` в base64) → текст списка для проверки перед импортом |
 | GET | `/competitions/:id/entries-template.xlsx` | все | Бланк заявки для клубов |
 | PUT | `/competitions/:id/logo` | секретариат | Логотип для шапки протоколов: `{ dataUrl }`, PNG или JPEG |

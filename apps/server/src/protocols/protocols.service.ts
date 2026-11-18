@@ -29,6 +29,8 @@ import {
   type SeriesStandings,
   type Stage,
   vaultAllAroundNote,
+  effectiveVaultMode,
+  type VaultMode,
   vaultApparatusNote,
 } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
@@ -220,7 +222,7 @@ export class ProtocolsService {
         "Стоимость — базовая оценка разряда минус сбавки за требования. Сбавка — средняя сбавка судей E. НС — нейтральная сбавка.",
       );
     if (isVault)
-      notes.push(vaultApparatusNote(competition.vaultRule, stage === "FINAL" ? undefined : await this.categoryName(competitionId, scope)));
+      notes.push(vaultApparatusNote(competition.vaultRule, stage === "FINAL" ? undefined : await this.categoryVault(competitionId, scope)));
     const panel = await this.panel(competitionId, apparatus);
     if (panel) notes.push(`Судейская бригада: ${panel}.`);
     if (changedNote)
@@ -293,7 +295,7 @@ export class ProtocolsService {
       ]);
     }
     const notes = program.includes("VT")
-      ? [vaultAllAroundNote(competition.vaultRule, await this.categoryName(competitionId, scope))]
+      ? [vaultAllAroundNote(competition.vaultRule, await this.categoryVault(competitionId, scope))]
       : [];
     if (rows.some((r) => !r.complete))
       notes.push("¹ Выступил(а) не на всех снарядах.");
@@ -1507,14 +1509,15 @@ export class ProtocolsService {
   }
 
   /** Приписка к заголовку протокола с названием разряда. */
-  /** Название разряда для подписи о прыжке: undefined — все разряды, null — без разряда. */
-  private async categoryName(competitionId: string, scope: CategoryScope): Promise<string | null | undefined> {
-    if (scope === undefined || scope === null) return scope;
+  /** Правило опорного прыжка разряда для подписи: undefined — все разряды, null — без разряда или одна попытка. */
+  private async categoryVault(competitionId: string, scope: CategoryScope): Promise<VaultMode | null | undefined> {
+    if (scope === undefined) return undefined;
+    if (scope === null) return null;
     const [row] = await this.db
-      .select({ name: categories.name })
+      .select({ name: categories.name, vaultMode: categories.vaultMode })
       .from(categories)
       .where(and(eq(categories.id, scope), eq(categories.competitionId, competitionId)));
-    return row?.name ?? null;
+    return effectiveVaultMode(row);
   }
 
   private async categoryTitle(

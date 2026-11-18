@@ -17,7 +17,7 @@ import type {
   SetRulesInput,
   UpdateGymnastInput,
 } from "@ag/shared";
-import { FIG_E_TOLERANCE } from "@ag/shared";
+import { FIG_E_TOLERANCE, categoryVaultMode } from "@ag/shared";
 import { and, asc, eq, inArray, isNull, max, ne } from "drizzle-orm";
 import { hashToken, newToken, openToken, sealToken } from "../auth/tokens";
 import { APP_CONFIG, type AppConfig } from "../config";
@@ -178,6 +178,7 @@ export class CompetitionsService {
               position: c.position,
               base: c.base,
               apparatusBase: c.apparatusBase,
+              vaultMode: c.vaultMode,
               normatives: c.normatives,
             })),
           );
@@ -266,6 +267,8 @@ export class CompetitionsService {
         name: c.name,
         base: c.base === null ? null : fromPoints(c.base),
         apparatus: sortKeys(toBalls(c.apparatusBase)),
+        vaultMode: c.vaultMode ?? null,
+        vaultModeAuto: categoryVaultMode(c.name),
         scored: scored.has(c.id),
       })),
       scored: scored.size > 0,
@@ -312,6 +315,10 @@ export class CompetitionsService {
           deductions: input.deductions.map((d) => ({ name: d.name, value: toPoints(d.value) })),
         })
         .where(eq(competitions.id, competitionId));
+      for (const v of input.vaultModes) {
+        if (!known.has(v.categoryId)) throw new BadRequestException("Разряд не найден в этом соревновании");
+        await tx.update(categories).set({ vaultMode: v.mode }).where(eq(categories.id, v.categoryId));
+      }
       for (const b of input.bases) {
         await tx
           .update(categories)

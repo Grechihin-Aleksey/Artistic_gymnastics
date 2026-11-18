@@ -10,7 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { BoardSwitch, Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex } from "@ag/shared";
+import type { BoardSwitch, Ceremony, ClubStandingSettings, Official, OnlineEntry, ProtocolsIndex, VaultMode } from "@ag/shared";
 import { APPARATUS, DISCIPLINES, INQUIRY_STATUSES, GYMNAST_STATUSES, JUDGE_ROLES, ONLINE_ENTRY_STATUSES, MARK_KINDS, PERFORMANCE_STATUSES, RULES, STAGES, VAULT_RULES } from "@ag/shared";
 
 export const disciplineEnum = pgEnum("discipline", DISCIPLINES);
@@ -100,6 +100,8 @@ export const categories = pgTable(
     base: integer("base"),
     apparatusBase: jsonb("apparatus_base").$type<Partial<Record<(typeof APPARATUS)[number], number>>>().notNull().default({}),
     /** Нормативы разрядов: минимальная сумма многоборья в тысячных, от высшего уровня к низшему. */
+    /** Опорный прыжок разряда: first — одна попытка, average — среднее двух, best — лучшая; null — по названию. */
+    vaultMode: text("vault_mode").$type<VaultMode>(),
     normatives: jsonb("normatives").$type<{ name: string; min: number }[]>().notNull().default([]),
     createdAt: createdAt(),
   },

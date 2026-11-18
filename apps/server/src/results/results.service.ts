@@ -19,7 +19,7 @@ import {
   type ClubStandingRow,
   type ClubStandingView,
   type LiveApparatus,
-  categoryVaultMode,
+  effectiveVaultMode,
   type Stage,
   type VaultMode,
   type VaultRule,
@@ -113,26 +113,23 @@ export class ResultsService {
 
   /**
    * Режим опорного прыжка участника. fig — как по FIG: "first" в многоборье и командах,
-   * "average" на снаряде. «Лучший из двух» — везде лучший. «По разряду»: с 3 юношеского
-   * по 2 спортивный лучший, 1 спортивный среднее двух; КМС, МС и неузнанный разряд — как по FIG
-   * (в многоборье один, первый прыжок).
+   * "average" на снаряде. «Лучший из двух» — везде лучший. «По разряду» — правило разряда:
+   * лучшая или средняя из двух попыток либо одна попытка.
    */
-  private static vaultMode(rule: VaultRule, fig: VaultMode, category?: string | null): VaultMode {
+  private static vaultMode(rule: VaultRule, fig: VaultMode, category?: VaultMode | null): VaultMode {
     if (rule === "BEST") return "best";
-    if (rule === "CATEGORY") {
-      const mode = categoryVaultMode(category);
-      if (mode === "best" || mode === "average") return mode;
-    }
+    // Разряд с одной попыткой: везде первый прыжок. Разряд без правила — как по FIG.
+    if (rule === "CATEGORY" && category) return category;
     return fig;
   }
 
-  /** Названия разрядов соревнования по id: для правила опорного прыжка «по разряду». */
-  private async categoryNames(competitionId: string): Promise<Map<string | null, string>> {
+  /** Правило опорного прыжка каждого разряда (для правила «по разряду»): выбранное или по названию. */
+  private async vaultModes(competitionId: string): Promise<Map<string | null, VaultMode | null>> {
     const rows = await this.db
-      .select({ id: categories.id, name: categories.name })
+      .select({ id: categories.id, name: categories.name, vaultMode: categories.vaultMode })
       .from(categories)
       .where(eq(categories.competitionId, competitionId));
-    return new Map(rows.map((c) => [c.id, c.name]));
+    return new Map(rows.map((c) => [c.id, effectiveVaultMode(c)]));
   }
 
   /** Для табло: на каждом снаряде кто выступает сейчас и последняя утверждённая оценка. */
@@ -195,10 +192,10 @@ export class ResultsService {
     if (!apparatusFor(competition.discipline).includes(apparatus)) {
       throw new UnprocessableEntityException(`Снаряда ${apparatus} нет в программе ${competition.discipline}`);
     }
-    const [scores, people, categoryNames] = await Promise.all([
+    const [scores, people, vaultModes] = await Promise.all([
       this.approvedScores(competitionId, stage),
       this.gymnastsById(competitionId),
-      this.categoryNames(competitionId),
+      this.vaultModes(competitionId),
     ]);
     const entries = [...scores].flatMap(([gymnastId, byApparatus]) => {
       const categoryId = people.get(gymnastId)!.categoryId;
@@ -206,7 +203,7 @@ export class ResultsService {
       const attempts = byApparatus.get(apparatus);
       const mode =
         apparatus === "VT"
-          ? ResultsService.vaultMode(competition.vaultRule, vaultMode, categoryNames.get(categoryId))
+          ? ResultsService.vaultMode(competition.vaultRule, vaultMode, vaultModes.get(categoryId))
           : "first";
       const score = attempts && ResultsService.pick(attempts, mode);
       return score ? [{ id: gymnastId, score }] : [];
@@ -226,7 +223,7 @@ export class ResultsService {
       this.db.select().from(categories).where(eq(categories.competitionId, competitionId)),
     ]);
     const normatives = new Map(categoryRows.map((c) => [c.id, c.normatives]));
-    const categoryNames = new Map<string | null, string>(categoryRows.map((c) => [c.id, c.name]));
+    const vaultModes = new Map<string | null, VaultMode | null>(categoryRows.map((c) => [c.id, effectiveVaultMode(c)]));
     // Снявшиеся в многоборье не ранжируются; их оценки на снарядах остаются.
     const entries = [...scores]
       .filter(([gymnastId]) => {
@@ -240,7 +237,7 @@ export class ResultsService {
           a,
           ResultsService.pick(
             attempts,
-            a === "VT" ? ResultsService.vaultMode(competition.vaultRule, "first", categoryNames.get(people.get(gymnastId)!.categoryId)) : "first",
+            a === "VT" ? ResultsService.vaultMode(competition.vaultRule, "first", vaultModes.get(people.get(gymnastId)!.categoryId)) : "first",
           ),
         ]),
       ) as Partial<Record<Apparatus, ScoreBreakdown>>,
@@ -265,11 +262,11 @@ export class ResultsService {
     const competition = await this.competitions.get(competitionId);
     // Только личное первенство: командного зачёта нет ни на табло, ни в протоколах.
     if (!competition.teamEvent) return [];
-    const [scores, people, teamRows, categoryNames] = await Promise.all([
+    const [scores, people, teamRows, vaultModes] = await Promise.all([
       this.approvedScores(competitionId),
       this.gymnastsById(competitionId),
       this.db.select().from(teams).where(eq(teams.competitionId, competitionId)),
-      this.categoryNames(competitionId),
+      this.vaultModes(competitionId),
     ]);
     const format = {
       roster: competition.teamRoster,
@@ -288,7 +285,7 @@ export class ResultsService {
                 a,
                 ResultsService.pick(
                   attempts,
-                  a === "VT" ? ResultsService.vaultMode(competition.vaultRule, "first", categoryNames.get(g.categoryId)) : "first",
+                  a === "VT" ? ResultsService.vaultMode(competition.vaultRule, "first", vaultModes.get(g.categoryId)) : "first",
                 ),
               ],
             ),

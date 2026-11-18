@@ -1,5 +1,5 @@
 {
-  "id": "09cf9a40-9e8c-4893-a0dd-0f034e37f1b5",
+  "id": "1ecbe338-eb56-4940-be73-5205976ece65",
   "prevId": "af69a376-28f0-4336-bca8-e95504f2f847",
   "version": "7",
   "dialect": "postgresql",
@@ -179,6 +179,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "vault_mode": {
+          "name": "vault_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "normatives": {
           "name": "normatives",

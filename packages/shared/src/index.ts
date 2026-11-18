@@ -24,16 +24,26 @@ export type Rules = (typeof RULES)[number];
 /**
  * Как засчитывать два опорных прыжка. FIG: в многоборье и командах — первый,
  * в таблице снаряда и финале — среднее двух. BEST: везде лучший из двух.
- * CATEGORY: по разряду участника (см. categoryVaultMode), разряд не узнан — как FIG.
+ * CATEGORY: у каждого разряда своё правило (categories.vaultMode), не выбрано — подсказка по названию,
+ * не узнано — одна попытка, как FIG.
  */
 export const VAULT_RULES = ["FIG", "BEST", "CATEGORY"] as const;
 export type VaultRule = (typeof VAULT_RULES)[number];
 
-/** Какой прыжок идёт в зачёт: первый, среднее двух или лучший из двух. */
-export type VaultMode = "first" | "average" | "best";
+/**
+ * Опорный прыжок разряда: "first" — одна попытка (в многоборье первый прыжок),
+ * "average" — две попытки, в зачёт среднее, "best" — две попытки, в зачёт лучшая.
+ */
+export const VAULT_MODES = ["average", "best", "first"] as const;
+export type VaultMode = (typeof VAULT_MODES)[number];
+export const VAULT_MODE_NAMES: Record<VaultMode, string> = {
+  average: "Две попытки, в зачёт средняя",
+  best: "Две попытки, в зачёт лучшая",
+  first: "Одна попытка",
+};
 
 /**
- * Опорный прыжок по разряду (правило CATEGORY):
+ * Подсказка для разряда, пока секретарь не выбрал правило сам (правило CATEGORY):
  * с 3 юношеского по 2 спортивный включительно — лучший из двух прыжков;
  * 1 спортивный — два прыжка, в зачёт среднее; КМС и МС — один прыжок (первый).
  * Разряд узнаётся по названию: «3 юн», «2ю», «I юношеский», «2 сп», «1 разряд», «КМС», «МС», «МСМК».
@@ -51,24 +61,30 @@ export function categoryVaultMode(name: string | null | undefined): VaultMode | 
   return level === 1 ? "average" : "best";
 }
 
-/** Подпись для протокола снаряда: как получен итог опорного прыжка. undefined — все разряды. */
-export function vaultApparatusNote(rule: VaultRule, category?: string | null): string {
-  if (rule === "CATEGORY" && category === undefined) {
-    return "Итог опорного прыжка — по разряду: с 3 юношеского по 2 спортивный лучший из двух прыжков, у остальных среднее двух (при одном прыжке — его оценка).";
-  }
-  const mode = rule === "BEST" ? "best" : rule === "CATEGORY" ? categoryVaultMode(category) : null;
-  if (mode === "best") return "Итог опорного прыжка — лучший из двух прыжков.";
+/** Правило прыжка разряда: выбранное секретарём, иначе подсказка по названию; null — одна попытка, как FIG. */
+export function effectiveVaultMode(category: { name: string; vaultMode?: VaultMode | null } | null | undefined): VaultMode | null {
+  return category?.vaultMode ?? categoryVaultMode(category?.name);
+}
+
+/**
+ * Подпись для протокола снаряда: как получен итог опорного прыжка.
+ * mode — правило разряда протокола (при правиле CATEGORY); undefined — протокол по всем разрядам.
+ */
+export function vaultApparatusNote(rule: VaultRule, mode?: VaultMode | null): string {
+  if (rule === "CATEGORY" && mode === undefined) return "Итог опорного прыжка — по правилу разряда участника.";
+  const m = rule === "BEST" ? "best" : rule === "CATEGORY" ? mode : null;
+  if (m === "best") return "Итог опорного прыжка — лучший из двух прыжков.";
+  if (m === "first") return "Опорный прыжок — одна попытка.";
   return "Итог опорного прыжка — среднее двух прыжков (при одном прыжке — его оценка).";
 }
 
-/** Подпись для протокола: как засчитан опорный прыжок в многоборье. */
-export function vaultAllAroundNote(rule: VaultRule, category?: string | null): string {
-  const mode = rule === "BEST" ? "best" : rule === "CATEGORY" ? categoryVaultMode(category) : "first";
-  if (rule === "CATEGORY" && category === undefined) {
-    return "Опорный прыжок в многоборье — по разряду: с 3 юношеского по 2 спортивный лучший из двух прыжков, 1 спортивный — среднее двух, КМС и МС — один прыжок.";
-  }
-  if (mode === "best") return "Опорный прыжок в многоборье — лучший из двух прыжков.";
-  if (mode === "average") return "Опорный прыжок в многоборье — среднее двух прыжков.";
+/** Подпись для протокола: как засчитан опорный прыжок в многоборье. mode — как в vaultApparatusNote. */
+export function vaultAllAroundNote(rule: VaultRule, mode?: VaultMode | null): string {
+  if (rule === "CATEGORY" && mode === undefined) return "Опорный прыжок в многоборье — по правилу разряда участника.";
+  const m = rule === "BEST" ? "best" : rule === "CATEGORY" ? mode : "first";
+  if (m === "best") return "Опорный прыжок в многоборье — лучший из двух прыжков.";
+  if (m === "average") return "Опорный прыжок в многоборье — среднее двух прыжков.";
+  if (rule === "CATEGORY") return "Опорный прыжок в многоборье — одна попытка.";
   return "Опорный прыжок в многоборье — оценка за первый прыжок.";
 }
 
@@ -456,6 +472,8 @@ export const setRulesSchema = z.object({
   vaultRule: z.enum(VAULT_RULES).default("FIG"),
   /** Командный зачёт ведётся. Не передан — остаётся прежний. */
   teamEvent: z.boolean().optional(),
+  /** Опорный прыжок по разрядам (правило CATEGORY): null — по названию разряда. Не переданные не меняются. */
+  vaultModes: z.array(z.object({ categoryId: z.uuid(), mode: z.enum(VAULT_MODES).nullable() })).max(200).default([]),
   /** Своих правил: допуск расхождения сбавок E. Не передан — остаётся прежний. */
   eTolerance: score.max(10).positive().optional(),
   /**
@@ -805,6 +823,10 @@ export interface RulesView {
     name: string;
     base: number | null;
     apparatus: Partial<Record<(typeof APPARATUS)[number], number>>;
+    /** Опорный прыжок разряда, выбранный секретарём; null — не выбран, действует vaultModeAuto. */
+    vaultMode: VaultMode | null;
+    /** Подсказка по названию разряда; null — название не узнано, считается одна попытка (как FIG). */
+    vaultModeAuto: VaultMode | null;
     /** В разряде уже есть оценки: базу менять нельзя. */
     scored: boolean;
   }[];

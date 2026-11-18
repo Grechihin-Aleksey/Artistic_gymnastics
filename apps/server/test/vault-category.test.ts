@@ -78,6 +78,38 @@ describe("опорный прыжок по разряду", () => {
   });
 });
 
+describe("опорный прыжок: выбор секретаря у разряда", () => {
+  it("подсказка по названию видна в правилах, выбор пересчитывает места", async () => {
+    const rules = (await admin.get(`/competitions/${competitionId}/rules`).expect(200)).body as RulesView;
+    const byName = Object.fromEntries(rules.categories.map((c) => [c.name, c]));
+    expect(byName["1 сп"]!.vaultMode).toBeNull();
+    expect(byName["1 сп"]!.vaultModeAuto).toBe("average");
+    const saved = (
+      await admin
+        .put(`/competitions/${competitionId}/rules`, {
+          rules: "FIG",
+          vaultRule: "CATEGORY",
+          vaultModes: [
+            { categoryId: byName["1 сп"]!.id, mode: "best" },
+            { categoryId: byName["3 юн"]!.id, mode: "first" },
+          ],
+        })
+        .expect(200)
+    ).body as RulesView;
+    expect(saved.categories.find((c) => c.name === "1 сп")!.vaultMode).toBe("best");
+    const aa = (await api(app).get(`/competitions/${competitionId}/results/all-around`).expect(200)).body as {
+      gymnast: { bib: number };
+      apparatus: { VT: { total: number } };
+    }[];
+    expect(Object.fromEntries(aa.map((r) => [r.gymnast.bib, r.apparatus.VT.total]))).toEqual({ 1: 12, 2: 13, 3: 13, 4: 12 });
+    const table = (await api(app).get(`/competitions/${competitionId}/results/apparatus/VT`).expect(200)).body as {
+      gymnast: { bib: number };
+      score: { total: number };
+    }[];
+    expect(Object.fromEntries(table.map((r) => [r.gymnast.bib, r.score.total]))).toEqual({ 1: 12, 2: 13, 3: 13, 4: 12 });
+  });
+});
+
 describe("только личное первенство", () => {
   it("команды не считаются и не показываются на табло", async () => {
     expect((await api(app).get(`/competitions/${competitionId}/results/teams`).expect(200)).body).toEqual([]);
