@@ -76,6 +76,8 @@ interface Props {
   onError: (message: string | null) => void;
   /** По своим правилам вместо оценки D — стоимость упражнения. */
   rules?: Rules;
+  /** Командный зачёт ведётся; false — только личное первенство, командное скрыто. */
+  teamEvent?: boolean;
 }
 
 const fmt = (n: number) => n.toFixed(3);
@@ -251,7 +253,7 @@ async function fetchProtocol(competitionId: string, adminToken: string, path: st
 }
 
 /** Протоколы в PDF: открываются в новой вкладке, оттуда их печатают или сохраняют. */
-export function ProtocolsPanel({ competitionId, discipline, adminToken, onError }: Props) {
+export function ProtocolsPanel({ competitionId, discipline, adminToken, onError, teamEvent = true }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [category, setCategory] = useState("");
   useEffect(() => {
@@ -323,9 +325,11 @@ export function ProtocolsPanel({ competitionId, discipline, adminToken, onError 
         <button type="button" onClick={() => void open("all-around", "protocol-all-around.pdf")}>
           Многоборье
         </button>
-        <button type="button" onClick={() => void open("teams", "protocol-teams.pdf")}>
-          Команды
-        </button>
+        {teamEvent && (
+          <button type="button" onClick={() => void open("teams", "protocol-teams.pdf")}>
+            Команды
+          </button>
+        )}
         <button type="button" onClick={() => void open("results.xlsx", "results.xlsx", false)}>
           Все итоги в Excel
         </button>
@@ -652,7 +656,7 @@ interface CompetitionCreated {
   id: string;
 }
 
-/** Новое соревнование: название, программа, формат командного зачёта. */
+/** Новое соревнование: название, программа, личное или личное и командное первенство, формат команд. */
 export function NewCompetitionForm({
   adminToken,
   onCreated,
@@ -662,6 +666,7 @@ export function NewCompetitionForm({
   onCreated: (id: string) => void;
   onError: (message: string | null) => void;
 }) {
+  const [teamEvent, setTeamEvent] = useState(false);
   const create = async (form: FormData) => {
     try {
       const program = String(form.get("discipline"));
@@ -672,11 +677,14 @@ export function NewCompetitionForm({
           body: {
             name: String(form.get("name")).trim(),
             discipline,
-            teamFormat: {
-              roster: Number(form.get("roster")),
-              perApparatus: Number(form.get("perApparatus")),
-              counting: Number(form.get("counting")),
-            },
+            teamEvent,
+            ...(teamEvent && {
+              teamFormat: {
+                roster: Number(form.get("roster")),
+                perApparatus: Number(form.get("perApparatus")),
+                counting: Number(form.get("counting")),
+              },
+            }),
             publishJudgeMarks: form.get("publishJudgeMarks") === "on",
             rules: String(form.get("rules")),
             ...(pairWith ? { pairWith } : {}),
@@ -721,17 +729,28 @@ export function NewCompetitionForm({
         </select>
       </label>
       <label>
-        В составе команды
-        <input name="roster" type="number" min={1} max={10} defaultValue={5} required />
+        Зачёт
+        <select value={teamEvent ? "team" : "individual"} onChange={(e) => setTeamEvent(e.target.value === "team")}>
+          <option value="individual">Только личное первенство</option>
+          <option value="team">Личное и командное первенство</option>
+        </select>
       </label>
-      <label>
-        Выступают на снаряде
-        <input name="perApparatus" type="number" min={1} max={10} defaultValue={4} required />
-      </label>
-      <label>
-        Идут в зачёт
-        <input name="counting" type="number" min={1} max={10} defaultValue={3} required />
-      </label>
+      {teamEvent && (
+        <>
+          <label>
+            В составе команды
+            <input name="roster" type="number" min={1} max={10} defaultValue={5} required />
+          </label>
+          <label>
+            Выступают на снаряде
+            <input name="perApparatus" type="number" min={1} max={10} defaultValue={4} required />
+          </label>
+          <label>
+            Идут в зачёт
+            <input name="counting" type="number" min={1} max={10} defaultValue={3} required />
+          </label>
+        </>
+      )}
       <label className="check">
         <input name="publishJudgeMarks" type="checkbox" />
         Показывать на табло и сайте сбавки каждого судьи E
@@ -971,6 +990,7 @@ export function RosterPanel({
   discipline,
   partner,
   teamFormat,
+  teamEvent = true,
   adminToken,
   onError,
   onImported,
@@ -996,8 +1016,8 @@ export function RosterPanel({
       if (name) add(label(name, g.categoryId ? categories.get(g.categoryId) : undefined));
     }
     for (const r of parsed.rows) if (r.team) add(label(r.team, r.category));
-    return teamFormatWarnings(sizes, teamFormat);
-  }, [people, teams, categories, parsed.rows, teamFormat]);
+    return teamEvent ? teamFormatWarnings(sizes, teamFormat) : [];
+  }, [people, teams, categories, parsed.rows, teamFormat, teamEvent]);
 
   const load = useCallback(async () => {
     try {
@@ -1385,6 +1405,7 @@ export function RulesPanel({
   const [view, setView] = useState<RulesView | null>(null);
   const [rules, setRules] = useState<Rules>("FIG");
   const [vaultRule, setVaultRule] = useState<VaultRule>("FIG");
+  const [teamEvent, setTeamEvent] = useState(true);
   const [deductions, setDeductions] = useState<{ name: string; value: string }[]>([]);
   const [eTolerance, setETolerance] = useState("");
   const [eTable, setETable] = useState<{ from: string; tolerance: string }[]>([]);
@@ -1398,6 +1419,7 @@ export function RulesPanel({
     setView(v);
     setRules(v.rules);
     setVaultRule(v.vaultRule);
+    setTeamEvent(v.teamEvent);
     setDeductions(v.deductions.map((d) => ({ name: d.name, value: String(d.value) })));
     setETolerance(v.eTolerance.toFixed(2));
     setETable(v.eToleranceTable.map((r) => ({ from: r.from.toFixed(2), tolerance: r.tolerance.toFixed(2) })));
@@ -1494,6 +1516,7 @@ export function RulesPanel({
         body: {
           rules,
           vaultRule,
+          teamEvent,
           deductions: deductionRows,
           bases: rules === "CUSTOM" ? baseRows : [],
           ...(rules === "CUSTOM" && eToleranceValue !== null && { eTolerance: eToleranceValue }),
@@ -1523,12 +1546,23 @@ export function RulesPanel({
         </select>
         {view.scored && <span className="muted">Оценки уже ставятся: правила не переключить.</span>}
       </label>
+      <label className="wide">
+        Зачёт
+        <select value={teamEvent ? "team" : "individual"} onChange={(e) => setTeamEvent(e.target.value === "team")}>
+          <option value="individual">Только личное первенство</option>
+          <option value="team">Личное и командное первенство</option>
+        </select>
+        <span className="muted">Без командного зачёта команды не считаются и не показываются на табло, сайте и в протоколах.</span>
+      </label>
       {program.includes("VT") && (
         <label className="wide">
           Два опорных прыжка
           <select value={vaultRule} onChange={(e) => setVaultRule(e.target.value as VaultRule)}>
             <option value="FIG">FIG: в многоборье первый прыжок, на снаряде и в финале среднее двух</option>
             <option value="BEST">Лучший из двух: и в многоборье, и на снаряде</option>
+            <option value="CATEGORY">
+              По разряду: 3 юн–2 сп лучший, 1 сп среднее, КМС и МС один прыжок
+            </option>
           </select>
           <span className="muted">Можно поменять в любой момент: места и протоколы пересчитаются.</span>
         </label>
@@ -3075,7 +3109,7 @@ const CEREMONY_TITLES: Record<Ceremony["kind"], string> = {
 };
 
 /** Награждение: секретариат выводит пьедестал на табло в зале и на сайт, затем убирает его. */
-export function CeremonyPanel({ competitionId, discipline, adminToken, onError }: Props) {
+export function CeremonyPanel({ competitionId, discipline, adminToken, onError, teamEvent = true }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [draft, setDraft] = useState<{ kind: Ceremony["kind"]; category: string; apparatus: Apparatus }>({
     kind: "allAround",
@@ -3131,7 +3165,7 @@ export function CeremonyPanel({ competitionId, discipline, adminToken, onError }
       <label>
         Что награждаем
         <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as Ceremony["kind"] })}>
-          {(Object.keys(CEREMONY_TITLES) as Ceremony["kind"][]).map((k) => (
+          {(Object.keys(CEREMONY_TITLES) as Ceremony["kind"][]).filter((k) => teamEvent || k !== "teams").map((k) => (
             <option key={k} value={k}>
               {CEREMONY_TITLES[k]}
             </option>
@@ -3308,7 +3342,7 @@ export function HallBoardPanel({
  * Общекомандный зачёт: очки клубам за места в многоборье, на снарядах и команд
  * по таблицам из положения. Ниже — текущая таблица клубов.
  */
-export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<Props, "discipline">) {
+export function ClubStandingPanel({ competitionId, adminToken, onError, teamEvent = true }: Omit<Props, "discipline">) {
   const [view, setView] = useState<ClubStandingView | null>(null);
   const clubSaved = useSaved();
   const [draft, setDraft] = useState({ allAround: "", apparatus: "", teams: "", best: "" });
@@ -3379,7 +3413,7 @@ export function ClubStandingPanel({ competitionId, adminToken, onError }: Omit<P
       </p>
       {field("allAround", "Очки за места в многоборье (в каждом разряде)")}
       {field("apparatus", "Очки за места на отдельных снарядах")}
-      {field("teams", "Очки за места команд")}
+      {teamEvent && field("teams", "Очки за места команд")}
       <label>
         Лучших результатов клуба в многоборье в разряде
         <input inputMode="numeric" placeholder="все" value={draft.best} onChange={(e) => setDraft({ ...draft, best: e.target.value.trim() })} />

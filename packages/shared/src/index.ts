@@ -24,9 +24,53 @@ export type Rules = (typeof RULES)[number];
 /**
  * Как засчитывать два опорных прыжка. FIG: в многоборье и командах — первый,
  * в таблице снаряда и финале — среднее двух. BEST: везде лучший из двух.
+ * CATEGORY: по разряду участника (см. categoryVaultMode), разряд не узнан — как FIG.
  */
-export const VAULT_RULES = ["FIG", "BEST"] as const;
+export const VAULT_RULES = ["FIG", "BEST", "CATEGORY"] as const;
 export type VaultRule = (typeof VAULT_RULES)[number];
+
+/** Какой прыжок идёт в зачёт: первый, среднее двух или лучший из двух. */
+export type VaultMode = "first" | "average" | "best";
+
+/**
+ * Опорный прыжок по разряду (правило CATEGORY):
+ * с 3 юношеского по 2 спортивный включительно — лучший из двух прыжков;
+ * 1 спортивный — два прыжка, в зачёт среднее; КМС и МС — один прыжок (первый).
+ * Разряд узнаётся по названию: «3 юн», «2ю», «I юношеский», «2 сп», «1 разряд», «КМС», «МС», «МСМК».
+ * Не узнан — null: тогда считается по FIG.
+ */
+export function categoryVaultMode(name: string | null | undefined): VaultMode | null {
+  if (!name) return null;
+  const s = ` ${name.toLowerCase().replace(/ё/g, "е")} `;
+  const W = "[^0-9a-zа-я]";
+  if (new RegExp(`${W}(к\\.?\\s*м\\.?\\s*с|кандидат|м\\.?\\s*с(\\.?\\s*м\\.?\\s*к)?|мастер)(?=${W})`).test(s)) return "first";
+  const m = new RegExp(`${W}(iii|ii|i|1|2|3)(?:\\s*-?\\s*(?:й|ой|ый))?\\s*\\.?\\s*(ю|сп|р)`).exec(s);
+  if (!m) return null;
+  const level = { i: 1, ii: 2, iii: 3 }[m[1] as "i"] ?? Number(m[1]);
+  if (m[2] === "ю") return "best";
+  return level === 1 ? "average" : "best";
+}
+
+/** Подпись для протокола снаряда: как получен итог опорного прыжка. undefined — все разряды. */
+export function vaultApparatusNote(rule: VaultRule, category?: string | null): string {
+  if (rule === "CATEGORY" && category === undefined) {
+    return "Итог опорного прыжка — по разряду: с 3 юношеского по 2 спортивный лучший из двух прыжков, у остальных среднее двух (при одном прыжке — его оценка).";
+  }
+  const mode = rule === "BEST" ? "best" : rule === "CATEGORY" ? categoryVaultMode(category) : null;
+  if (mode === "best") return "Итог опорного прыжка — лучший из двух прыжков.";
+  return "Итог опорного прыжка — среднее двух прыжков (при одном прыжке — его оценка).";
+}
+
+/** Подпись для протокола: как засчитан опорный прыжок в многоборье. */
+export function vaultAllAroundNote(rule: VaultRule, category?: string | null): string {
+  const mode = rule === "BEST" ? "best" : rule === "CATEGORY" ? categoryVaultMode(category) : "first";
+  if (rule === "CATEGORY" && category === undefined) {
+    return "Опорный прыжок в многоборье — по разряду: с 3 юношеского по 2 спортивный лучший из двух прыжков, 1 спортивный — среднее двух, КМС и МС — один прыжок.";
+  }
+  if (mode === "best") return "Опорный прыжок в многоборье — лучший из двух прыжков.";
+  if (mode === "average") return "Опорный прыжок в многоборье — среднее двух прыжков.";
+  return "Опорный прыжок в многоборье — оценка за первый прыжок.";
+}
 
 /**
  * Строка таблицы допусков расхождения сбавок судей E: при оценке E от from
@@ -101,6 +145,10 @@ export const createCompetitionSchema = z.object({
   /** Публиковать ли на сайте сбавки каждого судьи E. */
   publishJudgeMarks: z.boolean().default(false),
   rules: z.enum(RULES).default("FIG"),
+  /** Командный зачёт: false — только личное первенство, командных табло и протоколов нет. */
+  teamEvent: z.boolean().default(true),
+  /** Два опорных прыжка. Не задано: у девочек — по разряду, у мальчиков — по FIG. */
+  vaultRule: z.enum(VAULT_RULES).optional(),
   /** Вторая часть того же турнира (девочки к мальчикам или наоборот): у неё другая программа. */
   pairWith: z.string().uuid().optional(),
   /** Пробный турнир для репетиции: на сайт не уходит, удаляется одной кнопкой. */
@@ -406,6 +454,8 @@ export const setLogoSchema = z.object({
 export const setRulesSchema = z.object({
   rules: z.enum(RULES),
   vaultRule: z.enum(VAULT_RULES).default("FIG"),
+  /** Командный зачёт ведётся. Не передан — остаётся прежний. */
+  teamEvent: z.boolean().optional(),
   /** Своих правил: допуск расхождения сбавок E. Не передан — остаётся прежний. */
   eTolerance: score.max(10).positive().optional(),
   /**
@@ -741,6 +791,8 @@ export interface NormativesView {
 export interface RulesView {
   rules: Rules;
   vaultRule: VaultRule;
+  /** Командный зачёт ведётся; false — только личное первенство. */
+  teamEvent: boolean;
   /** Своих правил: допуск расхождения сбавок E. */
   eTolerance: number;
   /** FIG: таблица допусков по оценке E, от высшей строки к низшей. */

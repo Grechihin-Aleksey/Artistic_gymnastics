@@ -41,8 +41,10 @@ export const competitions = pgTable("competitions", {
   logo: text("logo"),
   /** FIG или свои правила: база по разряду минус сбавки. */
   rules: rulesEnum("rules").notNull().default("FIG"),
-  /** Два опорных прыжка: по FIG (первый в многоборье, среднее на снаряде) или лучший из двух. */
+  /** Два опорных прыжка: по FIG (первый в многоборье, среднее на снаряде), лучший из двух или по разряду. */
   vaultRule: vaultRuleEnum("vault_rule").notNull().default("FIG"),
+  /** Командный зачёт: false — только личное первенство, команды не считаются и не показываются. */
+  teamEvent: boolean("team_event").notNull().default(true),
   /** Своих правил: список сбавок за требования, баллы в тысячных. */
   deductions: jsonb("deductions").$type<{ name: string; value: number }[]>().notNull().default([]),
   /** Своих правил: допуск расхождения сбавок судей E, тысячные балла. */

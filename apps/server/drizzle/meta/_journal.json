@@ -183,6 +183,13 @@
       "when": 1794886927490,
       "tag": "0025_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794993956047,
+      "tag": "0026_team_event_vault_category",
+      "breakpoints": true
     }
   ]
 }

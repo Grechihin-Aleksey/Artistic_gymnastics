@@ -113,6 +113,9 @@ export class CompetitionsService {
           teamCounting: format.counting,
           publishJudgeMarks: input.publishJudgeMarks,
           rules: input.rules,
+          teamEvent: input.teamEvent,
+          // Девочкам опорный прыжок по разряду; мальчикам по FIG, пока не выбрано иное.
+          vaultRule: input.vaultRule ?? (input.discipline === "WAG" ? "CATEGORY" : "FIG"),
           pairId,
           trial: input.trial,
         })
@@ -146,6 +149,7 @@ export class CompetitionsService {
             logo: part.logo,
             rules: part.rules,
             vaultRule: part.vaultRule,
+            teamEvent: part.teamEvent,
             deductions: part.deductions,
             eTolerance: part.eTolerance,
             eToleranceTable: part.eToleranceTable,
@@ -250,6 +254,7 @@ export class CompetitionsService {
     return {
       rules: competition.rules,
       vaultRule: competition.vaultRule,
+      teamEvent: competition.teamEvent,
       eTolerance: fromPoints(competition.eTolerance),
       eToleranceTable: table
         ? table.map((r) => ({ from: fromPoints(r.from), tolerance: fromPoints(r.tolerance) })).sort((a, b) => b.from - a.from)
@@ -298,6 +303,7 @@ export class CompetitionsService {
         .set({
           rules: input.rules,
           vaultRule: input.vaultRule,
+          ...(input.teamEvent !== undefined && { teamEvent: input.teamEvent }),
           ...(input.eTolerance !== undefined && { eTolerance: toPoints(input.eTolerance) }),
           ...(input.eToleranceTable !== undefined && {
             eToleranceTable:

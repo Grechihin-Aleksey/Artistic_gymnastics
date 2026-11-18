@@ -28,6 +28,8 @@ import {
   type Official,
   type SeriesStandings,
   type Stage,
+  vaultAllAroundNote,
+  vaultApparatusNote,
 } from "@ag/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type {
@@ -218,11 +220,7 @@ export class ProtocolsService {
         "Стоимость — базовая оценка разряда минус сбавки за требования. Сбавка — средняя сбавка судей E. НС — нейтральная сбавка.",
       );
     if (isVault)
-      notes.push(
-        competition.vaultRule === "BEST"
-          ? "Итог опорного прыжка — лучший из двух прыжков."
-          : "Итог опорного прыжка — среднее двух прыжков.",
-      );
+      notes.push(vaultApparatusNote(competition.vaultRule, stage === "FINAL" ? undefined : await this.categoryName(competitionId, scope)));
     const panel = await this.panel(competitionId, apparatus);
     if (panel) notes.push(`Судейская бригада: ${panel}.`);
     if (changedNote)
@@ -294,11 +292,9 @@ export class ProtocolsService {
         ...(withNormatives ? [{ text: row.earned ?? "", style: "small" } as TableCell] : []),
       ]);
     }
-    const notes = [
-      competition.vaultRule === "BEST"
-        ? "Опорный прыжок в многоборье — лучший из двух прыжков."
-        : "Опорный прыжок в многоборье — оценка за первый прыжок.",
-    ];
+    const notes = program.includes("VT")
+      ? [vaultAllAroundNote(competition.vaultRule, await this.categoryName(competitionId, scope))]
+      : [];
     if (rows.some((r) => !r.complete))
       notes.push("¹ Выступил(а) не на всех снарядах.");
     const out = await this.db
@@ -374,7 +370,7 @@ export class ProtocolsService {
           ],
         ),
         ["10 Многоборье.pdf", () => this.allAround(part.id, undefined)],
-        ["11 Командное первенство.pdf", () => this.teams(part.id, undefined)],
+        ...(part.teamEvent ? [["11 Командное первенство.pdf", () => this.teams(part.id, undefined)] as [string, () => Promise<Buffer>]] : []),
         ["12 Общекомандный зачёт клубов.pdf", () => this.clubs(part.id)],
         ...apparatusFor(part.discipline)
           .filter((a) => finals?.lists.some((l) => l.apparatus === a && l.finalists.length > 0))
@@ -967,6 +963,9 @@ export class ProtocolsService {
     scope: CategoryScope = undefined,
   ): Promise<Buffer> {
     const competition = await this.competitions.get(competitionId);
+    if (!competition.teamEvent) {
+      throw new UnprocessableEntityException("Командный зачёт в этом соревновании не проводится: только личное первенство");
+    }
     const program = apparatusFor(competition.discipline);
     let ranked;
     try {
@@ -1508,6 +1507,16 @@ export class ProtocolsService {
   }
 
   /** Приписка к заголовку протокола с названием разряда. */
+  /** Название разряда для подписи о прыжке: undefined — все разряды, null — без разряда. */
+  private async categoryName(competitionId: string, scope: CategoryScope): Promise<string | null | undefined> {
+    if (scope === undefined || scope === null) return scope;
+    const [row] = await this.db
+      .select({ name: categories.name })
+      .from(categories)
+      .where(and(eq(categories.id, scope), eq(categories.competitionId, competitionId)));
+    return row?.name ?? null;
+  }
+
   private async categoryTitle(
     competitionId: string,
     scope: CategoryScope,

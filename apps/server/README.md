@@ -14,7 +14,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 
 | Метод | Путь | Кто | Что делает |
 | --- | --- | --- | --- |
-| POST | `/competitions` | секретариат | Создать соревнование (`MAG` или `WAG`, формат команд) |
+| POST | `/competitions` | секретариат | Создать соревнование (`MAG` или `WAG`; `teamEvent: false` — только личное первенство, иначе формат команд; `vaultRule`: `CATEGORY` по разряду — у `WAG` по умолчанию, `FIG`, `BEST`) |
 | GET | `/competitions`, `/competitions/:id` | все | Список и карточка |
 | GET | `/competitions/:id/export` | секретариат | Файл турнира (JSON) для переноса на другой компьютер: соревнование, разряды, смены, команды, участники, судьи (с хешами токенов), выступления, оценки, финалисты, запросы, журнал, онлайн-заявки |
 | POST | `/competitions/import` | секретариат | Загрузить файл турнира с теми же id (до 200 МБ). 400 — не файл турнира, 409 — турнир уже есть, 422 — файл из более новой версии программы |
@@ -77,7 +77,7 @@ NestJS, PostgreSQL (Drizzle ORM), Socket.IO. Все оценки хранятс�
 | POST | `/competitions/:id/draw` | секретариат | Жеребьёвка до первых оценок: `{ mode: "random", firstBib, keepTeams }` или `{ mode: "manual", bibs: [{ gymnastId, bib }] }` |
 | GET | `/competitions/:id/draw` | секретариат | Идут ли уже оценки и когда была последняя жеребьёвка |
 | GET | `/competitions/:id/rules` | все | Правила судейства: FIG или свои, базы разрядов, список сбавок за требования |
-| PUT | `/competitions/:id/rules` | секретариат | Задать правила: `{ rules, deductions: [{ name, value }], bases: [{ categoryId, base, apparatus }] }` |
+| PUT | `/competitions/:id/rules` | секретариат | Задать правила: `{ rules, vaultRule, teamEvent, deductions: [{ name, value }], bases: [{ categoryId, base, apparatus }] }`; `vaultRule`: `FIG`, `BEST` или `CATEGORY` (по разряду), `teamEvent: false` — только личное первенство |
 | POST | `/competitions/:id/gymnasts/parse-xlsx` | секретариат | Заявка Excel (`{ file }` в base64) → текст списка для проверки перед импортом |
 | GET | `/competitions/:id/entries-template.xlsx` | все | Бланк заявки для клубов |
 | PUT | `/competitions/:id/logo` | секретариат | Логотип для шапки протоколов: `{ dataUrl }`, PNG или JPEG |
