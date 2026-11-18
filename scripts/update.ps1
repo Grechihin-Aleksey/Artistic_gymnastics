@@ -33,6 +33,11 @@ if ((Test-Path ".git") -and (Get-Command git -ErrorAction SilentlyContinue)) {
     }
   } catch {
     $status = $_.Exception.Response.StatusCode.value__
+    if (-not $status) {
+      try { [System.Net.Dns]::GetHostAddresses("github.com") | Out-Null } catch {
+        throw "Нет интернета: новую версию скачать нельзя. Программа осталась прежней, она работает и без интернета — запустите Запуск.bat. Обновите программу, когда появится интернет."
+      }
+    }
     if ($status -eq 404 -or $status -eq 401) {
       if ($token) { throw "GitHub не принял ключ из строки GITHUB_TOKEN в .env. Проверьте, что ключ скопирован целиком, не просрочен и даёт доступ к репозиторию Artistic_gymnastics." }
       throw "Репозиторий программы закрытый, скачать его без ключа нельзя. Добавьте в файл .env строку GITHUB_TOKEN=ваш-ключ (как получить ключ, написано в README) или скачайте архив вручную в браузере, где вы вошли в GitHub."
