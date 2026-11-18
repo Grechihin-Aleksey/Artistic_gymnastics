@@ -4,3 +4,8 @@
 backups
 
 *.pem
+video
+offline
+.build-stamp
+.env
+.last-ip
